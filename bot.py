@@ -1,6 +1,6 @@
 # bot.py
 
-```python
+
 # =========================================================
 # NSE + INTERNET NEWS TELEGRAM BOT
 # GITHUB + RENDER READY VERSION
