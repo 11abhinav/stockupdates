@@ -8,23 +8,21 @@
 # ✅ Google News (Fresh <=24 hrs only)
 # ✅ Price Spike Alerts
 # ✅ Daily Volume Spike Alerts
-# ✅ REAL 5-Min Candle Volume Spike Alerts
-# ✅ REAL 15-Min Candle Volume Spike Alerts
+# ✅ REAL 5-Min Candle Volume Breakouts
+# ✅ REAL 15-Min Candle Volume Breakouts
 # ✅ Day High Breakout Detection
+# ✅ High Conviction Momentum Setups
 # ✅ Relative Strength Ranking
-# ✅ High Conviction Setup Detection
-# ✅ NSE API Cache Optimization
-# ✅ Duplicate Alert Protection
+# ✅ NSE API Optimization
+# ✅ Duplicate Alert Prevention
 # ✅ Startup / Market Close Notifications
-# ✅ Smart Sleep Until Next Market Open
+# ✅ Smart Sleep Until Market Open
 # ✅ Weekend + Holiday Skip
-# ✅ Retry Handling
 # ✅ Safe JSON Writes
+# ✅ Retry Handling
 # ✅ End-of-Day Summary
-# ✅ Lower NSE Ban Risk
 #
-# ACTIVE HOURS
-# ---------------------------------------------------------
+# ACTIVE HOURS:
 # 8:00 AM IST → 3:30 PM IST
 #
 # =========================================================
@@ -62,7 +60,11 @@ def home():
     return "Bot Running", 200
 
 def run_server():
-    app.run(host="0.0.0.0", port=5000)
+
+    app.run(
+        host="0.0.0.0",
+        port=5000
+    )
 
 threading.Thread(
     target=run_server,
@@ -372,77 +374,10 @@ Time:
 
 Stocks:
 {len(WATCHLIST)}
-
-Check Interval:
-{CHECK_INTERVAL}s
 """)
 
 # =========================================================
-# NEWS KEYWORDS
-# =========================================================
-
-IMPORTANT_KEYWORDS = [
-
-    "order",
-    "results",
-    "dividend",
-    "buyback",
-    "merger",
-    "approval",
-    "contract",
-    "acquisition",
-    "stake",
-    "investment",
-    "expansion",
-    "guidance"
-
-]
-
-# =========================================================
-# NEWS SENTIMENT
-# =========================================================
-
-def generate_comment(headline):
-
-    h = headline.lower()
-
-    positive = [
-
-        "order",
-        "profit",
-        "approval",
-        "buyback",
-        "dividend",
-        "expansion",
-        "investment",
-        "acquisition"
-
-    ]
-
-    negative = [
-
-        "loss",
-        "penalty",
-        "fraud",
-        "default",
-        "downgrade"
-
-    ]
-
-    for p in positive:
-
-        if p in h:
-            return "Positive News → Bullish"
-
-    for n in negative:
-
-        if n in h:
-            return "Negative News → Bearish"
-
-    return "Neutral News"
-
-# =========================================================
-# NSE FETCH WITH RETRY
+# NSE FETCH
 # =========================================================
 
 def fetch_price_data(symbol):
@@ -504,7 +439,7 @@ def fetch_price_data(symbol):
     return None
 
 # =========================================================
-# CACHE ALL STOCK DATA
+# FETCH ALL DATA
 # =========================================================
 
 def fetch_all_stock_data():
@@ -524,7 +459,7 @@ def fetch_all_stock_data():
 
         except Exception as e:
 
-            print("Cache Error:", e)
+            print("Fetch Error:", e)
 
     return all_data
 
@@ -594,157 +529,208 @@ Price:
             print("Price Error:", e)
 
 # =========================================================
-# DAY HIGH BREAKOUTS
+# REAL CANDLE BREAKOUT ENGINE
 # =========================================================
 
-def process_day_high_breakouts(all_data):
+def process_real_candle_volume_breakout(
+
+    all_data,
+    candle_store,
+    filename,
+    candle_minutes,
+    spike_multiplier,
+    stats_key
+
+):
+
+    now = ist_now()
+
+    rounded_minute = (
+        now.minute // candle_minutes
+    ) * candle_minutes
+
+    current_candle = now.replace(
+
+        minute=rounded_minute,
+        second=0,
+        microsecond=0
+
+    )
+
+    candle_key = current_candle.strftime(
+        "%Y-%m-%d %H:%M"
+    )
 
     for symbol, data in all_data.items():
 
         try:
 
-            last_price = data["last_price"]
-            high = data["high"]
-            pchange = data["pchange"]
+            total_volume = data["volume"]
 
-            if (
-                not last_price
-                or not high
-                or pchange is None
-            ):
+            if not total_volume:
                 continue
 
-            if last_price < 0.995 * high:
-                continue
+            if symbol not in candle_store:
 
-            if pchange < 2:
-                continue
+                candle_store[symbol] = {
 
-            unique_key = (
-                f"DAYHIGH-"
-                f"{symbol}-"
-                f"{ist_now().strftime('%Y%m%d')}"
-            )
+                    "candles": {},
+                    "last_total_volume": total_volume
 
-            if unique_key in seen_price_alerts:
-                continue
+                }
 
-            seen_price_alerts.add(unique_key)
+            stock_data = candle_store[symbol]
 
-            safe_json_dump(
-                list(seen_price_alerts),
-                PRICE_FILE
-            )
+            candles = stock_data["candles"]
 
-            daily_stats["breakout"] += 1
+            if candle_key not in candles:
 
-            send_telegram(f"""
-🚀 DAY HIGH BREAKOUT
-
-Stock:
-{symbol}
-
-Price:
-₹{last_price}
-
-Day High:
-₹{high}
-
-Change:
-{pchange:+.2f}%
-""")
-
-        except Exception as e:
-
-            print("Breakout Error:", e)
-
-# =========================================================
-# HIGH CONVICTION SIGNALS
-# =========================================================
-
-def process_high_conviction_signals(all_data):
-
-    for symbol, data in all_data.items():
-
-        try:
-
-            pchange = data["pchange"]
-            last_price = data["last_price"]
-            high = data["high"]
-
-            if (
-                pchange is None
-                or not last_price
-                or not high
-            ):
-                continue
-
-            score = 0
-
-            if last_price >= 0.995 * high:
-                score += 2
-
-            if pchange >= 3:
-                score += 2
-
-            history = volume_history.get(
-                symbol,
-                []
-            )
-
-            if len(history) >= 5:
-
-                avg = (
-                    sum(history)
-                    / len(history)
+                previous_total = stock_data.get(
+                    "last_total_volume",
+                    total_volume
                 )
 
-                if (
-                    avg > 0
-                    and data["volume"] >= 3 * avg
-                ):
-                    score += 3
+                candle_volume = (
+                    total_volume - previous_total
+                )
 
-            if score < 5:
+                candles[candle_key] = max(
+                    candle_volume,
+                    0
+                )
+
+                stock_data[
+                    "last_total_volume"
+                ] = total_volume
+
+            else:
+
+                previous_total = stock_data.get(
+                    "last_total_volume",
+                    total_volume
+                )
+
+                incremental = (
+                    total_volume - previous_total
+                )
+
+                if incremental > 0:
+
+                    candles[candle_key] += incremental
+
+                stock_data[
+                    "last_total_volume"
+                ] = total_volume
+
+            sorted_keys = sorted(
+                candles.keys()
+            )
+
+            if len(sorted_keys) > 30:
+
+                for old_key in sorted_keys[:-30]:
+
+                    del candles[old_key]
+
+            candle_values = list(
+                candles.values()
+            )
+
+            if len(candle_values) < 6:
+                continue
+
+            current_candle_volume = (
+                candle_values[-1]
+            )
+
+            previous_candles = (
+                candle_values[:-1]
+            )
+
+            avg_volume = (
+                sum(previous_candles)
+                / len(previous_candles)
+            )
+
+            if avg_volume <= 0:
+                continue
+
+            spike_ratio = (
+                current_candle_volume
+                / avg_volume
+            )
+
+            if spike_ratio < spike_multiplier:
+                continue
+
+            if abs(data["pchange"]) < 1:
                 continue
 
             unique_key = (
-                f"HIGHCONF-"
+
+                f"{candle_minutes}M-"
                 f"{symbol}-"
-                f"{ist_now().strftime('%Y%m%d')}"
+                f"{candle_key}"
+
             )
 
             if unique_key in seen_price_alerts:
                 continue
 
-            seen_price_alerts.add(unique_key)
+            seen_price_alerts.add(
+                unique_key
+            )
 
             safe_json_dump(
                 list(seen_price_alerts),
                 PRICE_FILE
             )
 
-            daily_stats["highconv"] += 1
+            daily_stats[stats_key] += 1
+
+            direction = (
+                "📈"
+                if data["pchange"] > 0
+                else "📉"
+            )
 
             send_telegram(f"""
-💎 HIGH CONVICTION SETUP
+{direction} REAL {candle_minutes}-MIN
+VOLUME BREAKOUT
 
 Stock:
 {symbol}
 
-Score:
-{score}/7
+Candle Volume:
+{int(current_candle_volume):,}
+
+Average Volume:
+{int(avg_volume):,}
+
+Spike:
+{spike_ratio:.1f}x
 
 Price Change:
-{pchange:+.2f}%
+{data['pchange']:+.2f}%
 
-Near Day High:
-YES
+Price:
+₹{data['last_price']}
+
+Candle:
+{candle_key}
 """)
 
         except Exception as e:
 
-            print("High Conviction Error:", e)
+            print(
+                f"{candle_minutes}m Error:",
+                e
+            )
+
+    safe_json_dump(
+        candle_store,
+        filename
+    )
 
 # =========================================================
 # MAIN LOOP
@@ -779,17 +765,45 @@ while True:
             )
         )
 
-        # FETCH ALL STOCK DATA ONCE
+        # FETCH ONCE
         all_data = fetch_all_stock_data()
 
         # PRICE ALERTS
         process_price_alerts(all_data)
 
-        # DAY HIGH BREAKOUTS
-        process_day_high_breakouts(all_data)
+        # REAL 5M BREAKOUTS
+        process_real_candle_volume_breakout(
 
-        # HIGH CONVICTION SIGNALS
-        process_high_conviction_signals(all_data)
+            all_data=all_data,
+
+            candle_store=candle_5m,
+
+            filename=CANDLE_5M_FILE,
+
+            candle_minutes=5,
+
+            spike_multiplier=3.0,
+
+            stats_key="5m"
+
+        )
+
+        # REAL 15M BREAKOUTS
+        process_real_candle_volume_breakout(
+
+            all_data=all_data,
+
+            candle_store=candle_15m,
+
+            filename=CANDLE_15M_FILE,
+
+            candle_minutes=15,
+
+            spike_multiplier=2.5,
+
+            stats_key="15m"
+
+        )
 
     except Exception as e:
 
