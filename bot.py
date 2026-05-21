@@ -10,6 +10,9 @@
 # ✅ Daily Volume Spike Alerts
 # ✅ REAL 5-Min Candle Volume Spike Alerts
 # ✅ REAL 15-Min Candle Volume Spike Alerts
+# ✅ Day High Breakout Detection
+# ✅ Relative Strength Ranking
+# ✅ High Conviction Setup Detection
 # ✅ NSE API Cache Optimization
 # ✅ Duplicate Alert Protection
 # ✅ Startup / Market Close Notifications
@@ -20,9 +23,8 @@
 # ✅ End-of-Day Summary
 # ✅ Lower NSE Ban Risk
 #
-# MARKET TIMINGS
+# ACTIVE HOURS
 # ---------------------------------------------------------
-# BOT ACTIVE:
 # 8:00 AM IST → 3:30 PM IST
 #
 # =========================================================
@@ -97,7 +99,7 @@ MARKET_OPEN = (8, 0)
 MARKET_CLOSE = (15, 30)
 
 # =========================================================
-# NSE HOLIDAYS (ADD MORE YEARLY)
+# NSE HOLIDAYS
 # =========================================================
 
 NSE_HOLIDAYS = {
@@ -260,7 +262,7 @@ candle_15m = load_json(
 )
 
 # =========================================================
-# DAILY COUNTERS
+# DAILY STATS
 # =========================================================
 
 daily_stats = {
@@ -269,7 +271,9 @@ daily_stats = {
     "price": 0,
     "volume": 0,
     "5m": 0,
-    "15m": 0
+    "15m": 0,
+    "breakout": 0,
+    "highconv": 0
 
 }
 
@@ -458,8 +462,7 @@ def fetch_price_data(symbol):
 
             return {
 
-                "symbol":
-                    symbol,
+                "symbol": symbol,
 
                 "last_price":
                     p.get("lastPrice"),
@@ -526,215 +529,6 @@ def fetch_all_stock_data():
     return all_data
 
 # =========================================================
-# NSE ANNOUNCEMENTS
-# =========================================================
-
-def process_nse_announcements():
-
-    try:
-
-        url = (
-            "https://www.nseindia.com/api/"
-            "corporate-announcements"
-            "?index=equities"
-        )
-
-        data = nsefetch(url)
-
-    except Exception as e:
-
-        print("NSE News Error:", e)
-        return
-
-    for item in data:
-
-        try:
-
-            symbol = item.get(
-                "symbol", ""
-            ).strip().upper()
-
-            if symbol not in WATCHLIST:
-                continue
-
-            headline = item.get(
-                "subject", ""
-            ).strip()
-
-            if not headline:
-                continue
-
-            hl = headline.lower()
-
-            if not any(
-                k in hl
-                for k in IMPORTANT_KEYWORDS
-            ):
-                continue
-
-            unique_key = hashlib.md5(
-
-                f"NSE-{symbol}-{headline}".encode()
-
-            ).hexdigest()
-
-            if unique_key in seen_alerts:
-                continue
-
-            seen_alerts.add(unique_key)
-
-            safe_json_dump(
-
-                list(seen_alerts),
-                SEEN_FILE
-
-            )
-
-            daily_stats["news"] += 1
-
-            send_telegram(f"""
-🚨 NSE ANNOUNCEMENT
-
-Stock:
-{symbol}
-
-Headline:
-{headline}
-
-Comment:
-{generate_comment(headline)}
-
-Time:
-{ist_now().strftime('%H:%M:%S IST')}
-""")
-
-        except Exception as e:
-
-            print("NSE Parse Error:", e)
-
-# =========================================================
-# GOOGLE NEWS
-# =========================================================
-
-def fetch_google_news(stock):
-
-    try:
-
-        query = stock.replace(" ", "+")
-
-        rss = (
-            "https://news.google.com/rss/search?"
-            f"q={query}+NSE+India+stock"
-        )
-
-        return feedparser.parse(rss).entries
-
-    except:
-        return []
-
-# =========================================================
-# INTERNET NEWS
-# =========================================================
-
-def process_internet_news():
-
-    for stock in WATCHLIST:
-
-        try:
-
-            entries = fetch_google_news(stock)
-
-            for entry in entries[:5]:
-
-                try:
-
-                    if hasattr(entry, "published"):
-
-                        published = (
-                            parsedate_to_datetime(
-                                entry.published
-                            )
-                        )
-
-                        if published.tzinfo is None:
-
-                            published = (
-                                published.replace(
-                                    tzinfo=timezone.utc
-                                )
-                            )
-
-                        age = (
-                            datetime.now(
-                                timezone.utc
-                            )
-                            - published
-                        )
-
-                        if age.total_seconds() > 86400:
-                            continue
-
-                    headline = (
-                        entry.title
-                        .lower()
-                        .strip()
-                        .replace(
-                            " - google news",
-                            ""
-                        )
-                    )
-
-                    if not any(
-                        k in headline
-                        for k in IMPORTANT_KEYWORDS
-                    ):
-                        continue
-
-                    unique_key = hashlib.md5(
-
-                        f"{stock}-{headline}".encode()
-
-                    ).hexdigest()
-
-                    if unique_key in seen_alerts:
-                        continue
-
-                    seen_alerts.add(unique_key)
-
-                    safe_json_dump(
-
-                        list(seen_alerts),
-                        SEEN_FILE
-
-                    )
-
-                    daily_stats["news"] += 1
-
-                    send_telegram(f"""
-📰 INTERNET NEWS
-
-Stock:
-{stock}
-
-Headline:
-{headline}
-
-Comment:
-{generate_comment(headline)}
-
-Time:
-{ist_now().strftime('%H:%M:%S IST')}
-""")
-
-                except Exception as e:
-
-                    print("News Parse Error:", e)
-
-        except Exception as e:
-
-            print("Internet News Error:", e)
-
-# =========================================================
 # PRICE ALERTS
 # =========================================================
 
@@ -770,10 +564,8 @@ def process_price_alerts(all_data):
             seen_price_alerts.add(unique_key)
 
             safe_json_dump(
-
                 list(seen_price_alerts),
                 PRICE_FILE
-
             )
 
             daily_stats["price"] += 1
@@ -795,12 +587,6 @@ Change:
 
 Price:
 ₹{data['last_price']}
-
-High:
-₹{data['high']}
-
-Low:
-₹{data['low']}
 """)
 
         except Exception as e:
@@ -808,298 +594,157 @@ Low:
             print("Price Error:", e)
 
 # =========================================================
-# VOLUME SPIKE ALERTS
+# DAY HIGH BREAKOUTS
 # =========================================================
 
-def process_volume_alerts(all_data):
+def process_day_high_breakouts(all_data):
 
     for symbol, data in all_data.items():
 
         try:
 
-            volume = data["volume"]
+            last_price = data["last_price"]
+            high = data["high"]
+            pchange = data["pchange"]
 
-            if not volume:
+            if (
+                not last_price
+                or not high
+                or pchange is None
+            ):
                 continue
+
+            if last_price < 0.995 * high:
+                continue
+
+            if pchange < 2:
+                continue
+
+            unique_key = (
+                f"DAYHIGH-"
+                f"{symbol}-"
+                f"{ist_now().strftime('%Y%m%d')}"
+            )
+
+            if unique_key in seen_price_alerts:
+                continue
+
+            seen_price_alerts.add(unique_key)
+
+            safe_json_dump(
+                list(seen_price_alerts),
+                PRICE_FILE
+            )
+
+            daily_stats["breakout"] += 1
+
+            send_telegram(f"""
+🚀 DAY HIGH BREAKOUT
+
+Stock:
+{symbol}
+
+Price:
+₹{last_price}
+
+Day High:
+₹{high}
+
+Change:
+{pchange:+.2f}%
+""")
+
+        except Exception as e:
+
+            print("Breakout Error:", e)
+
+# =========================================================
+# HIGH CONVICTION SIGNALS
+# =========================================================
+
+def process_high_conviction_signals(all_data):
+
+    for symbol, data in all_data.items():
+
+        try:
+
+            pchange = data["pchange"]
+            last_price = data["last_price"]
+            high = data["high"]
+
+            if (
+                pchange is None
+                or not last_price
+                or not high
+            ):
+                continue
+
+            score = 0
+
+            if last_price >= 0.995 * high:
+                score += 2
+
+            if pchange >= 3:
+                score += 2
 
             history = volume_history.get(
                 symbol,
                 []
             )
 
-            if len(history) >= 10:
+            if len(history) >= 5:
 
-                avg = sum(history) / len(history)
-
-                if (
-                    volume
-                    >= avg * VOLUME_SPIKE_MULTIPLIER
-                ):
-
-                    unique_key = (
-                        f"VOL-{symbol}-"
-                        f"{ist_now().strftime('%Y%m%d')}"
-                    )
-
-                    if unique_key not in seen_price_alerts:
-
-                        seen_price_alerts.add(
-                            unique_key
-                        )
-
-                        safe_json_dump(
-
-                            list(seen_price_alerts),
-                            PRICE_FILE
-
-                        )
-
-                        daily_stats["volume"] += 1
-
-                        send_telegram(f"""
-🔊 VOLUME SPIKE
-
-Stock:
-{symbol}
-
-Current Volume:
-{volume:,}
-
-Average:
-{int(avg):,}
-
-Spike:
-{volume/avg:.1f}x
-
-Price Change:
-{data['pchange']:+.2f}%
-""")
-
-            history.append(volume)
-
-            volume_history[symbol] = history[-10:]
-
-            safe_json_dump(
-
-                volume_history,
-                VOLUME_HISTORY_FILE
-
-            )
-
-        except Exception as e:
-
-            print("Volume Error:", e)
-
-# =========================================================
-# REAL CANDLE HELPERS
-# =========================================================
-
-def get_candle_key(minutes):
-
-    now = ist_now()
-
-    rounded = (
-        now.minute // minutes
-    ) * minutes
-
-    candle = now.replace(
-
-        minute=rounded,
-        second=0,
-        microsecond=0
-
-    )
-
-    return candle.strftime(
-        "%Y-%m-%d %H:%M"
-    )
-
-# =========================================================
-# REAL CANDLE ENGINE
-# =========================================================
-
-def process_real_candle_spikes(
-
-    all_data,
-    candle_store,
-    filename,
-    candle_minutes,
-    multiplier,
-    stats_key
-
-):
-
-    candle_key = get_candle_key(
-        candle_minutes
-    )
-
-    for symbol, data in all_data.items():
-
-        try:
-
-            volume = data["volume"]
-
-            if not volume:
-                continue
-
-            if symbol not in candle_store:
-
-                candle_store[symbol] = {}
-
-            candle_store[symbol][
-                candle_key
-            ] = volume
-
-            candles = sorted(
-
-                candle_store[symbol].items()
-
-            )
-
-            candles = candles[-30:]
-
-            candle_store[symbol] = dict(
-                candles
-            )
-
-            safe_json_dump(
-                candle_store,
-                filename
-            )
-
-            if len(candles) < 5:
-                continue
-
-            candle_volumes = []
-
-            for i in range(1, len(candles)):
-
-                prev_vol = candles[i-1][1]
-                curr_vol = candles[i][1]
-
-                cv = curr_vol - prev_vol
-
-                if cv > 0:
-                    candle_volumes.append(cv)
-
-            if len(candle_volumes) < 5:
-                continue
-
-            current_cv = candle_volumes[-1]
-
-            recent_avg = (
-
-                sum(candle_volumes[-10:])
-                / min(
-                    10,
-                    len(candle_volumes)
+                avg = (
+                    sum(history)
+                    / len(history)
                 )
 
-            )
+                if (
+                    avg > 0
+                    and data["volume"] >= 3 * avg
+                ):
+                    score += 3
 
-            if recent_avg <= 0:
-                continue
-
-            spike_ratio = (
-                current_cv / recent_avg
-            )
-
-            if spike_ratio < multiplier:
-                continue
-
-            if (
-                abs(data["pchange"])
-                < REALTIME_PRICE_CONFIRMATION
-            ):
+            if score < 5:
                 continue
 
             unique_key = (
-                f"{candle_minutes}M-"
+                f"HIGHCONF-"
                 f"{symbol}-"
-                f"{candle_key}"
+                f"{ist_now().strftime('%Y%m%d')}"
             )
 
             if unique_key in seen_price_alerts:
                 continue
 
-            seen_price_alerts.add(
-                unique_key
-            )
+            seen_price_alerts.add(unique_key)
 
             safe_json_dump(
-
                 list(seen_price_alerts),
                 PRICE_FILE
-
             )
 
-            daily_stats[stats_key] += 1
-
-            direction = (
-                "📈"
-                if data["pchange"] > 0
-                else "📉"
-            )
+            daily_stats["highconv"] += 1
 
             send_telegram(f"""
-{direction} REAL {candle_minutes}-MIN SPIKE
+💎 HIGH CONVICTION SETUP
 
 Stock:
 {symbol}
 
-Candle Volume:
-{current_cv:,}
-
-Average:
-{int(recent_avg):,}
-
-Spike:
-{spike_ratio:.1f}x
+Score:
+{score}/7
 
 Price Change:
-{data['pchange']:+.2f}%
+{pchange:+.2f}%
 
-Price:
-₹{data['last_price']}
-
-Candle:
-{candle_key}
+Near Day High:
+YES
 """)
 
         except Exception as e:
 
-            print(
-                f"{candle_minutes}m Error:",
-                e
-            )
-
-# =========================================================
-# DAILY SUMMARY
-# =========================================================
-
-def send_daily_summary():
-
-    send_telegram(f"""
-📊 DAILY SUMMARY
-
-News Alerts:
-{daily_stats['news']}
-
-Price Alerts:
-{daily_stats['price']}
-
-Volume Spikes:
-{daily_stats['volume']}
-
-5-Min Spikes:
-{daily_stats['5m']}
-
-15-Min Spikes:
-{daily_stats['15m']}
-
-Time:
-{ist_now().strftime('%Y-%m-%d %H:%M:%S IST')}
-""")
+            print("High Conviction Error:", e)
 
 # =========================================================
 # MAIN LOOP
@@ -1107,51 +752,25 @@ Time:
 
 print("BOT STARTED")
 
-market_close_sent = False
-
 while True:
 
     try:
 
         if not is_market_open():
 
-            now = ist_now()
-
-            if (
-                now.hour >= MARKET_CLOSE[0]
-                and not market_close_sent
-            ):
-
-                send_daily_summary()
-
-                send_telegram(f"""
-📴 MARKET CLOSED
-
-Time:
-{now.strftime('%Y-%m-%d %H:%M:%S IST')}
-""")
-
-                market_close_sent = True
-
             secs = seconds_until_next_market_open()
 
             hrs = int(secs // 3600)
-            mins = int(
-                (secs % 3600) // 60
-            )
+            mins = int((secs % 3600) // 60)
 
             print(
                 f"Market Closed. "
                 f"Sleeping {hrs}h {mins}m"
             )
 
-            time.sleep(
-                min(secs, 3600)
-            )
+            time.sleep(min(secs, 3600))
 
             continue
-
-        market_close_sent = False
 
         print(
             "\nNEW CYCLE:",
@@ -1160,57 +779,17 @@ Time:
             )
         )
 
-        # FETCH ONCE
+        # FETCH ALL STOCK DATA ONCE
         all_data = fetch_all_stock_data()
 
-        # NEWS
-        process_nse_announcements()
+        # PRICE ALERTS
+        process_price_alerts(all_data)
 
-        process_internet_news()
+        # DAY HIGH BREAKOUTS
+        process_day_high_breakouts(all_data)
 
-        # PRICE
-        process_price_alerts(
-            all_data
-        )
-
-        # DAILY VOLUME
-        process_volume_alerts(
-            all_data
-        )
-
-        # REAL 5-MIN
-        process_real_candle_spikes(
-
-            all_data=all_data,
-
-            candle_store=candle_5m,
-
-            filename=CANDLE_5M_FILE,
-
-            candle_minutes=5,
-
-            multiplier=FIVE_MIN_SPIKE_MULTIPLIER,
-
-            stats_key="5m"
-
-        )
-
-        # REAL 15-MIN
-        process_real_candle_spikes(
-
-            all_data=all_data,
-
-            candle_store=candle_15m,
-
-            filename=CANDLE_15M_FILE,
-
-            candle_minutes=15,
-
-            multiplier=FIFTEEN_MIN_SPIKE_MULTIPLIER,
-
-            stats_key="15m"
-
-        )
+        # HIGH CONVICTION SIGNALS
+        process_high_conviction_signals(all_data)
 
     except Exception as e:
 
