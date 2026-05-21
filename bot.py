@@ -1,25 +1,29 @@
 # =========================================================
-# ADVANCED NSE STOCK ALERT BOT (PRODUCTION VERSION)
+# ADVANCED NSE MARKET INTELLIGENCE TELEGRAM BOT
 # =========================================================
 #
-# FEATURES:
-#
+# FEATURES
+# ---------------------------------------------------------
 # ✅ NSE Corporate Announcements
-# ✅ Google News (24hr fresh only)
+# ✅ Google News (Fresh <=24 hrs only)
 # ✅ Price Spike Alerts
-# ✅ Volume Spike Alerts
-# ✅ REAL 5-Min Candle Volume Spikes
-# ✅ REAL 15-Min Candle Volume Spikes
-# ✅ Telegram Alerts
-# ✅ NSE API Call Caching
+# ✅ Daily Volume Spike Alerts
+# ✅ REAL 5-Min Candle Volume Spike Alerts
+# ✅ REAL 15-Min Candle Volume Spike Alerts
+# ✅ NSE API Cache Optimization
+# ✅ Duplicate Alert Protection
+# ✅ Startup / Market Close Notifications
+# ✅ Smart Sleep Until Next Market Open
+# ✅ Weekend + Holiday Skip
 # ✅ Retry Handling
 # ✅ Safe JSON Writes
-# ✅ Duplicate Prevention
-# ✅ Market Hours Handling
-# ✅ Startup + Market Close Notifications
-# ✅ Reduced False Signals
+# ✅ End-of-Day Summary
 # ✅ Lower NSE Ban Risk
-# ✅ Starts Monitoring From 8:00 AM IST
+#
+# MARKET TIMINGS
+# ---------------------------------------------------------
+# BOT ACTIVE:
+# 8:00 AM IST → 3:30 PM IST
 #
 # =========================================================
 
@@ -32,8 +36,17 @@ import requests
 import feedparser
 
 from flask import Flask
-from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
+
+from datetime import (
+    datetime,
+    timedelta,
+    timezone
+)
+
+from email.utils import (
+    parsedate_to_datetime
+)
+
 from nsepython import nsefetch
 
 # =========================================================
@@ -49,29 +62,52 @@ def home():
 def run_server():
     app.run(host="0.0.0.0", port=5000)
 
-threading.Thread(target=run_server, daemon=True).start()
+threading.Thread(
+    target=run_server,
+    daemon=True
+).start()
 
 # =========================================================
-# CONFIG
+# ENV VARIABLES
 # =========================================================
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
+# =========================================================
+# CONFIG
+# =========================================================
+
 CHECK_INTERVAL = 60
 
 PRICE_ALERT_THRESHOLD = 3.0
+
 VOLUME_SPIKE_MULTIPLIER = 3.0
 
 REALTIME_PRICE_CONFIRMATION = 1.0
 
-IST = timezone(timedelta(hours=5, minutes=30))
+FIVE_MIN_SPIKE_MULTIPLIER = 3.0
+FIFTEEN_MIN_SPIKE_MULTIPLIER = 2.5
 
-# BOT STARTS AT 8 AM
+IST = timezone(
+    timedelta(hours=5, minutes=30)
+)
+
 MARKET_OPEN = (8, 0)
-
-# MARKET CLOSE
 MARKET_CLOSE = (15, 30)
+
+# =========================================================
+# NSE HOLIDAYS (ADD MORE YEARLY)
+# =========================================================
+
+NSE_HOLIDAYS = {
+
+    "2026-01-26",
+    "2026-03-14",
+    "2026-08-15",
+    "2026-10-02",
+
+}
 
 # =========================================================
 # WATCHLIST
@@ -157,7 +193,7 @@ WATCHLIST = sorted(list(set([
 ])))
 
 # =========================================================
-# STORAGE FILES
+# FILES
 # =========================================================
 
 SEEN_FILE = "seen_alerts.json"
@@ -177,6 +213,7 @@ def load_json(filename, default):
     if os.path.exists(filename):
 
         try:
+
             with open(filename, "r") as f:
                 return json.load(f)
 
@@ -190,6 +227,7 @@ def safe_json_dump(data, filename):
     temp = filename + ".tmp"
 
     with open(temp, "w") as f:
+
         json.dump(data, f)
 
     os.replace(temp, filename)
@@ -198,13 +236,42 @@ def safe_json_dump(data, filename):
 # LOAD STATE
 # =========================================================
 
-seen_alerts = set(load_json(SEEN_FILE, []))
-seen_price_alerts = set(load_json(PRICE_FILE, []))
+seen_alerts = set(
+    load_json(SEEN_FILE, [])
+)
 
-volume_history = load_json(VOLUME_HISTORY_FILE, {})
+seen_price_alerts = set(
+    load_json(PRICE_FILE, [])
+)
 
-candle_5m = load_json(CANDLE_5M_FILE, {})
-candle_15m = load_json(CANDLE_15M_FILE, {})
+volume_history = load_json(
+    VOLUME_HISTORY_FILE,
+    {}
+)
+
+candle_5m = load_json(
+    CANDLE_5M_FILE,
+    {}
+)
+
+candle_15m = load_json(
+    CANDLE_15M_FILE,
+    {}
+)
+
+# =========================================================
+# DAILY COUNTERS
+# =========================================================
+
+daily_stats = {
+
+    "news": 0,
+    "price": 0,
+    "volume": 0,
+    "5m": 0,
+    "15m": 0
+
+}
 
 # =========================================================
 # TIME HELPERS
@@ -213,6 +280,12 @@ candle_15m = load_json(CANDLE_15M_FILE, {})
 def ist_now():
     return datetime.now(IST)
 
+def is_holiday():
+
+    today = ist_now().strftime("%Y-%m-%d")
+
+    return today in NSE_HOLIDAYS
+
 def is_market_open():
 
     now = ist_now()
@@ -220,9 +293,38 @@ def is_market_open():
     if now.weekday() >= 5:
         return False
 
+    if is_holiday():
+        return False
+
     t = (now.hour, now.minute)
 
     return MARKET_OPEN <= t < MARKET_CLOSE
+
+def seconds_until_next_market_open():
+
+    now = ist_now()
+
+    candidate = now.replace(
+
+        hour=MARKET_OPEN[0],
+        minute=MARKET_OPEN[1],
+        second=0,
+        microsecond=0
+
+    )
+
+    if candidate <= now:
+        candidate += timedelta(days=1)
+
+    while (
+        candidate.weekday() >= 5
+        or candidate.strftime("%Y-%m-%d")
+        in NSE_HOLIDAYS
+    ):
+
+        candidate += timedelta(days=1)
+
+    return (candidate - now).total_seconds()
 
 # =========================================================
 # TELEGRAM
@@ -232,7 +334,10 @@ def send_telegram(message):
 
     try:
 
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        url = (
+            f"https://api.telegram.org/"
+            f"bot{BOT_TOKEN}/sendMessage"
+        )
 
         payload = {
 
@@ -241,7 +346,11 @@ def send_telegram(message):
 
         }
 
-        requests.post(url, data=payload, timeout=15)
+        requests.post(
+            url,
+            data=payload,
+            timeout=20
+        )
 
     except Exception as e:
 
@@ -251,20 +360,39 @@ def send_telegram(message):
 # STARTUP MESSAGE
 # =========================================================
 
-startup_msg = f"""
-✅ STOCK BOT STARTED
+send_telegram(f"""
+✅ BOT STARTED
 
 Time:
 {ist_now().strftime('%Y-%m-%d %H:%M:%S IST')}
 
-Stocks Loaded:
+Stocks:
 {len(WATCHLIST)}
 
 Check Interval:
 {CHECK_INTERVAL}s
-"""
+""")
 
-send_telegram(startup_msg)
+# =========================================================
+# NEWS KEYWORDS
+# =========================================================
+
+IMPORTANT_KEYWORDS = [
+
+    "order",
+    "results",
+    "dividend",
+    "buyback",
+    "merger",
+    "approval",
+    "contract",
+    "acquisition",
+    "stake",
+    "investment",
+    "expansion",
+    "guidance"
+
+]
 
 # =========================================================
 # NEWS SENTIMENT
@@ -277,7 +405,6 @@ def generate_comment(headline):
     positive = [
 
         "order",
-        "contract",
         "profit",
         "approval",
         "buyback",
@@ -294,8 +421,7 @@ def generate_comment(headline):
         "penalty",
         "fraud",
         "default",
-        "downgrade",
-        "bankruptcy"
+        "downgrade"
 
     ]
 
@@ -328,31 +454,32 @@ def fetch_price_data(symbol):
 
             data = nsefetch(url)
 
-            price_info = data.get("priceInfo", {})
+            p = data.get("priceInfo", {})
 
             return {
 
-                "symbol": symbol,
+                "symbol":
+                    symbol,
 
                 "last_price":
-                    price_info.get("lastPrice"),
+                    p.get("lastPrice"),
 
                 "open_price":
-                    price_info.get("open"),
+                    p.get("open"),
 
                 "change":
-                    price_info.get("change"),
+                    p.get("change"),
 
                 "pchange":
-                    price_info.get("pChange"),
+                    p.get("pChange"),
 
                 "high":
-                    price_info.get(
+                    p.get(
                         "intraDayHighLow", {}
                     ).get("max"),
 
                 "low":
-                    price_info.get(
+                    p.get(
                         "intraDayHighLow", {}
                     ).get("min"),
 
@@ -365,14 +492,16 @@ def fetch_price_data(symbol):
 
         except Exception as e:
 
-            print(f"Retry {attempt+1} [{symbol}]")
+            print(
+                f"Retry {attempt+1} [{symbol}]"
+            )
 
             time.sleep(2)
 
     return None
 
 # =========================================================
-# CACHE ALL NSE DATA
+# CACHE ALL STOCK DATA
 # =========================================================
 
 def fetch_all_stock_data():
@@ -381,33 +510,20 @@ def fetch_all_stock_data():
 
     for symbol in WATCHLIST:
 
-        data = fetch_price_data(symbol)
+        try:
 
-        if data:
-            all_data[symbol] = data
+            data = fetch_price_data(symbol)
 
-        time.sleep(0.3)
+            if data:
+                all_data[symbol] = data
+
+            time.sleep(0.25)
+
+        except Exception as e:
+
+            print("Cache Error:", e)
 
     return all_data
-
-# =========================================================
-# IMPORTANT NEWS KEYWORDS
-# =========================================================
-
-IMPORTANT_KEYWORDS = [
-
-    "order",
-    "results",
-    "dividend",
-    "buyback",
-    "merger",
-    "approval",
-    "contract",
-    "acquisition",
-    "stake",
-    "investment"
-
-]
 
 # =========================================================
 # NSE ANNOUNCEMENTS
@@ -419,15 +535,15 @@ def process_nse_announcements():
 
         url = (
             "https://www.nseindia.com/api/"
-            "corporate-announcements?index=equities"
+            "corporate-announcements"
+            "?index=equities"
         )
 
         data = nsefetch(url)
 
     except Exception as e:
 
-        print("NSE Announcement Error:", e)
-
+        print("NSE News Error:", e)
         return
 
     for item in data:
@@ -448,15 +564,18 @@ def process_nse_announcements():
             if not headline:
                 continue
 
-            h = headline.lower()
+            hl = headline.lower()
 
             if not any(
-                k in h for k in IMPORTANT_KEYWORDS
+                k in hl
+                for k in IMPORTANT_KEYWORDS
             ):
                 continue
 
             unique_key = hashlib.md5(
+
                 f"NSE-{symbol}-{headline}".encode()
+
             ).hexdigest()
 
             if unique_key in seen_alerts:
@@ -465,11 +584,15 @@ def process_nse_announcements():
             seen_alerts.add(unique_key)
 
             safe_json_dump(
+
                 list(seen_alerts),
                 SEEN_FILE
+
             )
 
-            msg = f"""
+            daily_stats["news"] += 1
+
+            send_telegram(f"""
 🚨 NSE ANNOUNCEMENT
 
 Stock:
@@ -483,13 +606,11 @@ Comment:
 
 Time:
 {ist_now().strftime('%H:%M:%S IST')}
-"""
-
-            send_telegram(msg)
+""")
 
         except Exception as e:
 
-            print("NSE Processing Error:", e)
+            print("NSE Parse Error:", e)
 
 # =========================================================
 # GOOGLE NEWS
@@ -512,7 +633,7 @@ def fetch_google_news(stock):
         return []
 
 # =========================================================
-# PROCESS INTERNET NEWS
+# INTERNET NEWS
 # =========================================================
 
 def process_internet_news():
@@ -544,7 +665,9 @@ def process_internet_news():
                             )
 
                         age = (
-                            datetime.now(timezone.utc)
+                            datetime.now(
+                                timezone.utc
+                            )
                             - published
                         )
 
@@ -568,7 +691,9 @@ def process_internet_news():
                         continue
 
                     unique_key = hashlib.md5(
+
                         f"{stock}-{headline}".encode()
+
                     ).hexdigest()
 
                     if unique_key in seen_alerts:
@@ -577,11 +702,15 @@ def process_internet_news():
                     seen_alerts.add(unique_key)
 
                     safe_json_dump(
+
                         list(seen_alerts),
                         SEEN_FILE
+
                     )
 
-                    msg = f"""
+                    daily_stats["news"] += 1
+
+                    send_telegram(f"""
 📰 INTERNET NEWS
 
 Stock:
@@ -595,9 +724,7 @@ Comment:
 
 Time:
 {ist_now().strftime('%H:%M:%S IST')}
-"""
-
-                    send_telegram(msg)
+""")
 
                 except Exception as e:
 
@@ -608,10 +735,379 @@ Time:
             print("Internet News Error:", e)
 
 # =========================================================
+# PRICE ALERTS
+# =========================================================
+
+def process_price_alerts(all_data):
+
+    today = ist_now().strftime("%Y-%m-%d")
+
+    for symbol, data in all_data.items():
+
+        try:
+
+            pchange = data["pchange"]
+
+            if pchange is None:
+                continue
+
+            if abs(pchange) < PRICE_ALERT_THRESHOLD:
+                continue
+
+            direction = (
+                "UP"
+                if pchange > 0
+                else "DOWN"
+            )
+
+            unique_key = (
+                f"{today}-{symbol}-{direction}"
+            )
+
+            if unique_key in seen_price_alerts:
+                continue
+
+            seen_price_alerts.add(unique_key)
+
+            safe_json_dump(
+
+                list(seen_price_alerts),
+                PRICE_FILE
+
+            )
+
+            daily_stats["price"] += 1
+
+            arrow = (
+                "📈"
+                if pchange > 0
+                else "📉"
+            )
+
+            send_telegram(f"""
+{arrow} PRICE ALERT
+
+Stock:
+{symbol}
+
+Change:
+{pchange:+.2f}%
+
+Price:
+₹{data['last_price']}
+
+High:
+₹{data['high']}
+
+Low:
+₹{data['low']}
+""")
+
+        except Exception as e:
+
+            print("Price Error:", e)
+
+# =========================================================
+# VOLUME SPIKE ALERTS
+# =========================================================
+
+def process_volume_alerts(all_data):
+
+    for symbol, data in all_data.items():
+
+        try:
+
+            volume = data["volume"]
+
+            if not volume:
+                continue
+
+            history = volume_history.get(
+                symbol,
+                []
+            )
+
+            if len(history) >= 10:
+
+                avg = sum(history) / len(history)
+
+                if (
+                    volume
+                    >= avg * VOLUME_SPIKE_MULTIPLIER
+                ):
+
+                    unique_key = (
+                        f"VOL-{symbol}-"
+                        f"{ist_now().strftime('%Y%m%d')}"
+                    )
+
+                    if unique_key not in seen_price_alerts:
+
+                        seen_price_alerts.add(
+                            unique_key
+                        )
+
+                        safe_json_dump(
+
+                            list(seen_price_alerts),
+                            PRICE_FILE
+
+                        )
+
+                        daily_stats["volume"] += 1
+
+                        send_telegram(f"""
+🔊 VOLUME SPIKE
+
+Stock:
+{symbol}
+
+Current Volume:
+{volume:,}
+
+Average:
+{int(avg):,}
+
+Spike:
+{volume/avg:.1f}x
+
+Price Change:
+{data['pchange']:+.2f}%
+""")
+
+            history.append(volume)
+
+            volume_history[symbol] = history[-10:]
+
+            safe_json_dump(
+
+                volume_history,
+                VOLUME_HISTORY_FILE
+
+            )
+
+        except Exception as e:
+
+            print("Volume Error:", e)
+
+# =========================================================
+# REAL CANDLE HELPERS
+# =========================================================
+
+def get_candle_key(minutes):
+
+    now = ist_now()
+
+    rounded = (
+        now.minute // minutes
+    ) * minutes
+
+    candle = now.replace(
+
+        minute=rounded,
+        second=0,
+        microsecond=0
+
+    )
+
+    return candle.strftime(
+        "%Y-%m-%d %H:%M"
+    )
+
+# =========================================================
+# REAL CANDLE ENGINE
+# =========================================================
+
+def process_real_candle_spikes(
+
+    all_data,
+    candle_store,
+    filename,
+    candle_minutes,
+    multiplier,
+    stats_key
+
+):
+
+    candle_key = get_candle_key(
+        candle_minutes
+    )
+
+    for symbol, data in all_data.items():
+
+        try:
+
+            volume = data["volume"]
+
+            if not volume:
+                continue
+
+            if symbol not in candle_store:
+
+                candle_store[symbol] = {}
+
+            candle_store[symbol][
+                candle_key
+            ] = volume
+
+            candles = sorted(
+
+                candle_store[symbol].items()
+
+            )
+
+            candles = candles[-30:]
+
+            candle_store[symbol] = dict(
+                candles
+            )
+
+            safe_json_dump(
+                candle_store,
+                filename
+            )
+
+            if len(candles) < 5:
+                continue
+
+            candle_volumes = []
+
+            for i in range(1, len(candles)):
+
+                prev_vol = candles[i-1][1]
+                curr_vol = candles[i][1]
+
+                cv = curr_vol - prev_vol
+
+                if cv > 0:
+                    candle_volumes.append(cv)
+
+            if len(candle_volumes) < 5:
+                continue
+
+            current_cv = candle_volumes[-1]
+
+            recent_avg = (
+
+                sum(candle_volumes[-10:])
+                / min(
+                    10,
+                    len(candle_volumes)
+                )
+
+            )
+
+            if recent_avg <= 0:
+                continue
+
+            spike_ratio = (
+                current_cv / recent_avg
+            )
+
+            if spike_ratio < multiplier:
+                continue
+
+            if (
+                abs(data["pchange"])
+                < REALTIME_PRICE_CONFIRMATION
+            ):
+                continue
+
+            unique_key = (
+                f"{candle_minutes}M-"
+                f"{symbol}-"
+                f"{candle_key}"
+            )
+
+            if unique_key in seen_price_alerts:
+                continue
+
+            seen_price_alerts.add(
+                unique_key
+            )
+
+            safe_json_dump(
+
+                list(seen_price_alerts),
+                PRICE_FILE
+
+            )
+
+            daily_stats[stats_key] += 1
+
+            direction = (
+                "📈"
+                if data["pchange"] > 0
+                else "📉"
+            )
+
+            send_telegram(f"""
+{direction} REAL {candle_minutes}-MIN SPIKE
+
+Stock:
+{symbol}
+
+Candle Volume:
+{current_cv:,}
+
+Average:
+{int(recent_avg):,}
+
+Spike:
+{spike_ratio:.1f}x
+
+Price Change:
+{data['pchange']:+.2f}%
+
+Price:
+₹{data['last_price']}
+
+Candle:
+{candle_key}
+""")
+
+        except Exception as e:
+
+            print(
+                f"{candle_minutes}m Error:",
+                e
+            )
+
+# =========================================================
+# DAILY SUMMARY
+# =========================================================
+
+def send_daily_summary():
+
+    send_telegram(f"""
+📊 DAILY SUMMARY
+
+News Alerts:
+{daily_stats['news']}
+
+Price Alerts:
+{daily_stats['price']}
+
+Volume Spikes:
+{daily_stats['volume']}
+
+5-Min Spikes:
+{daily_stats['5m']}
+
+15-Min Spikes:
+{daily_stats['15m']}
+
+Time:
+{ist_now().strftime('%Y-%m-%d %H:%M:%S IST')}
+""")
+
+# =========================================================
 # MAIN LOOP
 # =========================================================
 
 print("BOT STARTED")
+
+market_close_sent = False
 
 while True:
 
@@ -619,8 +1115,43 @@ while True:
 
         if not is_market_open():
 
-            time.sleep(300)
+            now = ist_now()
+
+            if (
+                now.hour >= MARKET_CLOSE[0]
+                and not market_close_sent
+            ):
+
+                send_daily_summary()
+
+                send_telegram(f"""
+📴 MARKET CLOSED
+
+Time:
+{now.strftime('%Y-%m-%d %H:%M:%S IST')}
+""")
+
+                market_close_sent = True
+
+            secs = seconds_until_next_market_open()
+
+            hrs = int(secs // 3600)
+            mins = int(
+                (secs % 3600) // 60
+            )
+
+            print(
+                f"Market Closed. "
+                f"Sleeping {hrs}h {mins}m"
+            )
+
+            time.sleep(
+                min(secs, 3600)
+            )
+
             continue
+
+        market_close_sent = False
 
         print(
             "\nNEW CYCLE:",
@@ -629,11 +1160,57 @@ while True:
             )
         )
 
+        # FETCH ONCE
         all_data = fetch_all_stock_data()
 
+        # NEWS
         process_nse_announcements()
 
         process_internet_news()
+
+        # PRICE
+        process_price_alerts(
+            all_data
+        )
+
+        # DAILY VOLUME
+        process_volume_alerts(
+            all_data
+        )
+
+        # REAL 5-MIN
+        process_real_candle_spikes(
+
+            all_data=all_data,
+
+            candle_store=candle_5m,
+
+            filename=CANDLE_5M_FILE,
+
+            candle_minutes=5,
+
+            multiplier=FIVE_MIN_SPIKE_MULTIPLIER,
+
+            stats_key="5m"
+
+        )
+
+        # REAL 15-MIN
+        process_real_candle_spikes(
+
+            all_data=all_data,
+
+            candle_store=candle_15m,
+
+            filename=CANDLE_15M_FILE,
+
+            candle_minutes=15,
+
+            multiplier=FIFTEEN_MIN_SPIKE_MULTIPLIER,
+
+            stats_key="15m"
+
+        )
 
     except Exception as e:
 
