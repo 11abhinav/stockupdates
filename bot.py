@@ -661,19 +661,37 @@ def process_breakout_alert(symbol, stock):
         if not prev_15m:
             return
 
-        price = safe_float(stock.get("price"))
+        prev_5m_high = safe_float(
+            prev_5m.get("high")
+        )
+
+        prev_10m_high = safe_float(
+            prev_10m.get("high")
+        )
+
+        prev_15m_high = safe_float(
+            prev_15m.get("high")
+        )
+
+        price = safe_float(
+            stock.get("price")
+        )
+
+        # =====================================================
+        # STRICT BREAKOUT FILTER
+        # =====================================================
 
         breakout = (
 
-            price > safe_float(prev_5m.get("high"))
+            price > (prev_5m_high + 0.05)
 
             and
 
-            price > safe_float(prev_10m.get("high"))
+            price > (prev_10m_high + 0.05)
 
             and
 
-            price > safe_float(prev_15m.get("high"))
+            price > (prev_15m_high + 0.05)
 
         )
 
@@ -695,16 +713,21 @@ def process_breakout_alert(symbol, stock):
             f"🚀 <b>MULTI CANDLE BREAKOUT</b>\n\n"
             f"<b>Stock:</b> {symbol}\n"
             f"<b>Price:</b> ₹{price:,.2f}\n\n"
-            f"✅ Above Previous 5m High\n"
-            f"✅ Above Previous 10m High\n"
-            f"✅ Above Previous 15m High"
+
+            f"<b>Previous Highs:</b>\n"
+            f"5m: ₹{prev_5m_high:,.2f}\n"
+            f"10m: ₹{prev_10m_high:,.2f}\n"
+            f"15m: ₹{prev_15m_high:,.2f}\n\n"
+
+            f"✅ Strong breakout confirmed"
         )
 
     except Exception as e:
 
         send_telegram(
             f"❌ BREAKOUT ERROR\n\n"
-            f"{symbol}\n\n{str(e)}"
+            f"{symbol}\n\n"
+            f"{str(e)}"
         )
 
 # =========================================================
@@ -753,27 +776,58 @@ def process_volume_breakout(symbol):
             sorted(current_15m_all.keys())[-1]
         ]
 
+        current_5m_vol = safe_int(
+            current_5m.get("volume")
+        )
+
+        prev_5m_vol = safe_int(
+            prev_5m.get("volume")
+        )
+
+        current_10m_vol = safe_int(
+            current_10m.get("volume")
+        )
+
+        prev_10m_vol = safe_int(
+            prev_10m.get("volume")
+        )
+
+        current_15m_vol = safe_int(
+            current_15m.get("volume")
+        )
+
+        prev_15m_vol = safe_int(
+            prev_15m.get("volume")
+        )
+
         breakout = (
 
-            safe_int(current_5m.get("volume"))
-            >
-            safe_int(prev_5m.get("volume"))
+            current_5m_vol > prev_5m_vol
 
             and
 
-            safe_int(current_10m.get("volume"))
-            >
-            safe_int(prev_10m.get("volume"))
+            current_10m_vol > prev_10m_vol
 
             and
 
-            safe_int(current_15m.get("volume"))
-            >
-            safe_int(prev_15m.get("volume"))
+            current_15m_vol > prev_15m_vol
 
         )
 
         if not breakout:
+            return
+
+        # =====================================================
+        # STRICT MOMENTUM FILTER
+        # =====================================================
+
+        if current_5m_vol < (prev_5m_vol * 1.20):
+            return
+
+        if current_10m_vol < (prev_10m_vol * 1.15):
+            return
+
+        if current_15m_vol < (prev_15m_vol * 1.10):
             return
 
         key = (
@@ -788,20 +842,28 @@ def process_volume_breakout(symbol):
         seen_alerts.add(key)
 
         send_telegram(
-            f"📊 <b>VOLUME BREAKOUT</b>\n\n"
+            f"📊 <b>STRICT VOLUME BREAKOUT</b>\n\n"
             f"<b>Stock:</b> {symbol}\n\n"
-            f"✅ 5m Volume Rising\n"
-            f"✅ 10m Volume Rising\n"
-            f"✅ 15m Volume Rising"
+
+            f"<b>5m:</b> "
+            f"{current_5m_vol:,} vs {prev_5m_vol:,}\n"
+
+            f"<b>10m:</b> "
+            f"{current_10m_vol:,} vs {prev_10m_vol:,}\n"
+
+            f"<b>15m:</b> "
+            f"{current_15m_vol:,} vs {prev_15m_vol:,}\n\n"
+
+            f"✅ Strong multi-timeframe volume expansion"
         )
 
     except Exception as e:
 
         send_telegram(
             f"❌ VOLUME ERROR\n\n"
-            f"{symbol}\n\n{str(e)}"
+            f"{symbol}\n\n"
+            f"{str(e)}"
         )
-
 # =========================================================
 # GOOGLE NEWS
 # =========================================================
