@@ -661,6 +661,39 @@ def process_breakout_alert(symbol, stock):
         if not prev_15m:
             return
 
+        # =====================================================
+        # CURRENT CANDLES
+        # =====================================================
+
+        current_5m_all = candles.get(symbol, {}).get("5m", {})
+        current_10m_all = candles.get(symbol, {}).get("10m", {})
+        current_15m_all = candles.get(symbol, {}).get("15m", {})
+
+        if not current_5m_all:
+            return
+
+        if not current_10m_all:
+            return
+
+        if not current_15m_all:
+            return
+
+        current_5m = current_5m_all[
+            sorted(current_5m_all.keys())[-1]
+        ]
+
+        current_10m = current_10m_all[
+            sorted(current_10m_all.keys())[-1]
+        ]
+
+        current_15m = current_15m_all[
+            sorted(current_15m_all.keys())[-1]
+        ]
+
+        # =====================================================
+        # PREVIOUS HIGHS
+        # =====================================================
+
         prev_5m_high = safe_float(
             prev_5m.get("high")
         )
@@ -673,30 +706,77 @@ def process_breakout_alert(symbol, stock):
             prev_15m.get("high")
         )
 
-        price = safe_float(
-            stock.get("price")
+        # =====================================================
+        # CURRENT CLOSES
+        # =====================================================
+
+        current_5m_close = safe_float(
+            current_5m.get("close")
+        )
+
+        current_10m_close = safe_float(
+            current_10m.get("close")
+        )
+
+        current_15m_close = safe_float(
+            current_15m.get("close")
         )
 
         # =====================================================
-        # STRICT BREAKOUT FILTER
+        # STRICT BREAKOUT LOGIC
         # =====================================================
 
         breakout = (
 
-            price > (prev_5m_high + 0.05)
+            current_5m_close > prev_5m_high
 
             and
 
-            price > (prev_10m_high + 0.05)
+            current_10m_close > prev_10m_high
 
             and
 
-            price > (prev_15m_high + 0.05)
+            current_15m_close > prev_15m_high
 
         )
 
         if not breakout:
             return
+
+        # =====================================================
+        # MINIMUM BREAKOUT %
+        # =====================================================
+
+        breakout_pct = (
+            (
+                current_5m_close
+                - prev_5m_high
+            )
+            / prev_5m_high
+        ) * 100
+
+        # minimum 0.40% breakout
+        if breakout_pct < 0.40:
+            return
+
+        # =====================================================
+        # VOLUME CONFIRMATION
+        # =====================================================
+
+        current_5m_vol = safe_int(
+            current_5m.get("volume")
+        )
+
+        prev_5m_vol = safe_int(
+            prev_5m.get("volume")
+        )
+
+        if current_5m_vol <= prev_5m_vol:
+            return
+
+        # =====================================================
+        # ONE ALERT PER 5M CANDLE
+        # =====================================================
 
         key = (
             f"BREAKOUT-"
@@ -710,16 +790,25 @@ def process_breakout_alert(symbol, stock):
         seen_alerts.add(key)
 
         send_telegram(
-            f"🚀 <b>MULTI CANDLE BREAKOUT</b>\n\n"
+            f"🚀 <b>STRONG BREAKOUT</b>\n\n"
+
             f"<b>Stock:</b> {symbol}\n"
-            f"<b>Price:</b> ₹{price:,.2f}\n\n"
+
+            f"<b>Breakout:</b> "
+            f"{breakout_pct:.2f}%\n\n"
+
+            f"<b>Current Close:</b>\n"
+            f"5m: ₹{current_5m_close:,.2f}\n"
+            f"10m: ₹{current_10m_close:,.2f}\n"
+            f"15m: ₹{current_15m_close:,.2f}\n\n"
 
             f"<b>Previous Highs:</b>\n"
             f"5m: ₹{prev_5m_high:,.2f}\n"
             f"10m: ₹{prev_10m_high:,.2f}\n"
             f"15m: ₹{prev_15m_high:,.2f}\n\n"
 
-            f"✅ Strong breakout confirmed"
+            f"✅ Volume Confirmed\n"
+            f"✅ Multi-timeframe Confirmed"
         )
 
     except Exception as e:
@@ -729,7 +818,6 @@ def process_breakout_alert(symbol, stock):
             f"{symbol}\n\n"
             f"{str(e)}"
         )
-
 # =========================================================
 # VOLUME BREAKOUT
 # =========================================================
