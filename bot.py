@@ -1,6 +1,6 @@
 # =========================================================
 # ADVANCED NSE MOMENTUM + VOLUME BREAKOUT TELEGRAM BOT
-# FINAL PROFESSIONAL VERSION
+# FINAL STABLE VERSION
 # =========================================================
 #
 # FEATURES
@@ -8,30 +8,30 @@
 #
 # ✅ Google News Alerts (24x7)
 # ✅ NSE Corporate Announcement Alerts (24x7)
-# ✅ 5m / 10m / 15m Rounded Candle Engine
-# ✅ Real OHLC Candle Builder
-# ✅ Day High Breakout Alerts
-# ✅ Previous Candle Breakout Alerts
-# ✅ ±3% Price Move Alerts
-# ✅ Volume Expansion Alerts
-# ✅ Railway Compatible
-# ✅ Telegram Exception Alerts
+# ✅ Real Rounded OHLC Candle Engine
+# ✅ 5m / 10m / 15m Candle Tracking
+# ✅ Multi Candle Breakout Detection
+# ✅ Day High Breakout Detection
+# ✅ ±3% Daily Move Alerts
+# ✅ Volume Expansion Detection
 # ✅ Duplicate Alert Prevention
+# ✅ Railway Compatible
+# ✅ Exception Reporting to Telegram
 # ✅ Persistent Candle Storage
 #
 # =========================================================
 # ALERT LOGIC
 # =========================================================
 #
-# 🚀 BREAKOUT ALERT
+# 🚀 MULTI CANDLE BREAKOUT
 #
 # Triggered when:
 #
-# current_price > previous_5m_high
-# AND
-# current_price > previous_10m_high
-# AND
-# current_price > previous_15m_high
+# Current price breaks:
+#
+# - previous 5m candle HIGH
+# - previous 10m candle HIGH
+# - previous 15m candle HIGH
 #
 # ---------------------------------------------------------
 #
@@ -39,7 +39,7 @@
 #
 # Triggered when:
 #
-# current_price >= current_day_high
+# Current price >= official NSE day high
 #
 # One alert per 5m candle.
 #
@@ -49,11 +49,13 @@
 #
 # Triggered when:
 #
-# stock moves above +3%
-# OR
-# below -3%
+# stock moves:
 #
-# versus previous close.
+# +3%
+# OR
+# -3%
+#
+# from previous close.
 #
 # ---------------------------------------------------------
 #
@@ -61,11 +63,18 @@
 #
 # Triggered when:
 #
-# current_5m_volume > previous_5m_volume
+# current 5m candle volume >
+# previous 5m candle volume
+#
 # AND
-# current_10m_volume > previous_10m_volume
+#
+# current 10m candle volume >
+# previous 10m candle volume
+#
 # AND
-# current_15m_volume > previous_15m_volume
+#
+# current 15m candle volume >
+# previous 15m candle volume
 #
 # ---------------------------------------------------------
 #
@@ -77,7 +86,7 @@
 #
 # 📈 MARKET ALERTS
 #
-# Run between:
+# Run ONLY during:
 #
 # 8:45 AM → 4:00 PM IST
 #
@@ -217,7 +226,7 @@ def save_json(data, filename):
     os.replace(tmp, filename)
 
 # =========================================================
-# STATE
+# LOAD STATE
 # =========================================================
 
 seen_alerts = set(load_json(SEEN_FILE, []))
@@ -414,7 +423,7 @@ def get_candle_time(now, minutes):
     )
 
 # =========================================================
-# UPDATE CANDLES
+# UPDATE OHLC CANDLES
 # =========================================================
 
 def update_candles(symbol, price, volume):
@@ -423,10 +432,7 @@ def update_candles(symbol, price, volume):
 
     for tf in [5, 10, 15]:
 
-        candle_time = get_candle_time(
-            now,
-            tf
-        )
+        candle_time = get_candle_time(now, tf)
 
         key = candle_time.strftime(
             "%Y-%m-%d %H:%M"
@@ -442,6 +448,10 @@ def update_candles(symbol, price, volume):
 
         data = candles[symbol][tf_key]
 
+        # =====================================================
+        # NEW CANDLE
+        # =====================================================
+
         if key not in data:
 
             data[key] = {
@@ -456,6 +466,10 @@ def update_candles(symbol, price, volume):
 
         candle = data[key]
 
+        # =====================================================
+        # UPDATE OHLC
+        # =====================================================
+
         candle["high"] = max(
             candle["high"],
             price
@@ -468,6 +482,10 @@ def update_candles(symbol, price, volume):
 
         candle["close"] = price
 
+        # =====================================================
+        # UPDATE VOLUME
+        # =====================================================
+
         delta = volume - candle.get(
             "last_total_volume",
             volume
@@ -478,7 +496,10 @@ def update_candles(symbol, price, volume):
 
         candle["last_total_volume"] = volume
 
-        # keep only latest 50 candles
+        # =====================================================
+        # KEEP LAST 50 CANDLES
+        # =====================================================
+
         keys = sorted(data.keys())
 
         if len(keys) > 50:
@@ -514,40 +535,50 @@ def get_previous_candle(symbol, tf):
 
 def process_price_move_alert(symbol, stock):
 
-    price = stock["price"]
+    try:
 
-    prev_close = stock["prev_close"]
+        price = stock["price"]
 
-    if prev_close <= 0:
-        return
+        prev_close = stock["prev_close"]
 
-    pchange = (
-        (price - prev_close)
-        / prev_close
-    ) * 100
+        if prev_close <= 0:
+            return
 
-    if abs(pchange) < PRICE_MOVE_THRESHOLD:
-        return
+        pchange = (
+            (price - prev_close)
+            / prev_close
+        ) * 100
 
-    direction = "UP" if pchange > 0 else "DOWN"
+        if abs(pchange) < PRICE_MOVE_THRESHOLD:
+            return
 
-    key = (
-        f"PRICE-"
-        f"{symbol}-"
-        f"{direction}"
-    )
+        direction = "UP" if pchange > 0 else "DOWN"
 
-    if key in seen_alerts:
-        return
+        key = (
+            f"PRICE-"
+            f"{symbol}-"
+            f"{direction}"
+        )
 
-    seen_alerts.add(key)
+        if key in seen_alerts:
+            return
 
-    send_telegram(
-        f"📈 <b>3% PRICE MOVE</b>\n\n"
-        f"<b>Stock:</b> {symbol}\n"
-        f"<b>Move:</b> {pchange:+.2f}%\n"
-        f"<b>Price:</b> ₹{price}"
-    )
+        seen_alerts.add(key)
+
+        send_telegram(
+            f"📈 <b>3% PRICE MOVE</b>\n\n"
+            f"<b>Stock:</b> {symbol}\n"
+            f"<b>Move:</b> {pchange:+.2f}%\n"
+            f"<b>Price:</b> ₹{price}"
+        )
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ PRICE ALERT ERROR\n\n"
+            f"{symbol}\n\n"
+            f"{str(e)}"
+        )
 
 # =========================================================
 # DAY HIGH BREAKOUT
@@ -555,90 +586,135 @@ def process_price_move_alert(symbol, stock):
 
 def process_day_high_breakout(symbol, stock):
 
-    price = stock["price"]
+    try:
 
-    day_high = stock["day_high"]
+        price = stock["price"]
 
-    if price < day_high:
-        return
+        day_high = stock["day_high"]
 
-    current_5m = get_candle_time(
-        ist_now(),
-        5
-    ).strftime("%Y-%m-%d %H:%M")
+        if price < day_high:
+            return
 
-    key = (
-        f"DAYHIGH-"
-        f"{symbol}-"
-        f"{current_5m}"
-    )
+        current_5m = get_candle_time(
+            ist_now(),
+            5
+        ).strftime("%Y-%m-%d %H:%M")
 
-    if key in seen_alerts:
-        return
+        key = (
+            f"DAYHIGH-"
+            f"{symbol}-"
+            f"{current_5m}"
+        )
 
-    seen_alerts.add(key)
+        if key in seen_alerts:
+            return
 
-    send_telegram(
-        f"🔥 <b>DAY HIGH BREAKOUT</b>\n\n"
-        f"<b>Stock:</b> {symbol}\n"
-        f"<b>Price:</b> ₹{price}\n"
-        f"<b>Day High:</b> ₹{day_high}"
-    )
+        seen_alerts.add(key)
+
+        send_telegram(
+            f"🔥 <b>DAY HIGH BREAKOUT</b>\n\n"
+            f"<b>Stock:</b> {symbol}\n"
+            f"<b>Price:</b> ₹{price}\n"
+            f"<b>Day High:</b> ₹{day_high}"
+        )
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ DAY HIGH ERROR\n\n"
+            f"{symbol}\n\n"
+            f"{str(e)}"
+        )
 
 # =========================================================
-# CANDLE BREAKOUT ALERT
+# MULTI CANDLE BREAKOUT
 # =========================================================
 
 def process_breakout_alert(symbol, stock):
 
-    prev_5m = get_previous_candle(symbol, 5)
-    prev_10m = get_previous_candle(symbol, 10)
-    prev_15m = get_previous_candle(symbol, 15)
+    try:
 
-    if not prev_5m:
-        return
+        prev_5m = get_previous_candle(symbol, 5)
+        prev_10m = get_previous_candle(symbol, 10)
+        prev_15m = get_previous_candle(symbol, 15)
 
-    if not prev_10m:
-        return
+        # =====================================================
+        # WARMUP PROTECTION
+        # =====================================================
 
-    if not prev_15m:
-        return
+        if not prev_5m:
+            return
 
-    price = stock["price"]
+        if not prev_10m:
+            return
 
-    breakout = (
+        if not prev_15m:
+            return
 
-        price > prev_5m["high"]
-        and
-        price > prev_10m["high"]
-        and
-        price > prev_15m["high"]
+        # =====================================================
+        # SAFETY CHECKS
+        # =====================================================
 
-    )
+        required = ["high"]
 
-    if not breakout:
-        return
+        for r in required:
 
-    key = (
-        f"BREAKOUT-"
-        f"{symbol}-"
-        f"{get_candle_time(ist_now(), 5)}"
-    )
+            if r not in prev_5m:
+                return
 
-    if key in seen_alerts:
-        return
+            if r not in prev_10m:
+                return
 
-    seen_alerts.add(key)
+            if r not in prev_15m:
+                return
 
-    send_telegram(
-        f"🚀 <b>MULTI CANDLE BREAKOUT</b>\n\n"
-        f"<b>Stock:</b> {symbol}\n"
-        f"<b>Price:</b> ₹{price}\n\n"
-        f"Above previous:\n"
-        f"✅ 5m High\n"
-        f"✅ 10m High\n"
-        f"✅ 15m High"
-    )
+        price = safe_float(stock.get("price"))
+
+        breakout = (
+
+            price > safe_float(prev_5m.get("high"))
+
+            and
+
+            price > safe_float(prev_10m.get("high"))
+
+            and
+
+            price > safe_float(prev_15m.get("high"))
+
+        )
+
+        if not breakout:
+            return
+
+        key = (
+            f"BREAKOUT-"
+            f"{symbol}-"
+            f"{get_candle_time(ist_now(), 5)}"
+        )
+
+        if key in seen_alerts:
+            return
+
+        seen_alerts.add(key)
+
+        send_telegram(
+            f"🚀 <b>MULTI CANDLE BREAKOUT</b>\n\n"
+            f"<b>Stock:</b> {symbol}\n"
+            f"<b>Price:</b> ₹{price}\n\n"
+            f"Above Previous:\n"
+            f"✅ 5m High\n"
+            f"✅ 10m High\n"
+            f"✅ 15m High"
+        )
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ BREAKOUT ERROR\n\n"
+            f"{symbol}\n\n"
+            f"{str(e)}"
+        )
 
 # =========================================================
 # VOLUME BREAKOUT
@@ -646,65 +722,95 @@ def process_breakout_alert(symbol, stock):
 
 def process_volume_breakout(symbol):
 
-    prev_5m = get_previous_candle(symbol, 5)
-    prev_10m = get_previous_candle(symbol, 10)
-    prev_15m = get_previous_candle(symbol, 15)
-
-    current_5m = candles[symbol]["5m"]
-    current_10m = candles[symbol]["10m"]
-    current_15m = candles[symbol]["15m"]
-
     try:
 
-        current_5m = current_5m[
-            sorted(current_5m.keys())[-1]
+        prev_5m = get_previous_candle(symbol, 5)
+        prev_10m = get_previous_candle(symbol, 10)
+        prev_15m = get_previous_candle(symbol, 15)
+
+        if not prev_5m:
+            return
+
+        if not prev_10m:
+            return
+
+        if not prev_15m:
+            return
+
+        current_5m_all = candles.get(symbol, {}).get("5m", {})
+        current_10m_all = candles.get(symbol, {}).get("10m", {})
+        current_15m_all = candles.get(symbol, {}).get("15m", {})
+
+        if not current_5m_all:
+            return
+
+        if not current_10m_all:
+            return
+
+        if not current_15m_all:
+            return
+
+        current_5m = current_5m_all[
+            sorted(current_5m_all.keys())[-1]
         ]
 
-        current_10m = current_10m[
-            sorted(current_10m.keys())[-1]
+        current_10m = current_10m_all[
+            sorted(current_10m_all.keys())[-1]
         ]
 
-        current_15m = current_15m[
-            sorted(current_15m.keys())[-1]
+        current_15m = current_15m_all[
+            sorted(current_15m_all.keys())[-1]
         ]
 
-    except:
-        return
+        breakout = (
 
-    if not (
-        current_5m["volume"] >
-        prev_5m["volume"]
+            safe_int(current_5m.get("volume"))
+            >
+            safe_int(prev_5m.get("volume"))
 
-        and
+            and
 
-        current_10m["volume"] >
-        prev_10m["volume"]
+            safe_int(current_10m.get("volume"))
+            >
+            safe_int(prev_10m.get("volume"))
 
-        and
+            and
 
-        current_15m["volume"] >
-        prev_15m["volume"]
-    ):
-        return
+            safe_int(current_15m.get("volume"))
+            >
+            safe_int(prev_15m.get("volume"))
 
-    key = (
-        f"VOLUME-"
-        f"{symbol}-"
-        f"{get_candle_time(ist_now(), 5)}"
-    )
+        )
 
-    if key in seen_alerts:
-        return
+        if not breakout:
+            return
 
-    seen_alerts.add(key)
+        key = (
+            f"VOLUME-"
+            f"{symbol}-"
+            f"{get_candle_time(ist_now(), 5)}"
+        )
 
-    send_telegram(
-        f"📊 <b>VOLUME BREAKOUT</b>\n\n"
-        f"<b>Stock:</b> {symbol}\n\n"
-        f"✅ 5m Volume Rising\n"
-        f"✅ 10m Volume Rising\n"
-        f"✅ 15m Volume Rising"
-    )
+        if key in seen_alerts:
+            return
+
+        seen_alerts.add(key)
+
+        send_telegram(
+            f"📊 <b>VOLUME BREAKOUT</b>\n\n"
+            f"<b>Stock:</b> {symbol}\n\n"
+            f"✅ 5m Volume Rising\n"
+            f"✅ 10m Volume Rising\n"
+            f"✅ 15m Volume Rising"
+        )
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ VOLUME ERROR\n\n"
+            f"{symbol}\n\n"
+            f"{str(e)}"
+        )
 
 # =========================================================
 # GOOGLE NEWS
@@ -774,6 +880,69 @@ def fetch_google_news():
             )
 
 # =========================================================
+# NSE ANNOUNCEMENTS
+# =========================================================
+
+def fetch_nse_announcements():
+
+    try:
+
+        url = (
+            "https://www.nseindia.com/api/"
+            "corporate-announcements?index=equities"
+        )
+
+        data = nse_get(url)
+
+        if not data:
+            return
+
+        for item in data:
+
+            try:
+
+                symbol = item.get("symbol", "")
+
+                if symbol not in WATCHLIST:
+                    continue
+
+                subject = item.get(
+                    "desc",
+                    item.get("subject", "")
+                )
+
+                an_dt = item.get("an_dt", "")
+
+                key = (
+                    f"NSE-"
+                    f"{symbol}-"
+                    f"{an_dt}-"
+                    f"{subject[:30]}"
+                )
+
+                if key in seen_alerts:
+                    continue
+
+                seen_alerts.add(key)
+
+                send_telegram(
+                    f"📢 <b>NSE ANNOUNCEMENT</b>\n\n"
+                    f"<b>Stock:</b> {symbol}\n"
+                    f"<b>Time:</b> {an_dt}\n"
+                    f"<b>Subject:</b> {subject}"
+                )
+
+            except:
+                pass
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ NSE ANNOUNCEMENT ERROR\n\n"
+            f"{str(e)}"
+        )
+
+# =========================================================
 # STARTUP MESSAGE
 # =========================================================
 
@@ -788,18 +957,26 @@ send_telegram(
 # MAIN LOOP
 # =========================================================
 
+last_news_scan = 0
+
 while True:
 
     try:
 
         # =====================================================
-        # NEWS 24x7
+        # NEWS + ANNOUNCEMENTS 24x7
         # =====================================================
 
-        fetch_google_news()
+        if time.time() - last_news_scan > 900:
+
+            fetch_google_news()
+
+            fetch_nse_announcements()
+
+            last_news_scan = time.time()
 
         # =====================================================
-        # MARKET HOURS ALERTS
+        # MARKET ALERTS
         # =====================================================
 
         if is_alert_hours():
@@ -807,6 +984,9 @@ while True:
             all_data = fetch_all_data()
 
             for symbol, stock in all_data.items():
+
+                if not stock:
+                    continue
 
                 update_candles(
                     symbol,
@@ -832,6 +1012,10 @@ while True:
                 process_volume_breakout(
                     symbol
                 )
+
+            # =================================================
+            # SAVE STATE
+            # =================================================
 
             save_json(
                 candles,
