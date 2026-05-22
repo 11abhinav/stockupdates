@@ -1,6 +1,5 @@
 # =========================================================
-# ADVANCED NSE MARKET INTELLIGENCE TELEGRAM BOT
-# FIXED + OPTIMIZED VERSION
+# ADVANCED NSE TELEGRAM ALERT BOT (FINAL FIXED VERSION)
 # =========================================================
 
 import os
@@ -16,7 +15,7 @@ from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # =========================================================
-# FLASK KEEPALIVE
+# FLASK KEEP ALIVE
 # =========================================================
 
 app = Flask(__name__)
@@ -38,7 +37,7 @@ threading.Thread(
 # =========================================================
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID   = os.environ.get("CHAT_ID")
+CHAT_ID = os.environ.get("CHAT_ID")
 
 # =========================================================
 # CONFIG
@@ -46,14 +45,12 @@ CHAT_ID   = os.environ.get("CHAT_ID")
 
 CHECK_INTERVAL = 60
 
-PRICE_ALERT_THRESHOLD = 1.5
+PRICE_ALERT_THRESHOLD = 1.0
 DAY_HIGH_BUFFER_PCT = 0.30
 
-DAILY_VOLUME_SPIKE = 1.8
-
-FIVE_MIN_SPIKE = 1.8
-TEN_MIN_SPIKE = 1.8
-FIFTEEN_MIN_SPIKE = 1.6
+FIVE_MIN_SPIKE = 1.4
+TEN_MIN_SPIKE = 1.4
+FIFTEEN_MIN_SPIKE = 1.3
 
 NEWS_MAX_AGE_HOURS = 12
 
@@ -100,19 +97,53 @@ CANDLE_10M_FILE = "candle_10m.json"
 CANDLE_15M_FILE = "candle_15m.json"
 
 # =========================================================
+# SAFE HELPERS
+# =========================================================
+
+def safe_int(v):
+
+    try:
+
+        if v in [None, "", "-", "None"]:
+            return 0
+
+        return int(float(v))
+
+    except:
+        return 0
+
+def safe_float(v):
+
+    try:
+
+        if v in [None, "", "-", "None"]:
+            return 0.0
+
+        return float(v)
+
+    except:
+        return 0.0
+
+# =========================================================
 # JSON HELPERS
 # =========================================================
 
 def load_json(filename, default):
+
     try:
+
         if os.path.exists(filename):
+
             with open(filename, "r") as f:
                 return json.load(f)
+
     except:
         pass
+
     return default
 
 def save_json(data, filename):
+
     tmp = filename + ".tmp"
 
     with open(tmp, "w") as f:
@@ -230,7 +261,8 @@ def nse_get(url):
 
             r = session.get(url, timeout=15)
 
-            if r.status_code in [401,403]:
+            if r.status_code in [401, 403]:
+
                 init_nse()
                 continue
 
@@ -270,19 +302,22 @@ def fetch_price_data(symbol):
 
         return {
             "symbol": symbol,
-            "price": p.get("lastPrice"),
-            "open": p.get("open"),
-            "prev": p.get("previousClose"),
-            "change": p.get("pChange"),
-            "high": intra.get("max"),
-            "low": intra.get("min"),
-            "volume": dp.get(
-                "quantityTraded",
-                p.get("totalTradedVolume")
+            "price": safe_float(p.get("lastPrice")),
+            "open": safe_float(p.get("open")),
+            "prev": safe_float(p.get("previousClose")),
+            "change": safe_float(p.get("pChange")),
+            "high": safe_float(intra.get("max")),
+            "low": safe_float(intra.get("min")),
+            "volume": safe_int(
+                dp.get(
+                    "quantityTraded",
+                    p.get("totalTradedVolume")
+                )
             )
         }
 
     except Exception as e:
+
         print(symbol, e)
 
     return None
@@ -312,6 +347,7 @@ def fetch_all_data():
                     result[data["symbol"]] = data
 
             except Exception as e:
+
                 print("FETCH ERROR:", e)
 
     return result
@@ -326,10 +362,7 @@ def process_price_alerts(all_data):
 
     for symbol, d in all_data.items():
 
-        pchange = d.get("change")
-
-        if pchange is None:
-            continue
+        pchange = safe_float(d.get("change"))
 
         if abs(pchange) < PRICE_ALERT_THRESHOLD:
             continue
@@ -356,8 +389,8 @@ def process_price_alerts(all_data):
             f"{icon} <b>PRICE ALERT</b>\n\n"
             f"<b>Stock:</b> {symbol}\n"
             f"<b>Move:</b> {pchange:+.2f}%\n"
-            f"<b>Price:</b> ₹{d['price']}\n"
-            f"<b>Volume:</b> {int(d['volume']):,}"
+            f"<b>Price:</b> ₹{safe_float(d.get('price'))}\n"
+            f"<b>Volume:</b> {safe_int(d.get('volume')):,}"
         )
 
 # =========================================================
@@ -370,14 +403,11 @@ def process_day_high(all_data):
 
     for symbol, d in all_data.items():
 
-        price = d.get("price")
-        high = d.get("high")
-        pchange = d.get("change")
+        price = safe_float(d.get("price"))
+        high = safe_float(d.get("high"))
+        pchange = safe_float(d.get("change"))
 
         if not price or not high:
-            continue
-
-        if pchange is None:
             continue
 
         if pchange < 1:
@@ -411,7 +441,7 @@ def process_day_high(all_data):
         )
 
 # =========================================================
-# REAL CANDLE BREAKOUTS
+# CANDLE BREAKOUTS
 # =========================================================
 
 def process_candle_breakout(
@@ -441,9 +471,9 @@ def process_candle_breakout(
 
     for symbol, d in all_data.items():
 
-        total_volume = d.get("volume")
+        total_volume = safe_int(d.get("volume"))
 
-        if not total_volume:
+        if total_volume <= 0:
             continue
 
         if symbol not in candle_store:
@@ -457,9 +487,8 @@ def process_candle_breakout(
 
         candles = store["candles"]
 
-        prev_total = store.get(
-            "last_volume",
-            total_volume
+        prev_total = safe_int(
+            store.get("last_volume")
         )
 
         delta = total_volume - prev_total
@@ -477,6 +506,7 @@ def process_candle_breakout(
         keys = sorted(candles.keys())
 
         if len(keys) > 50:
+
             for k in keys[:-50]:
                 del candles[k]
 
@@ -485,24 +515,32 @@ def process_candle_breakout(
         if len(values) < 3:
             continue
 
-        current = values[-1]
+        current = safe_int(values[-1])
 
-        previous = values[:-1]
+        previous = [
+            safe_int(v)
+            for v in values[:-1]
+        ]
 
-        avg = sum(previous) / len(previous)
+        avg = (
+            sum(previous) / len(previous)
+            if previous else 0
+        )
 
         if avg <= 0:
             continue
 
         spike = current / avg
 
-        pchange = d.get("change", 0)
+        pchange = safe_float(
+            d.get("change")
+        )
 
         print(
-            f"{symbol} "
-            f"| current={current} "
-            f"| avg={avg:.0f} "
-            f"| spike={spike:.2f}"
+            f"{symbol} | "
+            f"current={current} | "
+            f"avg={safe_int(avg)} | "
+            f"spike={spike:.2f}"
         )
 
         if spike < multiplier:
@@ -530,9 +568,9 @@ def process_candle_breakout(
             f"<b>Stock:</b> {symbol}\n"
             f"<b>Spike:</b> {spike:.2f}x\n"
             f"<b>Price Change:</b> {pchange:+.2f}%\n"
-            f"<b>Price:</b> ₹{d['price']}\n"
-            f"<b>Candle Vol:</b> {int(current):,}\n"
-            f"<b>Avg Vol:</b> {int(avg):,}"
+            f"<b>Price:</b> ₹{safe_float(d.get('price'))}\n"
+            f"<b>Candle Vol:</b> {safe_int(current):,}\n"
+            f"<b>Avg Vol:</b> {safe_int(avg):,}"
         )
 
     save_json(candle_store, filename)
@@ -552,11 +590,11 @@ def fetch_google_news():
 
         try:
 
-            q = f"{symbol} NSE India"
+            query = f"{symbol} NSE India"
 
             rss = (
                 "https://news.google.com/rss/search?q="
-                f"{requests.utils.quote(q)}"
+                f"{requests.utils.quote(query)}"
                 "&hl=en-IN&gl=IN&ceid=IN:en"
             )
 
@@ -569,8 +607,10 @@ def fetch_google_news():
                 pub = entry.get("published", "")
 
                 try:
+
                     dt = parsedate_to_datetime(pub)
                     dt = dt.astimezone(IST)
+
                 except:
                     continue
 
@@ -599,6 +639,7 @@ def fetch_google_news():
                 )
 
         except Exception as e:
+
             print("NEWS ERROR:", e)
 
 # =========================================================
@@ -655,6 +696,11 @@ while True:
 
             print(
                 f"FETCHED {len(all_data)} STOCKS"
+            )
+
+            send_telegram(
+                f"DEBUG\n"
+                f"Fetched {len(all_data)} stocks"
             )
 
             if not all_data:
