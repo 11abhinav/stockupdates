@@ -1,6 +1,6 @@
 # =========================================================
-# ADVANCED NSE MARKET INTELLIGENCE TELEGRAM BOT
-# FINAL PRODUCTION VERSION
+# ADVANCED NSE MOMENTUM + VOLUME BREAKOUT TELEGRAM BOT
+# FINAL PROFESSIONAL VERSION
 # =========================================================
 #
 # FEATURES
@@ -8,60 +8,78 @@
 #
 # ✅ Google News Alerts (24x7)
 # ✅ NSE Corporate Announcement Alerts (24x7)
-# ✅ Price Breakout Alerts
+# ✅ 5m / 10m / 15m Rounded Candle Engine
+# ✅ Real OHLC Candle Builder
 # ✅ Day High Breakout Alerts
-# ✅ 5-Minute Volume Spike Alerts
-# ✅ 10-Minute Volume Spike Alerts
-# ✅ 15-Minute Volume Spike Alerts
-# ✅ Railway Hosting Compatible
-# ✅ Telegram Error Reporting
+# ✅ Previous Candle Breakout Alerts
+# ✅ ±3% Price Move Alerts
+# ✅ Volume Expansion Alerts
+# ✅ Railway Compatible
+# ✅ Telegram Exception Alerts
 # ✅ Duplicate Alert Prevention
-# ✅ Automatic NSE Cookie Refresh
-# ✅ Parallel NSE Fetching
-# ✅ Safe Handling of Invalid NSE Data
+# ✅ Persistent Candle Storage
+#
+# =========================================================
+# ALERT LOGIC
+# =========================================================
+#
+# 🚀 BREAKOUT ALERT
+#
+# Triggered when:
+#
+# current_price > previous_5m_high
+# AND
+# current_price > previous_10m_high
+# AND
+# current_price > previous_15m_high
 #
 # ---------------------------------------------------------
-# ALERT TIMINGS
-# ---------------------------------------------------------
 #
-# 📰 NEWS + NSE ANNOUNCEMENTS:
-#     RUNS 24x7
+# 🔥 DAY HIGH BREAKOUT
 #
-# 📈 PRICE + VOLUME ALERTS:
-#     8:45 AM → 4:00 PM IST
+# Triggered when:
 #
-# ---------------------------------------------------------
-# HOW VOLUME BREAKOUT WORKS
-# ---------------------------------------------------------
+# current_price >= current_day_high
 #
-# NSE gives cumulative volume.
-#
-# Bot estimates candle volume using:
-#
-# current_total_volume - previous_total_volume
-#
-# Then compares:
-#
-# current candle volume
-# VS
-# average previous candles
-#
-# If spike ratio exceeds threshold:
-#
-# alert is triggered.
+# One alert per 5m candle.
 #
 # ---------------------------------------------------------
-# IMPORTANT NOTE
+#
+# 📈 PRICE MOVE ALERT
+#
+# Triggered when:
+#
+# stock moves above +3%
+# OR
+# below -3%
+#
+# versus previous close.
+#
 # ---------------------------------------------------------
 #
-# NSE API is unofficial.
+# 📊 VOLUME BREAKOUT
 #
-# Sometimes:
-# - volume may lag
-# - Railway IP may get throttled
-# - cached responses may occur
+# Triggered when:
 #
-# So volume breakout alerts depend on NSE API quality.
+# current_5m_volume > previous_5m_volume
+# AND
+# current_10m_volume > previous_10m_volume
+# AND
+# current_15m_volume > previous_15m_volume
+#
+# ---------------------------------------------------------
+#
+# 📰 NEWS + NSE ANNOUNCEMENTS
+#
+# Runs 24x7
+#
+# ---------------------------------------------------------
+#
+# 📈 MARKET ALERTS
+#
+# Run between:
+#
+# 8:45 AM → 4:00 PM IST
 #
 # =========================================================
 
@@ -78,19 +96,14 @@ from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # =========================================================
-# FLASK KEEP ALIVE SERVER
-# =========================================================
-#
-# Railway requires an active web service.
-# This lightweight Flask server keeps the app alive.
-#
+# FLASK SERVER
 # =========================================================
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "NSE BOT RUNNING ✅", 200
+    return "BOT RUNNING ✅", 200
 
 threading.Thread(
     target=lambda: app.run(
@@ -101,45 +114,23 @@ threading.Thread(
 ).start()
 
 # =========================================================
-# TELEGRAM ENV VARIABLES
+# ENV
 # =========================================================
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
 # =========================================================
-# CONFIGURATION
+# CONFIG
 # =========================================================
 
 CHECK_INTERVAL = 60
 
-# Price alert threshold (%)
-PRICE_ALERT_THRESHOLD = 1.0
+PRICE_MOVE_THRESHOLD = 3.0
 
-# Near day high %
-DAY_HIGH_BUFFER_PCT = 0.30
-
-# Volume breakout multipliers
-FIVE_MIN_SPIKE = 1.4
-TEN_MIN_SPIKE = 1.4
-FIFTEEN_MIN_SPIKE = 1.3
-
-# Ignore news older than this
 NEWS_MAX_AGE_MINUTES = 60
 
-# =========================================================
-# TIMEZONE
-# =========================================================
-
 IST = timezone(timedelta(hours=5, minutes=30))
-
-# =========================================================
-# MARKET ALERT TIMINGS
-# =========================================================
-#
-# Price + volume alerts ONLY during these hours.
-#
-# =========================================================
 
 ALERT_START = (8, 45)
 ALERT_END = (16, 0)
@@ -149,61 +140,30 @@ ALERT_END = (16, 0)
 # =========================================================
 
 WATCHLIST = sorted(list(set([
-    "ADANIENT","ADANIGREEN","ADANIPORTS","AKZOINDIA",
-    "ATGL","AFCONS","ATL","ANANTRAJ","ANTHEM",
-    "ARIHANTCAP","ASIANPAINT","BAJAJFINSV","BEL",
-    "BLUEDART","BLS","CASTROLIND","CGPOWER","CLEAN",
-    "DBL","EIDPARRY","FILATEX","FORTIS","GILLETTE",
-    "GLOBUSSPR","GSFC","HDFCBANK","HINDCOPPER",
-    "HINDUNILVR","HYUNDAI","ITBEES","ICICIAMC",
-    "ICICIBANK","IDBI","IFCI","INDUSTOWER","CCAVENUE",
-    "INFY","IRB","IRCTC","JIOFIN","JPASSOCIAT",
-    "JSWENERGY","KWIL","LATENTVIEW","LGEINDIA",
-    "LOTUSDEV","LLOYDSENGG","LT","MARUTI","MAZDOCK",
-    "MIRZAINT","MENONPISTONS","NATCOPHARM","ONGC",
-    "ORIENTCEM","PIDILITIND","POONAWALLA","PVRINOX",
-    "RTNPOWER","RELIANCE","RELINFRA","RVNL",
-    "SANGHIIND","SBIN","SRHHYPOLTD","SUVIDHA",
-    "SUPREMEIND","SUZLON","SWIGGY","SYMPHONY",
-    "TATATECH","TITAN","TRENT","VBL"
+    "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA", "ATGL", "AFCONS", "ATL",
+    "ANANTRAJ", "ANTHEM", "ARIHANTCAP", "ASIANPAINT", "BAJAJFINSV", "BEL",
+    "BLUEDART", "BLS", "CASTROLIND", "CGPOWER", "CLEAN", "DBL", "EIDPARRY",
+    "FILATEX", "FORTIS", "GILLETTE", "GLOBUSSPR", "GSFC", "HDFCBANK",
+    "HINDCOPPER", "HINDUNILVR", "HYUNDAI", "ITBEES", "ICICIAMC", "ICICIBANK",
+    "IDBI", "IFCI", "INDUSTOWER", "CCAVENUE", "INFY", "IRB", "IRCTC", "JIOFIN",
+    "JPASSOCIAT", "JSWENERGY", "KWIL", "LATENTVIEW", "LGEINDIA", "LOTUSDEV",
+    "LLOYDSENGG", "LT", "MARUTI", "MAZDOCK", "MENONPISTONS", "MIRZAINT",
+    "NATCOPHARM", "ONGC", "ORIENTCEM", "PFC", "PIDILITIND", "POONAWALLA",
+    "PVRINOX", "RTNPOWER", "RELIANCE", "RELINFRA", "RVNL", "SANGHIIND",
+    "SBIN", "SRHHYPOLTD", "SUVIDHA", "SUPREMEIND", "SUZLON", "SWIGGY",
+    "SYMPHONY", "TATATECH", "TITAN", "TRENT", "VBL"
 ])))
 
 # =========================================================
-# STATE FILES
+# FILES
 # =========================================================
 
 SEEN_FILE = "seen_alerts.json"
-PRICE_FILE = "seen_price_alerts.json"
-
-CANDLE_5M_FILE = "candle_5m.json"
-CANDLE_10M_FILE = "candle_10m.json"
-CANDLE_15M_FILE = "candle_15m.json"
+CANDLES_FILE = "candles.json"
 
 # =========================================================
 # SAFE HELPERS
 # =========================================================
-#
-# NSE sometimes returns:
-#
-# - None
-# - ""
-# - "-"
-#
-# These helpers safely handle invalid data.
-#
-# =========================================================
-
-def safe_int(v):
-
-    try:
-
-        if v in [None, "", "-", "None"]:
-            return 0
-
-        return int(float(v))
-
-    except:
-        return 0
 
 def safe_float(v):
 
@@ -216,6 +176,18 @@ def safe_float(v):
 
     except:
         return 0.0
+
+def safe_int(v):
+
+    try:
+
+        if v in [None, "", "-", "None"]:
+            return 0
+
+        return int(float(v))
+
+    except:
+        return 0
 
 # =========================================================
 # JSON HELPERS
@@ -245,19 +217,12 @@ def save_json(data, filename):
     os.replace(tmp, filename)
 
 # =========================================================
-# LOAD STATE
+# STATE
 # =========================================================
 
 seen_alerts = set(load_json(SEEN_FILE, []))
-seen_price_alerts = set(load_json(PRICE_FILE, []))
 
-# Prevent huge JSON growth
-if len(seen_alerts) > 5000:
-    seen_alerts = set(list(seen_alerts)[-2000:])
-
-candle_5m = load_json(CANDLE_5M_FILE, {})
-candle_10m = load_json(CANDLE_10M_FILE, {})
-candle_15m = load_json(CANDLE_15M_FILE, {})
+candles = load_json(CANDLES_FILE, {})
 
 # =========================================================
 # TIME HELPERS
@@ -278,7 +243,7 @@ def is_alert_hours():
     return ALERT_START <= t < ALERT_END
 
 # =========================================================
-# TELEGRAM SENDER
+# TELEGRAM
 # =========================================================
 
 def send_telegram(msg):
@@ -304,27 +269,20 @@ def send_telegram(msg):
 # =========================================================
 # NSE SESSION
 # =========================================================
-#
-# NSE blocks requests without cookies/user-agent.
-#
-# =========================================================
 
 session = requests.Session()
 
 session.headers.update({
-    "User-Agent":
-    "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0"
 })
 
 def init_nse():
 
     try:
-
         session.get(
             "https://www.nseindia.com",
             timeout=10
         )
-
     except:
         pass
 
@@ -338,7 +296,6 @@ def nse_get(url):
 
             r = session.get(url, timeout=15)
 
-            # NSE cookie expired
             if r.status_code in [401, 403]:
 
                 init_nse()
@@ -348,7 +305,7 @@ def nse_get(url):
 
             return r.json()
 
-        except Exception:
+        except:
 
             time.sleep(2)
 
@@ -358,7 +315,7 @@ def nse_get(url):
 # FETCH STOCK DATA
 # =========================================================
 
-def fetch_price_data(symbol):
+def fetch_stock(symbol):
 
     try:
 
@@ -383,20 +340,11 @@ def fetch_price_data(symbol):
             "price":
                 safe_float(p.get("lastPrice")),
 
-            "open":
-                safe_float(p.get("open")),
-
-            "prev":
+            "prev_close":
                 safe_float(p.get("previousClose")),
 
-            "change":
-                safe_float(p.get("pChange")),
-
-            "high":
+            "day_high":
                 safe_float(intra.get("max")),
-
-            "low":
-                safe_float(intra.get("min")),
 
             "volume":
                 safe_int(
@@ -411,17 +359,13 @@ def fetch_price_data(symbol):
 
         send_telegram(
             f"❌ FETCH ERROR\n\n"
-            f"{symbol}\n\n{str(e)}"
+            f"{symbol}\n{str(e)}"
         )
 
     return None
 
 # =========================================================
-# PARALLEL FETCHING
-# =========================================================
-#
-# Speeds up NSE data collection.
-#
+# PARALLEL FETCH
 # =========================================================
 
 def fetch_all_data():
@@ -431,7 +375,7 @@ def fetch_all_data():
     with ThreadPoolExecutor(max_workers=10) as executor:
 
         futures = {
-            executor.submit(fetch_price_data, s): s
+            executor.submit(fetch_stock, s): s
             for s in WATCHLIST
         }
 
@@ -454,215 +398,316 @@ def fetch_all_data():
     return result
 
 # =========================================================
-# PRICE ALERTS
+# ROUNDED CANDLE TIME
 # =========================================================
 
-def process_price_alerts(all_data):
-
-    today = ist_now().strftime("%Y-%m-%d")
-
-    for symbol, d in all_data.items():
-
-        pchange = safe_float(d.get("change"))
-
-        if abs(pchange) < PRICE_ALERT_THRESHOLD:
-            continue
-
-        direction = "UP" if pchange > 0 else "DOWN"
-
-        key = f"{today}-PRICE-{symbol}-{direction}"
-
-        if key in seen_price_alerts:
-            continue
-
-        seen_price_alerts.add(key)
-
-        save_json(
-            list(seen_price_alerts),
-            PRICE_FILE
-        )
-
-        icon = "📈" if pchange > 0 else "📉"
-
-        send_telegram(
-            f"{icon} <b>PRICE ALERT</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n"
-            f"<b>Move:</b> {pchange:+.2f}%\n"
-            f"<b>Price:</b> ₹{safe_float(d.get('price'))}\n"
-            f"<b>Volume:</b> {safe_int(d.get('volume')):,}"
-        )
-
-# =========================================================
-# DAY HIGH BREAKOUT ALERTS
-# =========================================================
-
-def process_day_high(all_data):
-
-    today = ist_now().strftime("%Y-%m-%d")
-
-    for symbol, d in all_data.items():
-
-        price = safe_float(d.get("price"))
-        high = safe_float(d.get("high"))
-        pchange = safe_float(d.get("change"))
-
-        if not price or not high:
-            continue
-
-        if pchange < 1:
-            continue
-
-        gap = abs(high - price) / high * 100
-
-        if gap > DAY_HIGH_BUFFER_PCT:
-            continue
-
-        key = f"{today}-HIGH-{symbol}"
-
-        if key in seen_price_alerts:
-            continue
-
-        seen_price_alerts.add(key)
-
-        save_json(
-            list(seen_price_alerts),
-            PRICE_FILE
-        )
-
-        send_telegram(
-            f"🚀 <b>DAY HIGH BREAKOUT</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n"
-            f"<b>Price:</b> ₹{price}\n"
-            f"<b>Day High:</b> ₹{high}\n"
-            f"<b>Move:</b> {pchange:+.2f}%"
-        )
-
-# =========================================================
-# VOLUME BREAKOUT ENGINE
-# =========================================================
-
-def process_candle_breakout(
-    all_data,
-    candle_store,
-    filename,
-    candle_minutes,
-    multiplier
-):
-
-    now = ist_now()
+def get_candle_time(now, minutes):
 
     rounded = (
-        now.minute // candle_minutes
-    ) * candle_minutes
+        now.minute // minutes
+    ) * minutes
 
-    candle_time = now.replace(
+    return now.replace(
         minute=rounded,
         second=0,
         microsecond=0
     )
 
-    candle_key = candle_time.strftime(
-        "%Y-%m-%d %H:%M"
-    )
+# =========================================================
+# UPDATE CANDLES
+# =========================================================
 
-    for symbol, d in all_data.items():
+def update_candles(symbol, price, volume):
 
-        total_volume = safe_int(d.get("volume"))
+    now = ist_now()
 
-        if total_volume <= 0:
-            continue
+    for tf in [5, 10, 15]:
 
-        if symbol not in candle_store:
-
-            candle_store[symbol] = {
-                "candles": {},
-                "last_volume": total_volume
-            }
-
-        store = candle_store[symbol]
-
-        candles = store["candles"]
-
-        prev_total = safe_int(
-            store.get("last_volume")
+        candle_time = get_candle_time(
+            now,
+            tf
         )
 
-        delta = total_volume - prev_total
+        key = candle_time.strftime(
+            "%Y-%m-%d %H:%M"
+        )
 
-        if delta < 0:
-            delta = 0
+        tf_key = f"{tf}m"
 
-        if candle_key not in candles:
-            candles[candle_key] = delta
-        else:
-            candles[candle_key] += delta
+        if symbol not in candles:
+            candles[symbol] = {}
 
-        store["last_volume"] = total_volume
+        if tf_key not in candles[symbol]:
+            candles[symbol][tf_key] = {}
 
-        keys = sorted(candles.keys())
+        data = candles[symbol][tf_key]
+
+        if key not in data:
+
+            data[key] = {
+
+                "open": price,
+                "high": price,
+                "low": price,
+                "close": price,
+                "volume": 0,
+                "last_total_volume": volume
+            }
+
+        candle = data[key]
+
+        candle["high"] = max(
+            candle["high"],
+            price
+        )
+
+        candle["low"] = min(
+            candle["low"],
+            price
+        )
+
+        candle["close"] = price
+
+        delta = volume - candle.get(
+            "last_total_volume",
+            volume
+        )
+
+        if delta > 0:
+            candle["volume"] += delta
+
+        candle["last_total_volume"] = volume
+
+        # keep only latest 50 candles
+        keys = sorted(data.keys())
 
         if len(keys) > 50:
 
             for k in keys[:-50]:
-                del candles[k]
-
-        values = list(candles.values())
-
-        # Need warmup candles
-        if len(values) < 3:
-            continue
-
-        current = safe_int(values[-1])
-
-        previous = [
-            safe_int(v)
-            for v in values[:-1]
-        ]
-
-        avg = (
-            sum(previous) / len(previous)
-            if previous else 0
-        )
-
-        if avg <= 0:
-            continue
-
-        spike = current / avg
-
-        if spike < multiplier:
-            continue
-
-        key = f"{candle_minutes}-{symbol}-{candle_key}"
-
-        if key in seen_price_alerts:
-            continue
-
-        seen_price_alerts.add(key)
-
-        save_json(
-            list(seen_price_alerts),
-            PRICE_FILE
-        )
-
-        pchange = safe_float(d.get("change"))
-
-        icon = "📈" if pchange >= 0 else "📉"
-
-        send_telegram(
-            f"{icon} "
-            f"<b>{candle_minutes}M VOLUME BREAKOUT</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n"
-            f"<b>Spike:</b> {spike:.2f}x\n"
-            f"<b>Price Change:</b> {pchange:+.2f}%\n"
-            f"<b>Price:</b> ₹{safe_float(d.get('price'))}\n"
-            f"<b>Candle Vol:</b> {safe_int(current):,}\n"
-            f"<b>Avg Vol:</b> {safe_int(avg):,}"
-        )
-
-    save_json(candle_store, filename)
+                del data[k]
 
 # =========================================================
-# GOOGLE NEWS ALERTS
+# GET PREVIOUS CLOSED CANDLE
+# =========================================================
+
+def get_previous_candle(symbol, tf):
+
+    tf_key = f"{tf}m"
+
+    try:
+
+        data = candles[symbol][tf_key]
+
+        keys = sorted(data.keys())
+
+        if len(keys) < 2:
+            return None
+
+        return data[keys[-2]]
+
+    except:
+        return None
+
+# =========================================================
+# PRICE MOVE ALERT
+# =========================================================
+
+def process_price_move_alert(symbol, stock):
+
+    price = stock["price"]
+
+    prev_close = stock["prev_close"]
+
+    if prev_close <= 0:
+        return
+
+    pchange = (
+        (price - prev_close)
+        / prev_close
+    ) * 100
+
+    if abs(pchange) < PRICE_MOVE_THRESHOLD:
+        return
+
+    direction = "UP" if pchange > 0 else "DOWN"
+
+    key = (
+        f"PRICE-"
+        f"{symbol}-"
+        f"{direction}"
+    )
+
+    if key in seen_alerts:
+        return
+
+    seen_alerts.add(key)
+
+    send_telegram(
+        f"📈 <b>3% PRICE MOVE</b>\n\n"
+        f"<b>Stock:</b> {symbol}\n"
+        f"<b>Move:</b> {pchange:+.2f}%\n"
+        f"<b>Price:</b> ₹{price}"
+    )
+
+# =========================================================
+# DAY HIGH BREAKOUT
+# =========================================================
+
+def process_day_high_breakout(symbol, stock):
+
+    price = stock["price"]
+
+    day_high = stock["day_high"]
+
+    if price < day_high:
+        return
+
+    current_5m = get_candle_time(
+        ist_now(),
+        5
+    ).strftime("%Y-%m-%d %H:%M")
+
+    key = (
+        f"DAYHIGH-"
+        f"{symbol}-"
+        f"{current_5m}"
+    )
+
+    if key in seen_alerts:
+        return
+
+    seen_alerts.add(key)
+
+    send_telegram(
+        f"🔥 <b>DAY HIGH BREAKOUT</b>\n\n"
+        f"<b>Stock:</b> {symbol}\n"
+        f"<b>Price:</b> ₹{price}\n"
+        f"<b>Day High:</b> ₹{day_high}"
+    )
+
+# =========================================================
+# CANDLE BREAKOUT ALERT
+# =========================================================
+
+def process_breakout_alert(symbol, stock):
+
+    prev_5m = get_previous_candle(symbol, 5)
+    prev_10m = get_previous_candle(symbol, 10)
+    prev_15m = get_previous_candle(symbol, 15)
+
+    if not prev_5m:
+        return
+
+    if not prev_10m:
+        return
+
+    if not prev_15m:
+        return
+
+    price = stock["price"]
+
+    breakout = (
+
+        price > prev_5m["high"]
+        and
+        price > prev_10m["high"]
+        and
+        price > prev_15m["high"]
+
+    )
+
+    if not breakout:
+        return
+
+    key = (
+        f"BREAKOUT-"
+        f"{symbol}-"
+        f"{get_candle_time(ist_now(), 5)}"
+    )
+
+    if key in seen_alerts:
+        return
+
+    seen_alerts.add(key)
+
+    send_telegram(
+        f"🚀 <b>MULTI CANDLE BREAKOUT</b>\n\n"
+        f"<b>Stock:</b> {symbol}\n"
+        f"<b>Price:</b> ₹{price}\n\n"
+        f"Above previous:\n"
+        f"✅ 5m High\n"
+        f"✅ 10m High\n"
+        f"✅ 15m High"
+    )
+
+# =========================================================
+# VOLUME BREAKOUT
+# =========================================================
+
+def process_volume_breakout(symbol):
+
+    prev_5m = get_previous_candle(symbol, 5)
+    prev_10m = get_previous_candle(symbol, 10)
+    prev_15m = get_previous_candle(symbol, 15)
+
+    current_5m = candles[symbol]["5m"]
+    current_10m = candles[symbol]["10m"]
+    current_15m = candles[symbol]["15m"]
+
+    try:
+
+        current_5m = current_5m[
+            sorted(current_5m.keys())[-1]
+        ]
+
+        current_10m = current_10m[
+            sorted(current_10m.keys())[-1]
+        ]
+
+        current_15m = current_15m[
+            sorted(current_15m.keys())[-1]
+        ]
+
+    except:
+        return
+
+    if not (
+        current_5m["volume"] >
+        prev_5m["volume"]
+
+        and
+
+        current_10m["volume"] >
+        prev_10m["volume"]
+
+        and
+
+        current_15m["volume"] >
+        prev_15m["volume"]
+    ):
+        return
+
+    key = (
+        f"VOLUME-"
+        f"{symbol}-"
+        f"{get_candle_time(ist_now(), 5)}"
+    )
+
+    if key in seen_alerts:
+        return
+
+    seen_alerts.add(key)
+
+    send_telegram(
+        f"📊 <b>VOLUME BREAKOUT</b>\n\n"
+        f"<b>Stock:</b> {symbol}\n\n"
+        f"✅ 5m Volume Rising\n"
+        f"✅ 10m Volume Rising\n"
+        f"✅ 15m Volume Rising"
+    )
+
+# =========================================================
+# GOOGLE NEWS
 # =========================================================
 
 def fetch_google_news():
@@ -685,6 +730,7 @@ def fetch_google_news():
 
                 title = entry.get("title", "")
                 link = entry.get("link", "")
+
                 pub = entry.get("published", "")
 
                 try:
@@ -695,22 +741,16 @@ def fetch_google_news():
                 except:
                     continue
 
-                # Ignore previous-day news
-                if dt.date() != ist_now().date():
-                    continue
-
                 age_minutes = (
                     ist_now() - dt
                 ).total_seconds() / 60
 
-                # Ignore old news
                 if age_minutes > NEWS_MAX_AGE_MINUTES:
                     continue
 
                 key = (
                     f"NEWS-"
                     f"{symbol}-"
-                    f"{dt.strftime('%Y%m%d%H')}-"
                     f"{title[:40]}"
                 )
 
@@ -718,11 +758,6 @@ def fetch_google_news():
                     continue
 
                 seen_alerts.add(key)
-
-                save_json(
-                    list(seen_alerts),
-                    SEEN_FILE
-                )
 
                 send_telegram(
                     f"📰 <b>NEWS ALERT</b>\n\n"
@@ -734,83 +769,16 @@ def fetch_google_news():
         except Exception as e:
 
             send_telegram(
-                f"❌ NEWS ERROR\n\n{str(e)}"
+                f"❌ NEWS ERROR\n\n"
+                f"{str(e)}"
             )
-
-# =========================================================
-# NSE CORPORATE ANNOUNCEMENTS
-# =========================================================
-
-def fetch_nse_announcements():
-
-    try:
-
-        url = (
-            "https://www.nseindia.com/api/"
-            "corporate-announcements?index=equities"
-        )
-
-        data = nse_get(url)
-
-        if not data:
-            return
-
-        for item in data:
-
-            try:
-
-                symbol = item.get("symbol", "")
-
-                if symbol not in WATCHLIST:
-                    continue
-
-                subject = item.get(
-                    "desc",
-                    item.get("subject", "")
-                )
-
-                an_dt = item.get("an_dt", "")
-
-                key = (
-                    f"NSE-"
-                    f"{symbol}-"
-                    f"{an_dt}-"
-                    f"{subject[:30]}"
-                )
-
-                if key in seen_alerts:
-                    continue
-
-                seen_alerts.add(key)
-
-                save_json(
-                    list(seen_alerts),
-                    SEEN_FILE
-                )
-
-                send_telegram(
-                    f"📢 <b>NSE ANNOUNCEMENT</b>\n\n"
-                    f"<b>Stock:</b> {symbol}\n"
-                    f"<b>Time:</b> {an_dt}\n"
-                    f"<b>Subject:</b> {subject}"
-                )
-
-            except:
-                pass
-
-    except Exception as e:
-
-        send_telegram(
-            f"❌ NSE ANNOUNCEMENT ERROR\n\n"
-            f"{str(e)}"
-        )
 
 # =========================================================
 # STARTUP MESSAGE
 # =========================================================
 
 send_telegram(
-    f"✅ <b>NSE BOT STARTED</b>\n\n"
+    f"✅ <b>NSE MOMENTUM BOT STARTED</b>\n\n"
     f"<b>Stocks:</b> {len(WATCHLIST)}\n"
     f"<b>Time:</b> "
     f"{ist_now().strftime('%Y-%m-%d %H:%M:%S IST')}"
@@ -820,70 +788,59 @@ send_telegram(
 # MAIN LOOP
 # =========================================================
 
-print("BOT STARTED")
-
-last_news_scan = 0
-
 while True:
 
     try:
 
         # =====================================================
-        # NEWS + ANNOUNCEMENTS RUN 24x7
+        # NEWS 24x7
         # =====================================================
 
-        if time.time() - last_news_scan > 900:
-
-            fetch_google_news()
-
-            fetch_nse_announcements()
-
-            last_news_scan = time.time()
+        fetch_google_news()
 
         # =====================================================
-        # MARKET ALERTS DURING MARKET HOURS ONLY
+        # MARKET HOURS ALERTS
         # =====================================================
 
         if is_alert_hours():
 
             all_data = fetch_all_data()
 
-            if not all_data:
+            for symbol, stock in all_data.items():
 
-                send_telegram(
-                    "⚠️ <b>NSE API FAILED</b>"
+                update_candles(
+                    symbol,
+                    stock["price"],
+                    stock["volume"]
                 )
 
-                time.sleep(120)
+                process_price_move_alert(
+                    symbol,
+                    stock
+                )
 
-                continue
+                process_day_high_breakout(
+                    symbol,
+                    stock
+                )
 
-            process_price_alerts(all_data)
+                process_breakout_alert(
+                    symbol,
+                    stock
+                )
 
-            process_day_high(all_data)
+                process_volume_breakout(
+                    symbol
+                )
 
-            process_candle_breakout(
-                all_data,
-                candle_5m,
-                CANDLE_5M_FILE,
-                5,
-                FIVE_MIN_SPIKE
+            save_json(
+                candles,
+                CANDLES_FILE
             )
 
-            process_candle_breakout(
-                all_data,
-                candle_10m,
-                CANDLE_10M_FILE,
-                10,
-                TEN_MIN_SPIKE
-            )
-
-            process_candle_breakout(
-                all_data,
-                candle_15m,
-                CANDLE_15M_FILE,
-                15,
-                FIFTEEN_MIN_SPIKE
+            save_json(
+                list(seen_alerts),
+                SEEN_FILE
             )
 
     except Exception as e:
