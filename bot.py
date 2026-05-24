@@ -1035,16 +1035,95 @@ def fetch_nse_announcements():
             "corporate-announcements?index=equities"
         )
 
-        data = nse_get(url)
+     data = nse_get(url)
 
-        if not data:
-            return
+# NSE sometimes returns invalid response
+if not data or not isinstance(data, list):
+    return
 
-        for item in data:
+for item in data:
 
-            try:
+    try:
 
-                symbol = item.get("symbol", "")
+        # Sometimes NSE sends string rows instead of JSON objects
+        if not isinstance(item, dict):
+            continue
+
+        symbol = item.get("symbol", "")
+
+        if symbol not in WATCHLIST:
+            continue
+
+        subject = item.get(
+            "desc",
+            item.get("subject", "")
+        )
+
+        details = item.get(
+            "attchmntText",
+            ""
+        )
+
+        an_dt = item.get("an_dt", "")
+
+        attachment = item.get(
+            "attchmntFile",
+            ""
+        )
+
+        notice_link = ""
+
+        if attachment:
+
+            notice_link = (
+                "https://nsearchives.nseindia.com"
+                + attachment
+            )
+
+        key = (
+            f"NSE-"
+            f"{symbol}-"
+            f"{an_dt}-"
+            f"{subject[:30]}"
+        )
+
+        if key in seen_alerts:
+            continue
+
+        seen_alerts.add(key)
+
+        msg = (
+            f"📢 <b>NSE ANNOUNCEMENT</b>\n\n"
+            f"<b>Stock:</b> {symbol}\n"
+            f"<b>Time:</b> {an_dt}\n\n"
+            f"<b>Subject:</b>\n"
+            f"{subject}"
+        )
+
+        if details:
+
+            msg += (
+                f"\n\n"
+                f"<b>Details:</b>\n"
+                f"{details}"
+            )
+
+        if notice_link:
+
+            msg += (
+                f"\n\n"
+                f"<b>Notice PDF:</b>\n"
+                f"{notice_link}"
+            )
+
+        send_telegram(msg)
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ NSE ITEM ERROR\n\n"
+            f"{str(e)}"
+        )
 
                 if symbol not in WATCHLIST:
                     continue
