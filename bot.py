@@ -953,6 +953,233 @@ def process_volume_breakout(symbol):
             f"{str(e)}"
         )
 # =========================================================
+# BULLISH SETUP DETECTION
+# =========================================================
+
+def process_bullish_setup(symbol, stock):
+
+    try:
+
+        price = stock["price"]
+
+        prev_close = stock["prev_close"]
+
+        # =====================================================
+        # PRICE STRENGTH
+        # =====================================================
+
+        price_pct = (
+            (
+                price - prev_close
+            )
+            / prev_close
+        ) * 100
+
+        price_strength = price_pct > 1.0
+
+        # Avoid chasing overextended moves
+        if price_pct > 4:
+            return
+
+        # =====================================================
+        # PREVIOUS CANDLE
+        # =====================================================
+
+        prev_5m = get_previous_candle(symbol, 5)
+
+        if not prev_5m:
+            print(f"{symbol} skipped - no previous candle")
+            return
+
+        # =====================================================
+        # CURRENT CANDLE
+        # =====================================================
+
+        current_5m_all = candles.get(
+            symbol,
+            {}
+        ).get(
+            "5m",
+            {}
+        )
+
+        if not current_5m_all:
+            print(f"{symbol} skipped - no current candle")
+            return
+
+        # Keys stored as:
+        # YYYY-MM-DD HH:MM
+        # Safe for lexicographical sorting
+
+        latest_key = sorted(
+            current_5m_all.keys()
+        )[-1]
+
+        current_5m = current_5m_all[
+            latest_key
+        ]
+
+        # =====================================================
+        # VOLUME EXPANSION
+        # =====================================================
+
+        current_5m_vol = safe_int(
+            current_5m.get("volume")
+        )
+
+        prev_5m_vol = safe_int(
+            prev_5m.get("volume")
+        )
+
+        if prev_5m_vol <= 0:
+            print(f"{symbol} skipped - prev volume zero")
+            return
+
+        volume_ratio = (
+            current_5m_vol
+            / prev_5m_vol
+        )
+
+        volume_expansion = (
+            volume_ratio > 1.5
+        )
+
+        # =====================================================
+        # TREND CONFIRMATION
+        # =====================================================
+
+        prev_high = safe_float(
+            prev_5m.get("high")
+        )
+
+        trend_confirmation = (
+            price > prev_high
+        )
+
+        # =====================================================
+        # PLACEHOLDER SIGNALS
+        # =====================================================
+
+        # TODO:
+        # Replace with real option chain logic later
+
+        oi_strength = False
+
+        put_writing = False
+
+        # =====================================================
+        # CONFIDENCE SCORE
+        # =====================================================
+
+        score = 0
+
+        if price_strength:
+            score += 34
+
+        if volume_expansion:
+            score += 33
+
+        if trend_confirmation:
+            score += 33
+
+        # =====================================================
+        # MINIMUM SCORE
+        # =====================================================
+
+        # Requires:
+        # Price strength + one confirmation
+        # OR all 3 confirmations
+
+        if score < 67:
+            return
+
+        # =====================================================
+        # DUPLICATE PREVENTION
+        # =====================================================
+
+        key = (
+            f"BULLISH-"
+            f"{symbol}-"
+            f"{get_candle_time(ist_now(), 5)}"
+        )
+
+        if key in seen_alerts:
+            return
+
+        seen_alerts.add(key)
+
+        # =====================================================
+        # SIGNAL ICONS
+        # =====================================================
+
+        def signal_icon(v):
+
+            return "✅" if v else "❌"
+
+        # =====================================================
+        # TELEGRAM MESSAGE
+        # =====================================================
+
+        send_telegram(
+
+            f"🔥 <b>BULLISH SETUP</b>\n\n"
+
+            f"<b>Stock:</b> {symbol}\n"
+            f"<b>Price:</b> ₹{price:,.2f}\n"
+            f"<b>Price Change:</b> "
+            f"{price_pct:+.2f}%\n\n"
+
+            f"<b>Signals:</b>\n"
+
+            f"{signal_icon(price_strength)} "
+            f"Price Strength\n"
+
+            f"{signal_icon(oi_strength)} "
+            f"OI Strength\n"
+
+            f"{signal_icon(put_writing)} "
+            f"Put Writing\n"
+
+            f"{signal_icon(volume_expansion)} "
+            f"Volume Expansion\n"
+
+            f"{signal_icon(trend_confirmation)} "
+            f"Trend Confirmation\n\n"
+
+            f"<b>Volume Details:</b>\n"
+
+            f"Current 5m: "
+            f"{current_5m_vol:,}\n"
+
+            f"Previous 5m: "
+            f"{prev_5m_vol:,}\n"
+
+            f"Expansion: "
+            f"{volume_ratio:.2f}x\n\n"
+
+            f"<b>Trend Details:</b>\n"
+
+            f"Current Price: "
+            f"₹{price:,.2f}\n"
+
+            f"Previous High: "
+            f"₹{prev_high:,.2f}\n\n"
+
+            f"<b>Confidence Score:</b> "
+            f"{score}/100 "
+            f"(3 active signals)\n\n"
+
+            f"🚀 Strong Bullish Momentum Detected"
+        )
+
+    except Exception as e:
+
+        send_telegram(
+            f"❌ BULLISH SETUP ERROR\n\n"
+            f"{symbol}\n\n"
+            f"{str(e)}"
+        )        
+# =========================================================
 # GOOGLE NEWS
 # =========================================================
 
