@@ -1,21 +1,6 @@
 # =========================================================
 # FINAL PRODUCTION MOMENTUM + NSE NEWS BOT
-# BROKER API READY + YFINANCE FALLBACK VERSION
-#
-# FEATURES
-# ---------------------------------------------------------
-# ✅ Keeps YOUR custom watchlist unchanged
-# ✅ NO NSE quote API usage
-# ✅ NO 403 issue
-# ✅ Uses yfinance for market data
-# ✅ NSE/Market notices every 2 HOURS
-# ✅ Railway compatible
-# ✅ Telegram alerts
-# ✅ Strong momentum detection
-# ✅ Detailed logs
-# ✅ Continuous running
-# ✅ IST timezone fixed
-# ✅ Healthcheck endpoint
+# FULL DEBUG VERSION WITH DETAILED LOGS
 # =========================================================
 
 import os
@@ -53,7 +38,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+logger.info("=" * 80)
 logger.info("🚀 SCRIPT STARTED")
+logger.info("=" * 80)
 
 # =========================================================
 # FLASK HEALTHCHECK
@@ -109,11 +96,13 @@ if not CHAT_ID:
 
 CHECK_INTERVAL = 300
 
-PRICE_MOVE_THRESHOLD = 2.0
+# LOWERED FOR MORE ALERTS
+PRICE_MOVE_THRESHOLD = 0.8
 
-# NSE notices every 2 hours
+# NSE NEWS EVERY 2 HOURS
 NEWS_SCAN_INTERVAL = 7200
 
+# KEEP LOW TO AVOID RATE LIMIT
 MAX_WORKERS = 1
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -123,7 +112,7 @@ ALERT_START = (9, 15)
 ALERT_END = (15, 30)
 
 # =========================================================
-# YOUR CUSTOM WATCHLIST (UNCHANGED)
+# WATCHLIST
 # =========================================================
 
 WATCHLIST = sorted(list(set([
@@ -340,7 +329,7 @@ def send_telegram(msg):
         if not BOT_TOKEN or not CHAT_ID:
 
             logger.error(
-                "BOT_TOKEN / CHAT_ID missing"
+                "❌ BOT_TOKEN / CHAT_ID missing"
             )
 
             return
@@ -350,7 +339,7 @@ def send_telegram(msg):
             f"bot{BOT_TOKEN}/sendMessage"
         )
 
-        requests.post(
+        r = requests.post(
 
             url,
 
@@ -367,7 +356,8 @@ def send_telegram(msg):
         )
 
         logger.info(
-            "📨 Telegram message sent"
+            f"📨 Telegram Status="
+            f"{r.status_code}"
         )
 
     except Exception:
@@ -377,7 +367,7 @@ def send_telegram(msg):
         )
 
 # =========================================================
-# FETCH STOCK (YFINANCE)
+# FETCH STOCK
 # =========================================================
 
 def fetch_stock(symbol):
@@ -413,7 +403,10 @@ def fetch_stock(symbol):
 
             return None
 
+        # =================================================
         # FIX MULTI INDEX
+        # =================================================
+
         if isinstance(
             df.columns,
             pd.MultiIndex
@@ -502,7 +495,9 @@ def fetch_stock(symbol):
 
         logger.info(
             f"✅ {symbol} fetched | "
-            f"Move={move:+.2f}%"
+            f"Price={round(last_price,2)} | "
+            f"Move={move:+.2f}% | "
+            f"Volume={volume}"
         )
 
         return {
@@ -537,7 +532,7 @@ def fetch_stock(symbol):
     return None
 
 # =========================================================
-# FETCH ALL STOCKS
+# FETCH ALL
 # =========================================================
 
 def fetch_all_data():
@@ -585,10 +580,15 @@ def fetch_all_data():
         f"{len(result)}"
     )
 
+    logger.info(
+        f"📦 Valid Stocks: "
+        f"{list(result.keys())[:10]}"
+    )
+
     return result
 
 # =========================================================
-# PROCESS ALERT
+# PROCESS STOCK
 # =========================================================
 
 def process_stock(stock):
@@ -599,14 +599,30 @@ def process_stock(stock):
 
         move = stock["price_pct"]
 
+        logger.info(
+            f"📊 {symbol} | "
+            f"Price={round(stock['price'],2)} | "
+            f"Move={round(move,2)}% | "
+            f"Volume={stock['volume']}"
+        )
+
+        # =================================================
+        # PRICE FILTER
+        # =================================================
+
         if move < PRICE_MOVE_THRESHOLD:
 
             logger.info(
-                f"❌ Rejected: {symbol} | "
+                f"❌ Rejected Move: "
+                f"{symbol} | "
                 f"Move={move:+.2f}%"
             )
 
             return
+
+        # =================================================
+        # CANDLE ANALYSIS
+        # =================================================
 
         candle_range = (
 
@@ -624,6 +640,11 @@ def process_stock(stock):
 
         if candle_range <= 0:
 
+            logger.info(
+                f"❌ Invalid candle: "
+                f"{symbol}"
+            )
+
             return
 
         body_ratio = (
@@ -633,13 +654,23 @@ def process_stock(stock):
             / candle_range
         )
 
+        logger.info(
+            f"🕯️ {symbol} | "
+            f"BodyRatio={round(body_ratio,2)}"
+        )
+
         if body_ratio < 0.4:
 
             logger.info(
-                f"❌ Weak candle: {symbol}"
+                f"❌ Weak candle rejected: "
+                f"{symbol}"
             )
 
             return
+
+        # =================================================
+        # DUPLICATE CHECK
+        # =================================================
 
         key = (
             f"{symbol}-"
@@ -657,6 +688,15 @@ def process_stock(stock):
 
         seen_alerts.add(key)
 
+        logger.info(
+            f"🚀 ALERT CONDITIONS PASSED: "
+            f"{symbol}"
+        )
+
+        # =================================================
+        # TELEGRAM MESSAGE
+        # =================================================
+
         msg = f"""
 🚀 MOMENTUM BREAKOUT
 
@@ -671,6 +711,9 @@ Move:
 
 Volume:
 {stock['volume']}
+
+Body Ratio:
+{round(body_ratio, 2)}
 
 Time:
 {ist_now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -689,7 +732,7 @@ Time:
         )
 
 # =========================================================
-# NSE / MARKET NEWS
+# FETCH NEWS
 # =========================================================
 
 def fetch_news():
@@ -702,13 +745,10 @@ def fetch_news():
 
         feeds = [
 
-            # NSE Corporate Announcements
             "https://www.nseindia.com/rss/corporate-announcements.xml",
 
-            # Economic Times
             "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
 
-            # Moneycontrol
             "https://www.moneycontrol.com/rss/business.xml"
         ]
 
@@ -720,13 +760,18 @@ def fetch_news():
 
             try:
 
+                logger.info(
+                    f"🌐 Parsing Feed: "
+                    f"{feed_url}"
+                )
+
                 feed = feedparser.parse(
                     feed_url
                 )
 
                 logger.info(
-                    f"📰 Feed parsed: "
-                    f"{feed_url}"
+                    f"📰 Total headlines: "
+                    f"{len(feed.entries)}"
                 )
 
                 for entry in feed.entries[:10]:
@@ -734,6 +779,11 @@ def fetch_news():
                     title = entry.get(
                         "title",
                         ""
+                    )
+
+                    logger.info(
+                        f"📰 Checking headline: "
+                        f"{title[:100]}"
                     )
 
                     link = entry.get(
@@ -773,6 +823,11 @@ def fetch_news():
                     for symbol in WATCHLIST:
 
                         if symbol in title.upper():
+
+                            logger.info(
+                                f"📰 MATCH FOUND: "
+                                f"{symbol}"
+                            )
 
                             news_items.append({
 
@@ -833,12 +888,12 @@ while True:
         logger.info("=" * 80)
 
         logger.info(
-            f"🔄 New Scan Cycle | "
+            f"🔄 NEW SCAN CYCLE | "
             f"IST={ist_now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
         # =================================================
-        # NEWS SCAN (EVERY 2 HOURS)
+        # NEWS SCAN
         # =================================================
 
         if time.time() - last_news_scan > NEWS_SCAN_INTERVAL:
