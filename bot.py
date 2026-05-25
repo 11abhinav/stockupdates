@@ -1,6 +1,6 @@
 # =========================================================
 # ADVANCED NSE MOMENTUM + VOLUME BREAKOUT TELEGRAM BOT
-# FINAL LOGGING + IST FIXED VERSION
+# FINAL FIXED + IST + NSE 403 SAFE VERSION
 # =========================================================
 
 import os
@@ -205,7 +205,11 @@ def save_json(data, filename):
 
         with open(tmp, "w") as f:
 
-            json.dump(data, f)
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False
+            )
 
         os.replace(tmp, filename)
 
@@ -364,29 +368,74 @@ def send_telegram(msg):
 
 session = requests.Session()
 
+last_nse_init = 0
+
+nse_lock = threading.Lock()
+
 session.headers.update({
 
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/124.0.0.0 "
+        "Safari/537.36"
+    ),
+
+    "Accept": (
+        "text/html,application/xhtml+xml,"
+        "application/xml;q=0.9,image/avif,"
+        "image/webp,*/*;q=0.8"
+    ),
+
+    "Accept-Language": "en-US,en;q=0.9",
+
+    "Accept-Encoding": "gzip, deflate, br",
+
+    "Connection": "keep-alive",
+
+    "Upgrade-Insecure-Requests": "1",
+
+    "Referer": "https://www.nseindia.com/",
+
+    "Origin": "https://www.nseindia.com"
 })
+
+# =========================================================
+# INIT NSE
+# =========================================================
 
 def init_nse():
 
+    global last_nse_init
+
     try:
 
-        logger.info(
-            "🌐 Initializing NSE session..."
-        )
+        with nse_lock:
 
-        session.get(
+            logger.info(
+                "🌐 Initializing NSE session..."
+            )
 
-            "https://www.nseindia.com",
+            session.cookies.clear()
 
-            timeout=10
-        )
+            r = session.get(
 
-        logger.info(
-            "✅ NSE session initialized"
-        )
+                "https://www.nseindia.com",
+
+                timeout=15
+            )
+
+            logger.info(
+                f"🌐 NSE INIT STATUS={r.status_code}"
+            )
+
+            last_nse_init = time.time()
+
+            logger.info(
+                "✅ NSE session initialized"
+            )
 
     except Exception:
 
@@ -402,6 +451,8 @@ init_nse()
 
 def nse_get(url):
 
+    global last_nse_init
+
     for attempt in range(3):
 
         try:
@@ -411,34 +462,50 @@ def nse_get(url):
                 f"Attempt={attempt+1}"
             )
 
+            time.sleep(1.2)
+
             r = session.get(
 
                 url,
 
-                timeout=15
+                timeout=20
             )
 
             logger.info(
                 f"📡 NSE Status={r.status_code}"
             )
 
+            if r.status_code == 200:
+
+                logger.info(
+                    "✅ NSE API Success"
+                )
+
+                return r.json()
+
             if r.status_code in [401, 403]:
 
                 logger.warning(
-                    "⚠️ NSE Session Expired"
+                    "⚠️ NSE blocked request"
                 )
 
-                init_nse()
+                time.sleep(5)
+
+                if (
+
+                    time.time()
+
+                    - last_nse_init
+
+                ) > 300:
+
+                    logger.info(
+                        "🔄 Reinitializing NSE..."
+                    )
+
+                    init_nse()
 
                 continue
-
-            r.raise_for_status()
-
-            logger.info(
-                "✅ NSE API Success"
-            )
-
-            return r.json()
 
         except Exception:
 
@@ -446,7 +513,7 @@ def nse_get(url):
                 "❌ NSE API ERROR"
             )
 
-            time.sleep(2)
+        time.sleep(3)
 
     return None
 
@@ -461,6 +528,8 @@ def fetch_stock(symbol):
         logger.info(
             f"🔍 Fetching: {symbol}"
         )
+
+        time.sleep(0.8)
 
         url = (
 
@@ -506,7 +575,9 @@ def fetch_stock(symbol):
         intra = p.get("intraDayHighLow", {})
 
         logger.info(
-            f"✅ {symbol} fetched successfully"
+            f"✅ {symbol} fetched | "
+            f"Price={last_price} | "
+            f"Volume={safe_int(dp.get('quantityTraded', 0))}"
         )
 
         return {
@@ -556,7 +627,7 @@ def fetch_all_data():
 
     with ThreadPoolExecutor(
 
-        max_workers=10
+        max_workers=2
 
     ) as executor:
 
@@ -721,10 +792,6 @@ while True:
             f"IST={ist_now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
-        # =====================================================
-        # NEWS + NSE ANNOUNCEMENTS
-        # =====================================================
-
         if time.time() - last_news_scan > 900:
 
             logger.info(
@@ -732,10 +799,6 @@ while True:
             )
 
             last_news_scan = time.time()
-
-        # =====================================================
-        # MARKET ALERTS
-        # =====================================================
 
         if is_alert_hours():
 
