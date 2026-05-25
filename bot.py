@@ -1,19 +1,23 @@
 # =========================================================
-# ADVANCED NSE MOMENTUM + BREAKOUT TELEGRAM BOT
-# LOW LOG VERSION (RAILWAY SAFE)
+# ADVANCED NSE MOMENTUM TELEGRAM BOT
+# ULTRA LOW LOG VERSION (RAILWAY SAFE)
 # =========================================================
 
 import os
 import sys
 import json
-import time
 import logging
 import traceback
 import requests
 import pandas as pd
 import yfinance as yf
 
-from datetime import datetime, timedelta, timezone
+from datetime import (
+    datetime,
+    timedelta,
+    timezone
+)
+
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed
@@ -54,9 +58,7 @@ def log(message):
 
     logger.info(message)
 
-log("=" * 80)
 log("🚀 SCRIPT STARTED")
-log("=" * 80)
 
 # =========================================================
 # ENV
@@ -66,15 +68,11 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 CHAT_ID = os.environ.get("CHAT_ID")
 
-log(
-    f"BOT_TOKEN EXISTS="
-    f"{bool(BOT_TOKEN)}"
-)
+if not BOT_TOKEN or not CHAT_ID:
 
-log(
-    f"CHAT_ID EXISTS="
-    f"{bool(CHAT_ID)}"
-)
+    log("❌ ENV VARIABLES MISSING")
+
+    raise SystemExit(1)
 
 # =========================================================
 # CONFIG
@@ -135,7 +133,7 @@ log(
 SEEN_FILE = "seen_alerts.json"
 
 # =========================================================
-# LOAD STATE
+# JSON HELPERS
 # =========================================================
 
 def load_json(filename, default):
@@ -166,6 +164,10 @@ def save_json(data, filename):
 
         traceback.print_exc()
 
+# =========================================================
+# LOAD STATE
+# =========================================================
+
 seen_alerts = set(
     load_json(SEEN_FILE, [])
 )
@@ -188,20 +190,11 @@ def is_market_open():
 
     if now.weekday() >= 5:
 
-        log("❌ Weekend detected")
-
         return False
 
     t = (now.hour, now.minute)
 
-    is_open = ALERT_START <= t < ALERT_END
-
-    log(
-        f"📈 Market Active: "
-        f"{is_open}"
-    )
-
-    return is_open
+    return ALERT_START <= t < ALERT_END
 
 # =========================================================
 # TELEGRAM
@@ -233,7 +226,7 @@ def send_telegram(msg):
         )
 
         log(
-            f"📨 Telegram Status="
+            f"📨 Telegram="
             f"{r.status_code}"
         )
 
@@ -323,7 +316,7 @@ def fetch_all_data():
 
     result = {}
 
-    log("📊 STARTING FETCH CYCLE")
+    log("📊 Fetch started")
 
     with ThreadPoolExecutor(
         max_workers=MAX_WORKERS
@@ -349,8 +342,8 @@ def fetch_all_data():
                 traceback.print_exc()
 
     log(
-        f"✅ Valid Stocks Fetched: "
-        f"{len(result)}"
+        f"📦 Fetch completed | "
+        f"Valid={len(result)}"
     )
 
     return result
@@ -367,7 +360,7 @@ def process_alert(symbol, stock):
 
         if abs(move) < PRICE_MOVE_THRESHOLD:
 
-            return
+            return False
 
         direction = (
             "UP"
@@ -381,12 +374,12 @@ def process_alert(symbol, stock):
 
         if key in seen_alerts:
 
-            return
+            return False
 
         seen_alerts.add(key)
 
         log(
-            f"🚀 ALERT: "
+            f"🚨 ALERT | "
             f"{symbol} | "
             f"{move:+.2f}%"
         )
@@ -402,9 +395,13 @@ def process_alert(symbol, stock):
             f"<b>Price:</b> ₹{stock['price']:,.2f}"
         )
 
+        return True
+
     except Exception:
 
         traceback.print_exc()
+
+        return False
 
 # =========================================================
 # MAIN BOT
@@ -412,11 +409,9 @@ def process_alert(symbol, stock):
 
 def run_bot():
 
-    log("=" * 80)
-
     log(
-        f"🔄 CRON RUN STARTED | "
-        f"{ist_now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"🚀 RUN STARTED | "
+        f"{ist_now().strftime('%H:%M:%S')}"
     )
 
     if not is_market_open():
@@ -427,19 +422,29 @@ def run_bot():
 
     all_data = fetch_all_data()
 
+    alert_count = 0
+
     for symbol, stock in all_data.items():
 
-        process_alert(
+        sent = process_alert(
             symbol,
             stock
         )
+
+        if sent:
+
+            alert_count += 1
 
     save_json(
         list(seen_alerts),
         SEEN_FILE
     )
 
-    log("✅ Scan cycle completed")
+    log(
+        f"✅ RUN FINISHED | "
+        f"Stocks={len(all_data)} | "
+        f"Alerts={alert_count}"
+    )
 
 # =========================================================
 # ENTRY
@@ -448,14 +453,6 @@ def run_bot():
 if __name__ == "__main__":
 
     try:
-
-        if not BOT_TOKEN or not CHAT_ID:
-
-            log(
-                "❌ ENV VARIABLES MISSING"
-            )
-
-            raise SystemExit(1)
 
         run_bot()
 
