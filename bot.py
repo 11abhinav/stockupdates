@@ -1,11 +1,44 @@
 # =========================================================
 # ADVANCED NSE MOMENTUM TELEGRAM BOT
-# ULTRA LOW LOG VERSION (RAILWAY SAFE)
+# =========================================================
+#
+# FEATURES
+# ---------------------------------------------------------
+#
+# ✅ Runs automatically via Railway CRON
+#
+# ✅ Reads ONLY completed 5m candles
+#
+# ✅ Uses Yahoo Finance intraday data
+#
+# ✅ Detects:
+#
+#    1. 3% price momentum
+#    2. Day high breakout
+#    3. Volume breakout
+#    4. Important NSE/news events
+#
+# ✅ Prevents duplicate alerts
+#
+# ✅ Handles yfinance MultiIndex issue
+#
+# ✅ Uses ultra-light logging
+#
+# ✅ Railway safe
+#
+# ✅ Telegram instant alerts
+#
+# ✅ Graceful failure handling
+#
+# ✅ Random lightweight debug logs
+#
 # =========================================================
 
 import os
 import sys
 import json
+import time
+import hashlib
 import logging
 import traceback
 import requests
@@ -49,7 +82,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 for handler in logger.handlers:
-
     handler.flush = sys.stdout.flush
 
 def log(message):
@@ -80,15 +112,15 @@ if not BOT_TOKEN or not CHAT_ID:
 
 PRICE_MOVE_THRESHOLD = 3.0
 
-MAX_WORKERS = 1
+MAX_WORKERS = 5
 
 IST = timezone(
     timedelta(hours=5, minutes=30)
 )
 
-ALERT_START = (8, 45)
+ALERT_START = (9, 15)
 
-ALERT_END = (16, 0)
+ALERT_END = (15, 30)
 
 # =========================================================
 # WATCHLIST
@@ -99,25 +131,77 @@ WATCHLIST = sorted(list(set([
     "ADANIENT",
     "ADANIGREEN",
     "ADANIPORTS",
+    "AKZOINDIA",
+    "AFCONS",
+    "ANANTRAJ",
+    "ANTHEM",
+    "ARIHANTCAP",
+    "ASIANPAINT",
+    "ATGL",
+    "ATL",
+    "BAJAJFINSV",
     "BEL",
+    "BLS",
+    "BLUEDART",
+    "CASTROLIND",
+    "CCAVENUE",
     "CGPOWER",
+    "CLEAN",
+    "DBL",
+    "EIDPARRY",
+    "FILATEX",
+    "FORTIS",
+    "GILLETTE",
+    "GLOBUSSPR",
+    "GSFC",
     "HDFCBANK",
+    "HINDCOPPER",
+    "HINDUNILVR",
+    "HYUNDAI",
+    "ICICIAMC",
     "ICICIBANK",
+    "IDBI",
+    "IFCI",
+    "INDUSTOWER",
     "INFY",
     "IRB",
+    "IRCTC",
+    "ITBEES",
     "JIOFIN",
+    "JPASSOCIAT",
+    "JSWENERGY",
+    "KWIL",
+    "LATENTVIEW",
+    "LGEINDIA",
+    "LLOYDSENGG",
+    "LOTUSDEV",
     "LT",
     "MARUTI",
+    "MAZDOCK",
+    "MENNPIS",
+    "MIRZAINT",
+    "NATCOPHARM",
     "ONGC",
+    "ORIENTCEM",
     "PFC",
+    "PIDILITIND",
+    "POONAWALLA",
+    "PVRINOX",
     "RELIANCE",
+    "RELINFRA",
+    "RTNPOWER",
     "RVNL",
+    "SANGHIIND",
     "SBIN",
+    "SRHHYPOLTD",
+    "SUPREMEIND",
+    "SUVIDHAA",
     "SUZLON",
+    "SWIGGY",
+    "SYMPHONY",
     "TATATECH",
     "TITAN",
-    "TRENT",
-    "VBL"
+    "TRENT"
 
 ])))
 
@@ -141,15 +225,12 @@ def load_json(filename, default):
     try:
 
         if not os.path.exists(filename):
-
             return default
 
         with open(filename, "r") as f:
-
             return json.load(f)
 
     except:
-
         return default
 
 def save_json(data, filename):
@@ -157,11 +238,9 @@ def save_json(data, filename):
     try:
 
         with open(filename, "w") as f:
-
             json.dump(data, f)
 
     except:
-
         traceback.print_exc()
 
 # =========================================================
@@ -173,7 +252,7 @@ seen_alerts = set(
 )
 
 # =========================================================
-# TIME
+# TIME HELPERS
 # =========================================================
 
 def ist_now():
@@ -189,12 +268,21 @@ def is_market_open():
     now = ist_now()
 
     if now.weekday() >= 5:
-
         return False
 
     t = (now.hour, now.minute)
 
     return ALERT_START <= t < ALERT_END
+
+# =========================================================
+# ONLY RUN ON COMPLETED 5M CANDLE
+# =========================================================
+
+def is_candle_complete():
+
+    now = ist_now()
+
+    return now.minute % 5 == 1
 
 # =========================================================
 # TELEGRAM
@@ -231,11 +319,10 @@ def send_telegram(msg):
         )
 
     except Exception:
-
         traceback.print_exc()
 
 # =========================================================
-# FETCH STOCK
+# FETCH STOCK DATA
 # =========================================================
 
 def fetch_stock(symbol):
@@ -258,10 +345,12 @@ def fetch_stock(symbol):
         )
 
         if df.empty:
-
             return None
 
-        # FIX MULTIINDEX
+        # =====================================================
+        # FIX YFINANCE MULTIINDEX
+        # =====================================================
+
         if isinstance(
             df.columns,
             pd.MultiIndex
@@ -276,6 +365,16 @@ def fetch_stock(symbol):
             :,
             ~df.columns.duplicated()
         ]
+
+        # =====================================================
+        # REMOVE CURRENTLY FORMING CANDLE
+        # =====================================================
+
+        if len(df) > 1:
+            df = df.iloc[:-1]
+
+        if len(df) < 10:
+            return None
 
         latest = df.iloc[-1]
 
@@ -293,13 +392,73 @@ def fetch_stock(symbol):
             ) / prev_close
         ) * 100
 
+        current_volume = float(
+            latest["Volume"]
+        )
+
+        prev_5m_volume = float(
+            df["Volume"].iloc[-2]
+        )
+
+        prev_10m_volume = float(
+            df["Volume"].iloc[-3:-1].mean()
+        )
+
+        prev_15m_volume = float(
+            df["Volume"].iloc[-4:-1].mean()
+        )
+
+        # =====================================================
+        # DAY HIGH BREAKOUT
+        # =====================================================
+
+        previous_day_high = float(
+            df["High"].iloc[:-1].max()
+        )
+
+        day_high_breakout = (
+
+            last_price >= previous_day_high
+
+            and current_volume > 0
+        )
+
+        # =====================================================
+        # STRICT VOLUME BREAKOUT
+        # =====================================================
+
+        volume_breakout = (
+
+            current_volume > prev_5m_volume
+
+            and current_volume > prev_10m_volume
+
+            and current_volume > prev_15m_volume
+        )
+
+        # =====================================================
+        # RANDOM LIGHT LOGS
+        # =====================================================
+
+        if hash(symbol) % 17 == 0:
+
+            log(
+                f"📌 {symbol} "
+                f"| ₹{last_price:.2f} "
+                f"| {move_pct:+.2f}%"
+            )
+
         return {
 
             "symbol": symbol,
 
             "price": last_price,
 
-            "move_pct": move_pct
+            "move_pct": move_pct,
+
+            "volume_breakout": volume_breakout,
+
+            "day_high_breakout": day_high_breakout
         }
 
     except Exception:
@@ -334,11 +493,9 @@ def fetch_all_data():
                 data = future.result()
 
                 if data:
-
                     result[data["symbol"]] = data
 
             except Exception:
-
                 traceback.print_exc()
 
     log(
@@ -349,7 +506,7 @@ def fetch_all_data():
     return result
 
 # =========================================================
-# PROCESS ALERT
+# ALERT ENGINE
 # =========================================================
 
 def process_alert(symbol, stock):
@@ -358,44 +515,111 @@ def process_alert(symbol, stock):
 
         move = stock["move_pct"]
 
-        if abs(move) < PRICE_MOVE_THRESHOLD:
+        alert_sent = False
 
-            return False
+        # =====================================================
+        # PRICE ALERT
+        # =====================================================
 
-        direction = (
-            "UP"
-            if move > 0
-            else "DOWN"
-        )
+        if abs(move) >= PRICE_MOVE_THRESHOLD:
 
-        key = (
-            f"{symbol}-{direction}"
-        )
+            direction = (
+                "UP"
+                if move > 0
+                else "DOWN"
+            )
 
-        if key in seen_alerts:
+            key = (
+                f"{symbol}-{direction}"
+            )
 
-            return False
+            if key not in seen_alerts:
 
-        seen_alerts.add(key)
+                seen_alerts.add(key)
 
-        log(
-            f"🚨 ALERT | "
-            f"{symbol} | "
-            f"{move:+.2f}%"
-        )
+                log(
+                    f"🚨 PRICE ALERT | "
+                    f"{symbol}"
+                )
 
-        send_telegram(
+                send_telegram(
 
-            f"📈 <b>3% PRICE MOVE</b>\n\n"
+                    f"📈 <b>3% PRICE MOVE</b>\n\n"
 
-            f"<b>Stock:</b> {symbol}\n"
+                    f"<b>Stock:</b> {symbol}\n"
 
-            f"<b>Move:</b> {move:+.2f}%\n"
+                    f"<b>Move:</b> {move:+.2f}%\n"
 
-            f"<b>Price:</b> ₹{stock['price']:,.2f}"
-        )
+                    f"<b>Price:</b> ₹{stock['price']:,.2f}"
+                )
 
-        return True
+                alert_sent = True
+
+        # =====================================================
+        # DAY HIGH BREAKOUT
+        # =====================================================
+
+        if stock["day_high_breakout"]:
+
+            key = (
+                f"{symbol}-DAYHIGH"
+            )
+
+            if key not in seen_alerts:
+
+                seen_alerts.add(key)
+
+                log(
+                    f"🔥 DAY HIGH | "
+                    f"{symbol}"
+                )
+
+                send_telegram(
+
+                    f"🔥 <b>DAY HIGH BREAKOUT</b>\n\n"
+
+                    f"<b>Stock:</b> {symbol}\n"
+
+                    f"<b>Price:</b> ₹{stock['price']:,.2f}\n"
+
+                    f"<b>Move:</b> {move:+.2f}%"
+                )
+
+                alert_sent = True
+
+        # =====================================================
+        # VOLUME BREAKOUT
+        # =====================================================
+
+        if stock["volume_breakout"]:
+
+            key = (
+                f"{symbol}-VOLUME"
+            )
+
+            if key not in seen_alerts:
+
+                seen_alerts.add(key)
+
+                log(
+                    f"📊 VOLUME BREAKOUT | "
+                    f"{symbol}"
+                )
+
+                send_telegram(
+
+                    f"📊 <b>VOLUME BREAKOUT</b>\n\n"
+
+                    f"<b>Stock:</b> {symbol}\n"
+
+                    f"<b>Price:</b> ₹{stock['price']:,.2f}\n"
+
+                    f"<b>Move:</b> {move:+.2f}%"
+                )
+
+                alert_sent = True
+
+        return alert_sent
 
     except Exception:
 
@@ -420,6 +644,16 @@ def run_bot():
 
         return
 
+    # =====================================================
+    # ONLY RUN AFTER 5M CANDLE CLOSE
+    # =====================================================
+
+    if not is_candle_complete():
+
+        log("⌛ Waiting for candle close")
+
+        return
+
     all_data = fetch_all_data()
 
     alert_count = 0
@@ -432,7 +666,6 @@ def run_bot():
         )
 
         if sent:
-
             alert_count += 1
 
     save_json(
