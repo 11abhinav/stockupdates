@@ -1,3 +1,9 @@
-flask==3.0.3
-requests==2.32.3
-feedparser==6.0.11
+pandas
+yfinance
+requests
+feedparser
+flask
+numpy
+lxml
+html5lib
+beautifulsoup4
