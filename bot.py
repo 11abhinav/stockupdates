@@ -240,11 +240,21 @@ def today_str():
 def load_seen_alerts():
     """
     Load seen_alerts. Auto-reset daily so alerts re-fire next day.
-    Structure: { "date": "YYYY-MM-DD", "keys": [...] }
+    Expected structure: { "date": "YYYY-MM-DD", "keys": [...] }
+
+    Handles legacy/corrupt file formats gracefully:
+      - Old code saved a plain list [...] instead of a dict
+      - Any other unexpected type (None, str, int) -> reset cleanly
     """
     raw = load_json(SEEN_FILE, {})
+
+    # If not a dict (e.g. old plain-list format), reset — don't crash
+    if not isinstance(raw, dict):
+        return set()
+
     if raw.get("date") != today_str():
         return set()
+
     return set(raw.get("keys", []))
 
 
