@@ -1,38 +1,6 @@
 # =========================================================
 # ADVANCED NSE MOMENTUM + BREAKOUT TELEGRAM BOT
-# =========================================================
-#
-# FINAL HYBRID VERSION
-#
-# PRICE DATA:
-#   ✅ yfinance (NO 403)
-#
-# NSE NEWS:
-#   ✅ NSE RSS FEEDS
-#   ✅ Runs hourly
-#
-# FEATURES
-# ---------------------------------------------------------
-# ✅ 3% Price Move Alerts
-# ✅ 5m / 10m / 15m Candle Tracking
-# ✅ Volume Breakout Detection
-# ✅ Multi Candle Breakout
-# ✅ Day High Breakout
-# ✅ NSE News Fetch
-# ✅ Google News Fetch
-# ✅ Railway Compatible
-# ✅ Ultra Logging
-# ✅ Continuous Running
-# ✅ Persistent State
-# ✅ Duplicate Alert Prevention
-# ✅ Healthcheck Endpoint
-#
-# =========================================================
-
-print("🚀 SCRIPT STARTED", flush=True)
-
-# =========================================================
-# IMPORTS
+# LOW LOG VERSION (RAILWAY SAFE)
 # =========================================================
 
 import os
@@ -40,14 +8,11 @@ import sys
 import json
 import time
 import logging
-import threading
 import traceback
 import requests
-import feedparser
 import pandas as pd
 import yfinance as yf
 
-from flask import Flask
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -57,6 +22,8 @@ from concurrent.futures import (
 # =========================================================
 # LOGGER
 # =========================================================
+
+print("🚀 FILE STARTED", flush=True)
 
 logging.basicConfig(
 
@@ -77,7 +44,6 @@ logger = logging.getLogger()
 
 logger.setLevel(logging.INFO)
 
-# FORCE STDOUT FLUSH
 for handler in logger.handlers:
 
     handler.flush = sys.stdout.flush
@@ -93,32 +59,6 @@ log("🚀 SCRIPT STARTED")
 log("=" * 80)
 
 # =========================================================
-# FLASK HEALTHCHECK
-# =========================================================
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-
-    log("🌐 Healthcheck hit")
-
-    return "BOT RUNNING ✅", 200
-
-threading.Thread(
-
-    target=lambda: app.run(
-
-        host="0.0.0.0",
-
-        port=int(os.environ.get("PORT", 5000))
-    ),
-
-    daemon=True
-
-).start()
-
-# =========================================================
 # ENV
 # =========================================================
 
@@ -126,23 +66,21 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 CHAT_ID = os.environ.get("CHAT_ID")
 
-if not BOT_TOKEN:
+log(
+    f"BOT_TOKEN EXISTS="
+    f"{bool(BOT_TOKEN)}"
+)
 
-    log("❌ BOT_TOKEN missing")
-
-if not CHAT_ID:
-
-    log("❌ CHAT_ID missing")
+log(
+    f"CHAT_ID EXISTS="
+    f"{bool(CHAT_ID)}"
+)
 
 # =========================================================
 # CONFIG
 # =========================================================
 
-CHECK_INTERVAL = 60
-
 PRICE_MOVE_THRESHOLD = 3.0
-
-NEWS_SCAN_INTERVAL = 3600
 
 MAX_WORKERS = 1
 
@@ -163,74 +101,21 @@ WATCHLIST = sorted(list(set([
     "ADANIENT",
     "ADANIGREEN",
     "ADANIPORTS",
-    "AKZOINDIA",
-    "AFCONS",
-    "ANANTRAJ",
-    "ANTHEM",
-    "ARIHANTCAP",
-    "ASIANPAINT",
-    "ATGL",
-    "ATL",
-    "BAJAJFINSV",
     "BEL",
-    "BLS",
-    "BLUEDART",
-    "CASTROLIND",
-    "CCAVENUE",
     "CGPOWER",
-    "CLEAN",
-    "DBL",
-    "EIDPARRY",
-    "FILATEX",
-    "FORTIS",
-    "GILLETTE",
-    "GLOBUSSPR",
-    "GSFC",
     "HDFCBANK",
-    "HINDCOPPER",
-    "HINDUNILVR",
-    "HYUNDAI",
-    "ICICIAMC",
     "ICICIBANK",
-    "IDBI",
-    "IFCI",
-    "INDUSTOWER",
     "INFY",
     "IRB",
-    "IRCTC",
-    "ITBEES",
     "JIOFIN",
-    "JPASSOCIAT",
-    "JSWENERGY",
-    "KWIL",
-    "LATENTVIEW",
-    "LGEINDIA",
-    "LLOYDSENGG",
-    "LOTUSDEV",
     "LT",
     "MARUTI",
-    "MAZDOCK",
-    "MENNPIS",
-    "MIRZAINT",
-    "NATCOPHARM",
     "ONGC",
-    "ORIENTCEM",
     "PFC",
-    "PIDILITIND",
-    "POONAWALLA",
-    "PVRINOX",
     "RELIANCE",
-    "RELINFRA",
-    "RTNPOWER",
     "RVNL",
-    "SANGHIIND",
     "SBIN",
-    "SRHHYPOLTD",
-    "SUPREMEIND",
-    "SUVIDHAA",
     "SUZLON",
-    "SWIGGY",
-    "SYMPHONY",
     "TATATECH",
     "TITAN",
     "TRENT",
@@ -239,7 +124,7 @@ WATCHLIST = sorted(list(set([
 ])))
 
 log(
-    f"📊 Total Watchlist Stocks: "
+    f"📊 Watchlist Loaded: "
     f"{len(WATCHLIST)}"
 )
 
@@ -249,49 +134,9 @@ log(
 
 SEEN_FILE = "seen_alerts.json"
 
-CANDLES_FILE = "candles.json"
-
 # =========================================================
-# HELPERS
+# LOAD STATE
 # =========================================================
-
-def safe_float(v):
-
-    try:
-        return float(v)
-    except:
-        return 0.0
-
-def safe_int(v):
-
-    try:
-        return int(float(v))
-    except:
-        return 0
-
-# =========================================================
-# JSON HELPERS
-# =========================================================
-
-def save_json(data, filename):
-
-    try:
-
-        with open(filename, "w") as f:
-
-            json.dump(data, f)
-
-        log(
-            f"💾 Saved JSON: {filename}"
-        )
-
-    except Exception as e:
-
-        traceback.print_exc()
-
-        log(
-            f"❌ SAVE JSON ERROR: {e}"
-        )
 
 def load_json(filename, default):
 
@@ -309,22 +154,20 @@ def load_json(filename, default):
 
         return default
 
-# =========================================================
-# LOAD STATE
-# =========================================================
+def save_json(data, filename):
+
+    try:
+
+        with open(filename, "w") as f:
+
+            json.dump(data, f)
+
+    except:
+
+        traceback.print_exc()
 
 seen_alerts = set(
     load_json(SEEN_FILE, [])
-)
-
-candles = load_json(
-    CANDLES_FILE,
-    {}
-)
-
-log(
-    f"✅ Seen alerts loaded: "
-    f"{len(seen_alerts)}"
 )
 
 # =========================================================
@@ -339,14 +182,9 @@ def ist_now():
 # MARKET HOURS
 # =========================================================
 
-def is_alert_hours():
+def is_market_open():
 
     now = ist_now()
-
-    log(
-        f"⏰ Market Time Check: "
-        f"{now.strftime('%Y-%m-%d %H:%M:%S')}"
-    )
 
     if now.weekday() >= 5:
 
@@ -373,8 +211,6 @@ def send_telegram(msg):
 
     try:
 
-        log("📨 Sending Telegram...")
-
         url = (
             f"https://api.telegram.org/"
             f"bot{BOT_TOKEN}/sendMessage"
@@ -390,9 +226,7 @@ def send_telegram(msg):
 
                 "text": msg[:4000],
 
-                "parse_mode": "HTML",
-
-                "disable_web_page_preview": True
+                "parse_mode": "HTML"
             },
 
             timeout=20
@@ -403,30 +237,17 @@ def send_telegram(msg):
             f"{r.status_code}"
         )
 
-    except Exception as e:
+    except Exception:
 
         traceback.print_exc()
 
-        log(
-            f"❌ TELEGRAM ERROR: {e}"
-        )
-
 # =========================================================
-# FETCH STOCK DATA USING YFINANCE
+# FETCH STOCK
 # =========================================================
 
 def fetch_stock(symbol):
 
     try:
-
-        log(
-            f"🔍 Fetching: {symbol}"
-        )
-
-        log(
-            f"🌐 Calling yfinance: "
-            f"{symbol}"
-        )
 
         df = yf.download(
 
@@ -443,17 +264,7 @@ def fetch_stock(symbol):
             threads=False
         )
 
-        log(
-            f"📦 Rows fetched: "
-            f"{len(df)} | {symbol}"
-        )
-
         if df.empty:
-
-            log(
-                f"❌ Empty yf data: "
-                f"{symbol}"
-            )
 
             return None
 
@@ -462,11 +273,6 @@ def fetch_stock(symbol):
             df.columns,
             pd.MultiIndex
         ):
-
-            log(
-                f"🛠️ Fixing MultiIndex: "
-                f"{symbol}"
-            )
 
             df.columns = (
                 df.columns
@@ -488,24 +294,11 @@ def fetch_stock(symbol):
             latest["Close"]
         )
 
-        volume = int(
-            latest["Volume"]
-        )
-
-        day_high = float(
-            df["High"].max()
-        )
-
-        log(
-            f"✅ {symbol} fetched | "
-            f"Price={last_price} | "
-            f"Volume={volume}"
-        )
-
-        log(
-            f"📈 Price Move="
-            f"{((last_price-prev_close)/prev_close)*100:.2f}%"
-        )
+        move_pct = (
+            (
+                last_price - prev_close
+            ) / prev_close
+        ) * 100
 
         return {
 
@@ -513,25 +306,17 @@ def fetch_stock(symbol):
 
             "price": last_price,
 
-            "prev_close": prev_close,
-
-            "day_high": day_high,
-
-            "volume": volume
+            "move_pct": move_pct
         }
 
-    except Exception as e:
+    except Exception:
 
         traceback.print_exc()
 
-        log(
-            f"❌ FETCH ERROR {symbol}: {e}"
-        )
-
-    return None
+        return None
 
 # =========================================================
-# FETCH ALL DATA
+# FETCH ALL
 # =========================================================
 
 def fetch_all_data():
@@ -559,13 +344,9 @@ def fetch_all_data():
 
                     result[data["symbol"]] = data
 
-            except Exception as e:
+            except Exception:
 
                 traceback.print_exc()
-
-                log(
-                    f"❌ PARALLEL FETCH ERROR: {e}"
-                )
 
     log(
         f"✅ Valid Stocks Fetched: "
@@ -575,257 +356,113 @@ def fetch_all_data():
     return result
 
 # =========================================================
-# CANDLE HELPERS
+# PROCESS ALERT
 # =========================================================
 
-def get_candle_time(now, minutes):
-
-    rounded = (
-        now.minute // minutes
-    ) * minutes
-
-    return now.replace(
-        minute=rounded,
-        second=0,
-        microsecond=0
-    )
-
-# =========================================================
-# UPDATE CANDLES
-# =========================================================
-
-def update_candles(symbol, price, volume):
-
-    log(
-        f"🕯️ Updating candles: "
-        f"{symbol}"
-    )
-
-    now = ist_now()
-
-    for tf in [5, 10, 15]:
-
-        candle_time = get_candle_time(now, tf)
-
-        key = candle_time.strftime(
-            "%Y-%m-%d %H:%M"
-        )
-
-        tf_key = f"{tf}m"
-
-        if symbol not in candles:
-            candles[symbol] = {}
-
-        if tf_key not in candles[symbol]:
-            candles[symbol][tf_key] = {}
-
-        data = candles[symbol][tf_key]
-
-        if key not in data:
-
-            log(
-                f"🆕 New {tf_key} candle: "
-                f"{symbol}"
-            )
-
-            data[key] = {
-
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "volume": 0,
-                "last_total_volume": volume
-            }
-
-        candle = data[key]
-
-        candle["high"] = max(
-            candle["high"],
-            price
-        )
-
-        candle["low"] = min(
-            candle["low"],
-            price
-        )
-
-        candle["close"] = price
-
-        delta = volume - candle.get(
-            "last_total_volume",
-            volume
-        )
-
-        if delta > 0:
-            candle["volume"] += delta
-
-        candle["last_total_volume"] = volume
-
-# =========================================================
-# GET PREVIOUS CANDLE
-# =========================================================
-
-def get_previous_candle(symbol, tf):
-
-    tf_key = f"{tf}m"
+def process_alert(symbol, stock):
 
     try:
 
-        data = candles[symbol][tf_key]
+        move = stock["move_pct"]
 
-        keys = sorted(data.keys())
+        if abs(move) < PRICE_MOVE_THRESHOLD:
 
-        if len(keys) < 2:
-            return None
-
-        return data[keys[-2]]
-
-    except:
-
-        return None
-
-# =========================================================
-# PRICE MOVE ALERT
-# =========================================================
-
-def process_price_move_alert(symbol, stock):
-
-    try:
-
-        log(
-            f"📈 Checking 3% move: "
-            f"{symbol}"
-        )
-
-        price = stock["price"]
-
-        prev_close = stock["prev_close"]
-
-        pchange = (
-            (price - prev_close)
-            / prev_close
-        ) * 100
-
-        log(
-            f"📊 {symbol} move="
-            f"{pchange:+.2f}%"
-        )
-
-        if abs(pchange) < PRICE_MOVE_THRESHOLD:
             return
 
         direction = (
             "UP"
-            if pchange > 0
+            if move > 0
             else "DOWN"
         )
 
         key = (
-            f"PRICE-{symbol}-{direction}"
+            f"{symbol}-{direction}"
         )
 
         if key in seen_alerts:
+
             return
 
         seen_alerts.add(key)
 
         log(
-            f"🚀 3% ALERT: {symbol}"
+            f"🚀 ALERT: "
+            f"{symbol} | "
+            f"{move:+.2f}%"
         )
 
         send_telegram(
+
             f"📈 <b>3% PRICE MOVE</b>\n\n"
+
             f"<b>Stock:</b> {symbol}\n"
-            f"<b>Move:</b> {pchange:+.2f}%\n"
-            f"<b>Price:</b> ₹{price:,.2f}"
+
+            f"<b>Move:</b> {move:+.2f}%\n"
+
+            f"<b>Price:</b> ₹{stock['price']:,.2f}"
         )
 
-    except Exception as e:
+    except Exception:
 
         traceback.print_exc()
 
-        log(
-            f"❌ PRICE ALERT ERROR: {e}"
+# =========================================================
+# MAIN BOT
+# =========================================================
+
+def run_bot():
+
+    log("=" * 80)
+
+    log(
+        f"🔄 CRON RUN STARTED | "
+        f"{ist_now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+    if not is_market_open():
+
+        log("⏰ Market closed")
+
+        return
+
+    all_data = fetch_all_data()
+
+    for symbol, stock in all_data.items():
+
+        process_alert(
+            symbol,
+            stock
         )
 
+    save_json(
+        list(seen_alerts),
+        SEEN_FILE
+    )
+
+    log("✅ Scan cycle completed")
+
 # =========================================================
-# MAIN LOOP
+# ENTRY
 # =========================================================
 
-log("🚀 MAIN LOOP STARTED")
-
-last_news_scan = 0
-
-while True:
+if __name__ == "__main__":
 
     try:
 
-        log("=" * 80)
-
-        log(
-            f"🔄 HEARTBEAT | "
-            f"{ist_now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-
-        if is_alert_hours():
-
-            log("📈 Market hours active")
-
-            all_data = fetch_all_data()
+        if not BOT_TOKEN or not CHAT_ID:
 
             log(
-                f"📦 Stocks received: "
-                f"{len(all_data)}"
+                "❌ ENV VARIABLES MISSING"
             )
 
-            for symbol, stock in all_data.items():
+            raise SystemExit(1)
 
-                if not stock:
-                    continue
+        run_bot()
 
-                log(
-                    f"🔍 Processing: {symbol}"
-                )
-
-                update_candles(
-                    symbol,
-                    stock["price"],
-                    stock["volume"]
-                )
-
-                process_price_move_alert(
-                    symbol,
-                    stock
-                )
-
-            save_json(
-                candles,
-                CANDLES_FILE
-            )
-
-            save_json(
-                list(seen_alerts),
-                SEEN_FILE
-            )
-
-            log("✅ Scan cycle completed")
-
-        else:
-
-            log("⏰ Outside market hours")
-
-    except Exception as e:
+    except Exception:
 
         traceback.print_exc()
 
         log(
-            f"❌ MAIN LOOP ERROR: {e}"
+            "❌ MAIN CRITICAL ERROR"
         )
-
-    log(
-        f"😴 Sleeping "
-        f"{CHECK_INTERVAL} sec..."
-    )
-
-    time.sleep(CHECK_INTERVAL)
