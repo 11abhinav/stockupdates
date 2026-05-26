@@ -79,15 +79,17 @@ YF_HISTORY = "1y"
 YF_INTERVAL = "1d"
 
 WATCHLIST = [
-    "RELIANCE",
-    "SBIN",
-    "INFY",
-    "ICICIBANK",
-    "HDFCBANK",
-    "LT",
-    "RVNL",
-    "SUZLON",
-    "TRENT",
+    "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA",
+    "ANANTRAJ", "ASIANPAINT", "ATGL", "BAJAJFINSV", "BEL",
+    "BLS", "BLUEDART", "CASTROLIND", "CGPOWER", "CLEAN",
+    "DBL", "EIDPARRY", "FILATEX", "FORTIS", "GILLETTE",
+    "GSFC", "HDFCBANK", "HINDCOPPER", "HINDUNILVR",
+    "ICICIBANK", "IDBI", "IFCI", "INDUSTOWER", "INFY",
+    "IRB", "IRCTC", "JIOFIN", "JSWENERGY", "LATENTVIEW",
+    "LLOYDSENGG", "LT", "MARUTI", "MAZDOCK", "NATCOPHARM",
+    "ONGC", "ORIENTCEM", "PFC", "PIDILITIND", "POONAWALLA",
+    "PVRINOX", "RELIANCE", "RVNL", "SBIN", "SUZLON",
+    "SWIGGY", "SYMPHONY", "TATATECH", "TITAN", "TRENT",
 ]
 
 # =============================================================================
