@@ -1,9 +1,4 @@
-pandas
-yfinance
-requests
-feedparser
-flask
-numpy
-lxml
-html5lib
-beautifulsoup4
+requests==2.32.3
+feedparser==6.0.11
+Flask==3.0.3
+gunicorn==22.0.0
