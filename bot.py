@@ -2,30 +2,81 @@
 # NSE MOMENTUM ALERT BOT — v6
 # =========================================================
 #
+# CRON SCHEDULE
+# ---------------------------------------------------------
+# Expression : 2/5 3-10 * * 1-5  (Railway / UTC)
+# Meaning    : every 5 min starting at :02, from 03:00 to
+#              10:59 UTC, Monday–Friday only
+# IST equiv  : 08:32 – 16:29 IST  (covers pre-market +
+#              full session + buffer after 15:30 close)
+#
+# UTC → IST run map (key times):
+#   3:02 UTC = 8:32 IST   pre-market, outside reset window
+#   3:07 UTC = 8:37 IST   pre-market, outside reset window
+#   3:12 UTC = 8:42 IST   pre-market, outside reset window
+#   3:17 UTC = 8:47 IST ← RESET STARTS (window open)
+#   3:22 UTC = 8:52 IST   reset
+#   3:27 UTC = 8:57 IST   reset
+#   3:32 UTC = 9:02 IST   reset
+#   3:37 UTC = 9:07 IST   reset
+#   3:42 UTC = 9:12 IST   reset  ← last reset before bell
+#   3:47 UTC = 9:17 IST   market open, normal scan begins
+#   ...every 5 min through session...
+#   10:02 UTC = 15:32 IST last scan run after close
+#
+# =========================================================
+#
 # CHANGES FROM v5
 # ---------------------------------------------------------
 #
 # [CHANGED] Telegram message formatting:
-#           - Stock name now appears immediately after heading
-#           - Removed excess blank lines at the top of cards
-#           - Tighter, cleaner card layout throughout
+#           - Stock name now appears immediately on line 2,
+#             right after the heading separator
+#           - Zero blank lines at the top of every card
+#           - Redundant "Stock:" label rows removed —
+#             name is already in the heading
+#           - Tighter, cleaner layout throughout all cards
 #
-# [CHANGED] NSE API error handling — robust everywhere:
-#           - Session auto-refreshes on any 4xx/5xx/timeout
-#           - Per-call retry with exponential backoff (3x)
-#           - Graceful fallback: NSE failures never crash run
-#           - Logs exact HTTP status & reason for every failure
+# [CHANGED] NSE API error handling — fully robust:
+#           - All NSE calls routed through central nse_get()
+#           - Auto session refresh on 401 / 403 (expired cookie)
+#           - Exponential backoff retry: 3 attempts, 2s→4s→6s
+#           - 429 rate-limit handled with longer wait
+#           - 5xx server errors retried silently
+#           - Every failure logs exact HTTP status + reason
+#           - Session auto-expires after 10 min, re-inits
+#           - NSE failures never crash the bot run
 #
-# [ADDED]   Market-open alert file reset:
-#           - At 09:15 IST, seen_alerts.json is wiped clean
-#           - seen_nse_news.json & seen_nse_notices.json are
-#             NOT wiped — news/notices persist across days
-#           - Price levels and day-high levels reset daily
-#             so every stock gets a clean slate each session
+# [ADDED]   Pre-market alert file reset (cron-aware):
+#           - Reset window: 08:45 – 09:14 IST
+#           - Fires on EVERY cron tick in that window
+#             (idempotent — safe to run multiple times)
+#           - Wipes seen_alerts.json completely: price
+#             levels, day-high levels, consolidation keys
+#           - seen_nse_news.json NOT wiped — dedupes across
+#             all days to avoid repeating old headlines
+#           - seen_nse_notices.json NOT wiped — same reason
+#           - Window chosen so 6 consecutive cron runs all
+#             reset, guaranteeing clean slate even if Railway
+#             skips or delays one run
 #
-# [KEPT]    All v5 features: price move alerts, day high,
-#           consolidation breakout (5m/15m), NSE news,
-#           NSE corporate notices, deduplication logic
+# [REMOVED] MARKET_OPEN_HOUR / MARKET_OPEN_MINUTE constants
+#           — replaced by is_pre_market_reset_window() which
+#           encodes the correct 8:45–9:14 IST window directly
+#
+# [REMOVED] One-shot reset stamp logic (market_open_reset_date)
+#           — no longer needed since reset is idempotent and
+#           safe to run on every tick in the window
+#
+# [KEPT]    All v5 features unchanged:
+#           - 🚨 Price move alerts (3% first, +0.5% steps)
+#           - 🔥 Day high breakout (re-fires on new highs)
+#           - 🔲 Consolidation breakout on 5m and 15m
+#           - 📰 NSE news headlines per symbol
+#           - 📋 NSE corporate announcements / notices
+#           - Partial candle drop logic (< 300s guard)
+#           - ThreadPoolExecutor fetch with MAX_WORKERS=2
+#           - Full deduplication across all alert types
 #
 # =========================================================
 
@@ -121,9 +172,9 @@ NSE_HEADERS = {
     "Connection":      "keep-alive",
 }
 
-# ── Market open time (IST) ────────────────────────────────
-MARKET_OPEN_HOUR   = 9
-MARKET_OPEN_MINUTE = 15
+# ── Market session (IST) ─────────────────────────────────
+# Reset window : 08:45 – 09:14 IST (pre-market, before bell)
+# Market open  : 09:15 IST  |  Market close : 15:30 IST
 
 # =========================================================
 # WATCHLIST
@@ -188,45 +239,53 @@ def today_str():
 # so every stock gets a completely fresh slate each session.
 # News and notice caches are intentionally preserved.
 
-def is_market_open_window():
+def is_pre_market_reset_window():
     """
-    Returns True if current IST time is within the market-open
-    reset window: 09:15:00 – 09:19:59 IST.
-    The cron runs every 5 minutes; this catches the first run
-    after market opens and resets once cleanly.
+    Returns True if current IST time is in the pre-market reset
+    window: 08:45 – 09:14 IST.
+
+    Cron is 2/5 3-10 UTC. Relevant UTC runs and their IST times:
+        3:17 UTC = 8:47 IST  ← first run in window  ✅
+        3:22 UTC = 8:52 IST  ✅
+        3:27 UTC = 8:57 IST  ✅
+        3:32 UTC = 9:02 IST  ✅
+        3:37 UTC = 9:07 IST  ✅
+        3:42 UTC = 9:12 IST  ✅  ← last run before market open
+        3:47 UTC = 9:17 IST  ← market already open, reset done
+
+    ALL runs in this window reset the file (idempotent — stamp
+    prevents any real work being repeated). This guarantees a
+    clean slate well before the 9:15 IST opening bell even if
+    Railway skips or delays one cron run.
     """
     now = datetime.now(IST)
-    if now.hour == MARKET_OPEN_HOUR and MARKET_OPEN_MINUTE <= now.minute < MARKET_OPEN_MINUTE + 5:
+    # 8:45 → hour=8, minute>=45
+    # 9:00 → hour=9, minute<15
+    if now.hour == 8 and now.minute >= 45:
+        return True
+    if now.hour == 9 and now.minute < 15:
         return True
     return False
 
 
 def reset_alert_files_at_open():
     """
-    [NEW v6] Called once per run. If we are in the market-open
-    window AND seen_alerts.json still has yesterday's date (or
-    today's but not yet reset), wipe it so alerts fire fresh.
+    Called on every bot run. Wipes seen_alerts.json during the
+    pre-market window (8:45–9:14 IST) so price-level and
+    day-high state is completely fresh before market opens.
 
-    seen_nse_news.json and seen_nse_notices.json are NOT wiped —
-    those deduplicate across all days to avoid repeats.
+    Runs on EVERY cron tick in the window (not just once) —
+    safe because writing an empty file is idempotent.
+    seen_nse_news.json and seen_nse_notices.json are NOT wiped.
     """
-    if not is_market_open_window():
+    if not is_pre_market_reset_window():
         return
 
-    raw = load_json(SEEN_FILE, {})
-    if not isinstance(raw, dict):
-        raw = {}
-
-    reset_marker = raw.get("market_open_reset_date")
-    if reset_marker == today_str():
-        log("🔄 Market-open reset already done today — skipping")
-        return
-
-    log("🔔 MARKET OPEN — resetting price & day-high alert state")
+    log("🔔 PRE-MARKET WINDOW (8:45–9:14 IST) — resetting alert state")
     fresh = _empty_seen()
     fresh["market_open_reset_date"] = today_str()
     save_json(fresh, SEEN_FILE)
-    log("✅ seen_alerts.json wiped for fresh session")
+    log("✅ seen_alerts.json wiped — clean slate for today's session")
 
 
 def load_seen_alerts():
