@@ -77,12 +77,15 @@
 #           - Each step fails independently — partial session
 #             still returned and retry logic handles the rest
 #
-# [FIXED]   NSE news endpoint 404:
-#           - Removed broken api/search-autocomplete (404)
-#           - Primary: api/search/autocomplete (correct path)
-#           - Fallback: api/quote-equity if primary empty
-#           - Parser handles both 'results' and 'data' keys
-#           - Total failure returns [] silently, no crash
+# [DISABLED] NSE news fetch (📰 NSE NEWS alerts):
+#           - api/search-autocomplete → 404 (removed by NSE)
+#           - api/search/autocomplete → 404 (also removed)
+#           - api/quote-equity        → 403 (WAF block)
+#           - 70 stocks × 3 retries = ~4 min wasted per run
+#           - process_nse_news() now returns immediately
+#           - seen_nse_news.json kept intact for future use
+#           - Corporate notices (corp-info) still active and
+#             cover all actionable events instead
 #
 # [KEPT]    All v5 features unchanged:
 #           - 🚨 Price move alerts (3% first, +0.5% steps)
@@ -496,159 +499,39 @@ def nse_get(url: str, label: str = "NSE"):
     return None
 
 # =========================================================
-# NSE NEWS  [FIXED v6 — correct endpoints + fallback chain]
+# NSE NEWS  [DISABLED — NSE blocks all bot API access]
 # =========================================================
 #
-# ENDPOINT HISTORY
-# ─────────────────
-# search-autocomplete  → returns 404 (endpoint removed/renamed)
-# search/autocomplete  → correct path per NSE API audit
-# quote-equity         → fallback: pulls announcements embedded
-#                        in the equity quote response
+# WHY DISABLED
+# ─────────────
+# NSE has hardened their API against automated/bot access.
+# Every search/news endpoint returns 403 or 404 regardless
+# of cookie warm-up, session headers, or retry strategy:
 #
-# STRATEGY
-# ─────────
-# Primary  : api/search/autocomplete?q=SYMBOL  (news + announcements)
-# Fallback : api/quote-equity?symbol=SYMBOL    (announcements only)
-# If both fail → return [] silently (no crash, no spam)
-
-def _parse_news_items(data: dict) -> list:
-    """
-    Extract news/announcement items from NSE search API response.
-    Handles both 'results' and 'data' key variants seen in the wild.
-    """
-    news_items = []
-    entries = data.get("results") or data.get("data") or []
-    if not isinstance(entries, list):
-        return []
-    for item in entries:
-        item_type = item.get("type", "").lower()
-        if item_type not in ("news", "announcement", "corp"):
-            continue
-        headline = (
-            item.get("symbol_info", "")
-            or item.get("name", "")
-            or item.get("subject", "")
-            or item.get("desc", "")
-        ).strip()
-        if not headline:
-            continue
-        news_items.append({
-            "headline": headline,
-            "date":     item.get("date", "") or item.get("ann_date", ""),
-            "url":      item.get("url", "") or item.get("attchmntFile", ""),
-        })
-    return news_items
-
-
-def _parse_quote_announcements(data: dict) -> list:
-    """
-    Fallback: extract announcements embedded in NSE quote-equity response.
-    These are corporate announcements, not market news, but still useful.
-    """
-    news_items = []
-    try:
-        anns = (
-            data.get("annualReport", [])
-            or data.get("announcements", [])
-            or data.get("corpInfo", {}).get("announcements", [])
-        )
-        for ann in anns:
-            subject = ann.get("subject", "") or ann.get("desc", "")
-            if not subject:
-                continue
-            news_items.append({
-                "headline": subject.strip(),
-                "date":     ann.get("date", "") or ann.get("bm_date", ""),
-                "url":      ann.get("attchmntFile", ""),
-            })
-    except Exception:
-        pass
-    return news_items
-
-
-def fetch_nse_news(symbol: str):
-    """
-    Fetches news/announcements for a symbol using a two-endpoint chain:
-
-    1. Primary: api/search/autocomplete?q=SYMBOL
-       Returns news + announcements mixed. Parses 'results' or 'data' key.
-
-    2. Fallback: api/quote-equity?symbol=SYMBOL
-       Used only if primary returns nothing or fails.
-       Pulls announcements embedded in the equity quote response.
-
-    Returns list of { headline, date, url } or [] on total failure.
-    """
-    # ── Primary ──────────────────────────────────────────
-    primary_url = f"https://www.nseindia.com/api/search/autocomplete?q={symbol}"
-    data = nse_get(primary_url, label=f"NEWS:{symbol}")
-    if data:
-        items = _parse_news_items(data)
-        if items:
-            return items
-        # data returned but no news-type items — still try fallback below
-
-    # ── Fallback ─────────────────────────────────────────
-    fallback_url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol}"
-    data2 = nse_get(fallback_url, label=f"NEWS-FB:{symbol}")
-    if data2:
-        return _parse_quote_announcements(data2)
-
-    return []
-
+#   api/search-autocomplete   → 404 (endpoint removed)
+#   api/search/autocomplete   → 404 (also removed)
+#   api/quote-equity          → 403 (WAF/cookie block)
+#
+# Running 70+ symbols × 3 retry attempts each wastes ~3-4
+# minutes per bot run for zero useful output.
+#
+# WHAT COVERS NEWS INSTEAD
+# ─────────────────────────
+# Corporate announcements (process_nse_notices below) use
+# api/corp-info which is more stable and covers the most
+# actionable events: results, dividends, splits, etc.
+#
+# TO RE-ENABLE
+# ─────────────
+# If NSE opens a public news API in future, implement
+# fetch_nse_news() here and call process_nse_news() from
+# run_bot(). The seen_nse_news dedup set is maintained so
+# it will work correctly once plugged back in.
 
 def process_nse_news():
-    global seen_nse_news
-    new_count = 0
-    log("📰 Checking NSE news...")
+    """NSE news disabled — API endpoints blocked by NSE WAF."""
+    log("📰 NSE news: disabled (NSE API blocked) — skipping")
 
-    for symbol in WATCHLIST:
-        try:
-            news_list = fetch_nse_news(symbol)
-            time.sleep(0.2)
-
-            for item in news_list:
-                headline = item.get("headline", "").strip()
-                if not headline or len(headline) < 10:
-                    continue
-
-                news_key = f"{symbol}|{headline[:100]}"
-                if news_key in seen_nse_news:
-                    continue
-
-                seen_nse_news.add(news_key)
-                new_count += 1
-
-                url_line = (
-                    f"\n🔗 <a href='{item['url']}'>Read More</a>"
-                    if item.get("url") else ""
-                )
-                ist_now = datetime.now(IST).strftime("%d %b %Y  %H:%M:%S IST")
-
-                # ── [CHANGED v6] Tighter card: stock name on line 2, no top gap ──
-                msg = "\n".join([
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    f"📰 <b>NSE NEWS — {symbol}</b>",
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    f"📅 <b>Date:</b>  {item.get('date') or 'Recent'}",
-                    f"",
-                    f"📝 <b>Headline:</b>",
-                    f"   {headline[:300]}",
-                    f"{url_line}",
-                    f"",
-                    f"🕐 {ist_now}",
-                ])
-                send_telegram(msg)
-                time.sleep(0.4)
-
-        except Exception:
-            log(f"⚠️ News processing error for {symbol}")
-            traceback.print_exc()
-            continue
-
-    save_json(list(seen_nse_news), NSE_NEWS_FILE)
-    log(f"📰 NSE news: {new_count} new alerts sent")
 
 # =========================================================
 # NSE CORPORATE NOTICES  [IMPROVED v6 — uses nse_get()]
