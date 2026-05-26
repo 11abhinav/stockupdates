@@ -20,6 +20,10 @@
 # ✅ Exception Reporting to Telegram
 # ✅ Persistent Candle Storage
 # ✅ Invalid NSE Data Protection
+# ✅ Lightweight Production Logs
+# ✅ Loop Heartbeat Logs
+# ✅ NSE Fetch Visibility
+# ✅ Breakout/Volume Debug Logs
 #
 # =========================================================
 
@@ -422,6 +426,11 @@ def fetch_stock(symbol):
 
 def fetch_all_data():
 
+    print(
+        f"📊 Fetching NSE data | "
+        f"Stocks={len(WATCHLIST)}"
+    )
+
     result = {}
 
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -446,6 +455,11 @@ def fetch_all_data():
                     f"❌ PARALLEL FETCH ERROR\n\n"
                     f"{str(e)}"
                 )
+
+    print(
+        f"✅ NSE fetch complete | "
+        f"Valid={len(result)}"
+    )
 
     return result
 
@@ -648,6 +662,13 @@ def process_breakout_alert(symbol, stock):
 
     try:
 
+        if hash(symbol) % 35 == 0:
+
+            print(
+                f"🚀 Checking breakout | "
+                f"{symbol}"
+            )
+
         prev_5m = get_previous_candle(symbol, 5)
         prev_10m = get_previous_candle(symbol, 10)
         prev_15m = get_previous_candle(symbol, 15)
@@ -737,6 +758,13 @@ def process_breakout_alert(symbol, stock):
 def process_volume_breakout(symbol):
 
     try:
+
+        if hash(symbol) % 40 == 0:
+
+            print(
+                f"📊 Checking volume | "
+                f"{symbol}"
+            )
 
         prev_5m = get_previous_candle(symbol, 5)
         prev_10m = get_previous_candle(symbol, 10)
@@ -1060,6 +1088,11 @@ last_news_scan = 0
 
 while True:
 
+    print(
+        f"\n🚀 LOOP | "
+        f"{ist_now().strftime('%H:%M:%S')}"
+    )
+
     try:
 
         # =====================================================
@@ -1068,7 +1101,11 @@ while True:
 
         if time.time() - last_news_scan > 900:
 
+            print("📰 News scan running")
+
             fetch_google_news()
+
+            print("📢 NSE announcement scan running")
 
             fetch_nse_announcements()
 
@@ -1086,6 +1123,13 @@ while True:
 
                 if not stock:
                     continue
+
+                if hash(symbol) % 25 == 0:
+
+                    print(
+                        f"🔍 {symbol} | "
+                        f"₹{stock['price']}"
+                    )
 
                 update_candles(
                     symbol,
@@ -1128,5 +1172,11 @@ while True:
             f"❌ MAIN LOOP ERROR\n\n"
             f"{str(e)}"
         )
+
+    print(
+        f"✅ Cycle Complete | "
+        f"Stocks={len(all_data) if is_alert_hours() else 0} | "
+        f"SeenAlerts={len(seen_alerts)}"
+    )
 
     time.sleep(CHECK_INTERVAL)
