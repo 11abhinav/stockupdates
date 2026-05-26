@@ -17,7 +17,6 @@
 # ✅ Volume spike detection
 # ✅ Duplicate alert prevention
 # ✅ Telegram alerts
-# ✅ Google News alerts
 # ✅ BSE announcement alerts
 # ✅ Excel export using openpyxl
 # ✅ Parquet export using pyarrow
@@ -69,7 +68,6 @@ EXPORT_FOLDER = "exports"
 
 ALERTS_FILE = "alerts_sent.json"
 BSE_ALERTS_FILE = "bse_alerts.json"
-NEWS_ALERTS_FILE = "news_alerts.json"
 
 BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
 
@@ -144,6 +142,67 @@ WATCHLIST = [
     "TITAN",
     "TRENT",
 ]
+
+# =============================================================================
+# BSE NAME MAPPING
+# =============================================================================
+
+BSE_NAME_MAP = {
+    "ADANIENT": ["ADANI ENTERPRISES"],
+    "ADANIGREEN": ["ADANI GREEN ENERGY"],
+    "ADANIPORTS": ["ADANI PORTS"],
+    "AKZOINDIA": ["AKZO NOBEL INDIA"],
+    "ANANTRAJ": ["ANANT RAJ"],
+    "ASIANPAINT": ["ASIAN PAINTS"],
+    "ATGL": ["ADANI TOTAL GAS"],
+    "BAJAJFINSV": ["BAJAJ FINSERV"],
+    "BEL": ["BHARAT ELECTRONICS"],
+    "BLS": ["BLS INTERNATIONAL"],
+    "BLUEDART": ["BLUE DART EXPRESS"],
+    "CASTROLIND": ["CASTROL INDIA"],
+    "CGPOWER": ["CG POWER AND INDUSTRIAL"],
+    "CLEAN": ["CLEAN SCIENCE"],
+    "COALINDIA": ["COAL INDIA"],
+    "DBL": ["DILIP BUILDCON"],
+    "EIDPARRY": ["E.I.D. PARRY"],
+    "FILATEX": ["FILATEX INDIA"],
+    "FORTIS": ["FORTIS HEALTHCARE"],
+    "GILLETTE": ["GILLETTE INDIA"],
+    "GSFC": ["GUJARAT STATE FERTILIZERS"],
+    "HDFCBANK": ["HDFC BANK"],
+    "HINDCOPPER": ["HINDUSTAN COPPER"],
+    "HINDUNILVR": ["HINDUSTAN UNILEVER"],
+    "ICICIBANK": ["ICICI BANK"],
+    "IDBI": ["IDBI BANK"],
+    "IFCI": ["IFCI LTD"],
+    "INDUSTOWER": ["INDUS TOWERS"],
+    "INFY": ["INFOSYS"],
+    "IRB": ["IRB INFRASTRUCTURE"],
+    "IRCTC": ["INDIAN RAILWAY CATERING"],
+    "JIOFIN": ["JIO FINANCIAL SERVICES"],
+    "JSWENERGY": ["JSW ENERGY"],
+    "LATENTVIEW": ["LATENT VIEW ANALYTICS"],
+    "LLOYDSENGG": ["LLOYDS ENGINEERING"],
+    "LT": ["LARSEN AND TOUBRO"],
+    "MARUTI": ["MARUTI SUZUKI"],
+    "MAZDOCK": ["MAZAGON DOCK"],
+    "NATCOPHARM": ["NATCO PHARMA"],
+    "ONGC": ["OIL AND NATURAL GAS"],
+    "ORIENTCEM": ["ORIENT CEMENT"],
+    "PFC": ["POWER FINANCE CORPORATION"],
+    "PIDILITIND": ["PIDILITE INDUSTRIES"],
+    "POONAWALLA": ["POONAWALLA FINCORP"],
+    "PVRINOX": ["PVR INOX"],
+    "RELIANCE": ["RELIANCE INDUSTRIES"],
+    "RVNL": ["RAIL VIKAS NIGAM"],
+    "SBIN": ["STATE BANK OF INDIA"],
+    "SUZLON": ["SUZLON ENERGY"],
+    "SWIGGY": ["SWIGGY LTD"],
+    "SYMPHONY": ["SYMPHONY LTD"],
+    "TATATECH": ["TATA TECHNOLOGIES"],
+    "TITAN": ["TITAN COMPANY"],
+    "TRENT": ["TRENT LTD"],
+}
 
 # =============================================================================
 # TELEGRAM
@@ -239,62 +298,6 @@ def safe_float(value, default=0.0):
         return default
 
 # =============================================================================
-# NEWS ALERTS
-# =============================================================================
-
-def check_news(symbol):
-
-    try:
-
-        alerts = load_json_file(
-            NEWS_ALERTS_FILE
-        )
-
-        today = datetime.now().strftime(
-            "%Y-%m-%d"
-        )
-
-        url = (
-            "https://news.google.com/rss/search?"
-            f"q={symbol}+NSE"
-        )
-
-        feed = feedparser.parse(url)
-
-        if not feed.entries:
-            return
-
-        entry = feed.entries[0]
-
-        title = entry.title
-        link = entry.link
-
-        key = f"{symbol}_{title}"
-
-        if alerts.get(key) == today:
-            return
-
-        msg = (
-            f"📰 NEWS ALERT\n\n"
-            f"Stock: {symbol}\n\n"
-            f"{title}\n\n"
-            f"{link}"
-        )
-
-        send_telegram(msg)
-
-        alerts[key] = today
-
-        save_json_file(
-            NEWS_ALERTS_FILE,
-            alerts,
-        )
-
-    except Exception:
-
-        traceback.print_exc()
-
-# =============================================================================
 # BSE ANNOUNCEMENTS
 # =============================================================================
 
@@ -317,16 +320,36 @@ def check_bse_announcements():
         feed = feedparser.parse(BSE_RSS)
 
         if not feed.entries:
+
+            log.warning(
+                "No BSE announcements found"
+            )
+
             return
 
-        for entry in feed.entries[:30]:
+        for entry in feed.entries[:100]:
 
             title = entry.title.upper()
             link = entry.link
 
             for symbol in WATCHLIST:
 
-                if symbol in title:
+                keywords = BSE_NAME_MAP.get(
+                    symbol,
+                    [symbol]
+                )
+
+                matched = any(
+                    keyword in title
+                    for keyword in keywords
+                )
+
+                if matched:
+
+                    log.info(
+                        "Matched BSE notice for %s",
+                        symbol,
+                    )
 
                     key = (
                         f"{symbol}_{title}"
@@ -345,6 +368,11 @@ def check_bse_announcements():
                     send_telegram(msg)
 
                     alerts[key] = today
+
+                    log.info(
+                        "BSE alert sent for %s",
+                        symbol,
+                    )
 
         save_json_file(
             BSE_ALERTS_FILE,
@@ -628,8 +656,6 @@ def run():
             }
 
             results.append(result)
-
-            check_news(symbol)
 
             if (
                 score >= STRONG_SCORE
