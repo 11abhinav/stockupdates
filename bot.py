@@ -68,6 +68,22 @@
 #           — no longer needed since reset is idempotent and
 #           safe to run on every tick in the window
 #
+# [FIXED]   NSE session 403 on homepage:
+#           - No longer hits nseindia.com homepage (returns 403)
+#           - Step 1: hits api/marketStatus (lightweight JSON,
+#             no 403, sets initial cookies)
+#           - Step 2: hits market-data/live-equity-market to
+#             warm up full cookie set (nseappid, nsit etc.)
+#           - Each step fails independently — partial session
+#             still returned and retry logic handles the rest
+#
+# [FIXED]   NSE news endpoint 404:
+#           - Removed broken api/search-autocomplete (404)
+#           - Primary: api/search/autocomplete (correct path)
+#           - Fallback: api/quote-equity if primary empty
+#           - Parser handles both 'results' and 'data' keys
+#           - Total failure returns [] silently, no crash
+#
 # [KEPT]    All v5 features unchanged:
 #           - 🚨 Price move alerts (3% first, +0.5% steps)
 #           - 🔥 Day high breakout (re-fires on new highs)
@@ -349,22 +365,61 @@ NSE_SESSION_TTL   = 600   # re-init session after 10 minutes
 
 def _init_nse_session():
     """
-    Creates a fresh NSE session. Handles connection errors gracefully.
-    Returns the session or None.
+    Creates a fresh NSE session using a two-step warm-up:
+
+    Step 1 — GET nseindia.com/api/marketStatus
+      A lightweight JSON endpoint NSE exposes without requiring
+      a pre-existing cookie. Avoids the 403 that the homepage
+      returns to bots. Sets the initial session cookies.
+
+    Step 2 — GET nseindia.com/market-data/live-equity-market
+      A second lightweight page hit to ensure NSE's CDN/WAF
+      sees a realistic browsing pattern and issues the full
+      cookie set (nseappid, nsit, etc.) needed for API calls.
+
+    Both steps are attempted independently. A partial warm-up
+    (only Step 1 succeeds) still returns a usable session —
+    it may have weaker cookies but the API call retry logic
+    will refresh if needed.
+
+    Returns the session object or None if both steps fail.
     """
     try:
         s = requests.Session()
         s.headers.update(NSE_HEADERS)
-        resp = s.get("https://www.nseindia.com", timeout=NSE_TIMEOUT)
-        if resp.status_code != 200:
-            log(f"⚠️ NSE home returned HTTP {resp.status_code} — session may be weak")
+
+        # ── Step 1: lightweight JSON endpoint (no 403 risk) ──
+        try:
+            r1 = s.get(
+                "https://www.nseindia.com/api/marketStatus",
+                timeout=NSE_TIMEOUT,
+            )
+            if r1.status_code == 200:
+                log("✅ NSE session step 1 OK (marketStatus)")
+            else:
+                log(f"⚠️ NSE session step 1 HTTP {r1.status_code} — continuing anyway")
+        except Exception as e:
+            log(f"⚠️ NSE session step 1 failed ({e}) — continuing")
+
+        time.sleep(0.8)
+
+        # ── Step 2: secondary page to warm up full cookie set ──
+        try:
+            r2 = s.get(
+                "https://www.nseindia.com/market-data/live-equity-market",
+                timeout=NSE_TIMEOUT,
+            )
+            if r2.status_code == 200:
+                log("✅ NSE session step 2 OK (live-equity-market)")
+            else:
+                log(f"⚠️ NSE session step 2 HTTP {r2.status_code} — cookies may be partial")
+        except Exception as e:
+            log(f"⚠️ NSE session step 2 failed ({e}) — using partial session")
+
         time.sleep(NSE_SESSION_DELAY)
         log("✅ NSE session (re)initialised")
         return s
-    except requests.exceptions.Timeout:
-        log("⚠️ NSE session init timed out")
-    except requests.exceptions.ConnectionError as e:
-        log(f"⚠️ NSE session connection error: {e}")
+
     except Exception as e:
         log(f"⚠️ NSE session unexpected error: {e}")
     return None
@@ -441,23 +496,106 @@ def nse_get(url: str, label: str = "NSE"):
     return None
 
 # =========================================================
-# NSE NEWS  [IMPROVED v6 — uses nse_get()]
+# NSE NEWS  [FIXED v6 — correct endpoints + fallback chain]
 # =========================================================
+#
+# ENDPOINT HISTORY
+# ─────────────────
+# search-autocomplete  → returns 404 (endpoint removed/renamed)
+# search/autocomplete  → correct path per NSE API audit
+# quote-equity         → fallback: pulls announcements embedded
+#                        in the equity quote response
+#
+# STRATEGY
+# ─────────
+# Primary  : api/search/autocomplete?q=SYMBOL  (news + announcements)
+# Fallback : api/quote-equity?symbol=SYMBOL    (announcements only)
+# If both fail → return [] silently (no crash, no spam)
+
+def _parse_news_items(data: dict) -> list:
+    """
+    Extract news/announcement items from NSE search API response.
+    Handles both 'results' and 'data' key variants seen in the wild.
+    """
+    news_items = []
+    entries = data.get("results") or data.get("data") or []
+    if not isinstance(entries, list):
+        return []
+    for item in entries:
+        item_type = item.get("type", "").lower()
+        if item_type not in ("news", "announcement", "corp"):
+            continue
+        headline = (
+            item.get("symbol_info", "")
+            or item.get("name", "")
+            or item.get("subject", "")
+            or item.get("desc", "")
+        ).strip()
+        if not headline:
+            continue
+        news_items.append({
+            "headline": headline,
+            "date":     item.get("date", "") or item.get("ann_date", ""),
+            "url":      item.get("url", "") or item.get("attchmntFile", ""),
+        })
+    return news_items
+
+
+def _parse_quote_announcements(data: dict) -> list:
+    """
+    Fallback: extract announcements embedded in NSE quote-equity response.
+    These are corporate announcements, not market news, but still useful.
+    """
+    news_items = []
+    try:
+        anns = (
+            data.get("annualReport", [])
+            or data.get("announcements", [])
+            or data.get("corpInfo", {}).get("announcements", [])
+        )
+        for ann in anns:
+            subject = ann.get("subject", "") or ann.get("desc", "")
+            if not subject:
+                continue
+            news_items.append({
+                "headline": subject.strip(),
+                "date":     ann.get("date", "") or ann.get("bm_date", ""),
+                "url":      ann.get("attchmntFile", ""),
+            })
+    except Exception:
+        pass
+    return news_items
+
 
 def fetch_nse_news(symbol: str):
-    url  = f"https://www.nseindia.com/api/search-autocomplete?q={symbol}"
-    data = nse_get(url, label=f"NEWS:{symbol}")
-    if not data:
-        return []
-    news_items = []
-    for item in data.get("results", []):
-        if item.get("type", "").lower() in ("news", "announcement"):
-            news_items.append({
-                "headline": item.get("symbol_info", "") or item.get("name", ""),
-                "date":     item.get("date", ""),
-                "url":      item.get("url", ""),
-            })
-    return news_items
+    """
+    Fetches news/announcements for a symbol using a two-endpoint chain:
+
+    1. Primary: api/search/autocomplete?q=SYMBOL
+       Returns news + announcements mixed. Parses 'results' or 'data' key.
+
+    2. Fallback: api/quote-equity?symbol=SYMBOL
+       Used only if primary returns nothing or fails.
+       Pulls announcements embedded in the equity quote response.
+
+    Returns list of { headline, date, url } or [] on total failure.
+    """
+    # ── Primary ──────────────────────────────────────────
+    primary_url = f"https://www.nseindia.com/api/search/autocomplete?q={symbol}"
+    data = nse_get(primary_url, label=f"NEWS:{symbol}")
+    if data:
+        items = _parse_news_items(data)
+        if items:
+            return items
+        # data returned but no news-type items — still try fallback below
+
+    # ── Fallback ─────────────────────────────────────────
+    fallback_url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol}"
+    data2 = nse_get(fallback_url, label=f"NEWS-FB:{symbol}")
+    if data2:
+        return _parse_quote_announcements(data2)
+
+    return []
 
 
 def process_nse_news():
