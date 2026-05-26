@@ -17,7 +17,7 @@
 # ✅ Volume spike detection
 # ✅ Duplicate alert prevention
 # ✅ Telegram alerts
-# ✅ BSE announcement alerts
+# ✅ Hybrid BSE + Google announcement alerts
 # ✅ Excel export using openpyxl
 # ✅ Parquet export using pyarrow
 # ✅ Retry-safe structure
@@ -144,64 +144,17 @@ WATCHLIST = [
 ]
 
 # =============================================================================
-# BSE NAME MAPPING
+# BSE NAME MAP
 # =============================================================================
 
 BSE_NAME_MAP = {
-    "ADANIENT": ["ADANI ENTERPRISES"],
-    "ADANIGREEN": ["ADANI GREEN ENERGY"],
-    "ADANIPORTS": ["ADANI PORTS"],
-    "AKZOINDIA": ["AKZO NOBEL INDIA"],
-    "ANANTRAJ": ["ANANT RAJ"],
-    "ASIANPAINT": ["ASIAN PAINTS"],
-    "ATGL": ["ADANI TOTAL GAS"],
-    "BAJAJFINSV": ["BAJAJ FINSERV"],
-    "BEL": ["BHARAT ELECTRONICS"],
-    "BLS": ["BLS INTERNATIONAL"],
-    "BLUEDART": ["BLUE DART EXPRESS"],
-    "CASTROLIND": ["CASTROL INDIA"],
-    "CGPOWER": ["CG POWER AND INDUSTRIAL"],
-    "CLEAN": ["CLEAN SCIENCE"],
     "COALINDIA": ["COAL INDIA"],
-    "DBL": ["DILIP BUILDCON"],
-    "EIDPARRY": ["E.I.D. PARRY"],
-    "FILATEX": ["FILATEX INDIA"],
-    "FORTIS": ["FORTIS HEALTHCARE"],
-    "GILLETTE": ["GILLETTE INDIA"],
-    "GSFC": ["GUJARAT STATE FERTILIZERS"],
-    "HDFCBANK": ["HDFC BANK"],
-    "HINDCOPPER": ["HINDUSTAN COPPER"],
-    "HINDUNILVR": ["HINDUSTAN UNILEVER"],
-    "ICICIBANK": ["ICICI BANK"],
-    "IDBI": ["IDBI BANK"],
-    "IFCI": ["IFCI LTD"],
-    "INDUSTOWER": ["INDUS TOWERS"],
-    "INFY": ["INFOSYS"],
-    "IRB": ["IRB INFRASTRUCTURE"],
-    "IRCTC": ["INDIAN RAILWAY CATERING"],
-    "JIOFIN": ["JIO FINANCIAL SERVICES"],
-    "JSWENERGY": ["JSW ENERGY"],
-    "LATENTVIEW": ["LATENT VIEW ANALYTICS"],
-    "LLOYDSENGG": ["LLOYDS ENGINEERING"],
-    "LT": ["LARSEN AND TOUBRO"],
-    "MARUTI": ["MARUTI SUZUKI"],
-    "MAZDOCK": ["MAZAGON DOCK"],
-    "NATCOPHARM": ["NATCO PHARMA"],
-    "ONGC": ["OIL AND NATURAL GAS"],
-    "ORIENTCEM": ["ORIENT CEMENT"],
-    "PFC": ["POWER FINANCE CORPORATION"],
-    "PIDILITIND": ["PIDILITE INDUSTRIES"],
-    "POONAWALLA": ["POONAWALLA FINCORP"],
-    "PVRINOX": ["PVR INOX"],
-    "RELIANCE": ["RELIANCE INDUSTRIES"],
-    "RVNL": ["RAIL VIKAS NIGAM"],
     "SBIN": ["STATE BANK OF INDIA"],
-    "SUZLON": ["SUZLON ENERGY"],
-    "SWIGGY": ["SWIGGY LTD"],
-    "SYMPHONY": ["SYMPHONY LTD"],
-    "TATATECH": ["TATA TECHNOLOGIES"],
-    "TITAN": ["TITAN COMPANY"],
-    "TRENT": ["TRENT LTD"],
+    "RELIANCE": ["RELIANCE INDUSTRIES"],
+    "INFY": ["INFOSYS"],
+    "ONGC": ["OIL AND NATURAL GAS"],
+    "BEL": ["BHARAT ELECTRONICS"],
+    "IRCTC": ["INDIAN RAILWAY CATERING"],
 }
 
 # =============================================================================
@@ -298,7 +251,7 @@ def safe_float(value, default=0.0):
         return default
 
 # =============================================================================
-# BSE ANNOUNCEMENTS
+# MARKET ANNOUNCEMENTS
 # =============================================================================
 
 def check_bse_announcements():
@@ -306,7 +259,7 @@ def check_bse_announcements():
     try:
 
         log.info(
-            "Checking BSE announcements"
+            "Checking market announcements"
         )
 
         alerts = load_json_file(
@@ -317,39 +270,118 @@ def check_bse_announcements():
             "%Y-%m-%d"
         )
 
-        feed = feedparser.parse(BSE_RSS)
+        important_keywords = [
 
-        if not feed.entries:
+            "OFS",
+            "OFFER FOR SALE",
+            "DIVIDEND",
+            "BOARD MEETING",
+            "STAKE SALE",
+            "MERGER",
+            "RESULT",
+            "APPROVAL",
+            "ORDER",
+            "CONTRACT",
 
-            log.warning(
-                "No BSE announcements found"
-            )
+        ]
 
-            return
+        # =========================================================
+        # GOOGLE RSS FALLBACK
+        # =========================================================
 
-        for entry in feed.entries[:100]:
+        for symbol in WATCHLIST:
 
-            title = entry.title.upper()
-            link = entry.link
+            urls = [
 
-            for symbol in WATCHLIST:
+                (
+                    "https://news.google.com/rss/search?"
+                    f"q={symbol}+OFS+OR+"
+                    f"{symbol}+dividend+OR+"
+                    f"{symbol}+board+meeting+OR+"
+                    f"{symbol}+stake+sale"
+                ),
 
-                keywords = BSE_NAME_MAP.get(
-                    symbol,
-                    [symbol]
-                )
+                (
+                    "https://news.google.com/rss/search?"
+                    f"q={symbol}+BSE+announcement"
+                ),
 
-                matched = any(
-                    keyword in title
-                    for keyword in keywords
-                )
+            ]
 
-                if matched:
+            for url in urls:
+
+                feed = feedparser.parse(url)
+
+                if not feed.entries:
+                    continue
+
+                for entry in feed.entries[:5]:
+
+                    title = entry.title.upper()
+
+                    link = entry.link
+
+                    matched = any(
+                        kw in title
+                        for kw in important_keywords
+                    )
+
+                    if not matched:
+                        continue
+
+                    key = (
+                        f"{symbol}_{title}"
+                    )
+
+                    if alerts.get(key) == today:
+                        continue
+
+                    msg = (
+                        f"📢 MARKET ANNOUNCEMENT\n\n"
+                        f"Stock: {symbol}\n\n"
+                        f"{entry.title}\n\n"
+                        f"{link}"
+                    )
+
+                    send_telegram(msg)
+
+                    alerts[key] = today
 
                     log.info(
-                        "Matched BSE notice for %s",
+                        "Announcement alert sent for %s",
                         symbol,
                     )
+
+                    time.sleep(1)
+
+        # =========================================================
+        # BSE RSS CHECK
+        # =========================================================
+
+        feed = feedparser.parse(BSE_RSS)
+
+        if feed.entries:
+
+            for entry in feed.entries[:100]:
+
+                title = entry.title.upper()
+
+                link = entry.link
+
+                for symbol in WATCHLIST:
+
+                    keywords = BSE_NAME_MAP.get(
+                        symbol,
+                        [symbol]
+                    )
+
+                    matched = any(
+                        keyword in title
+                        for keyword in keywords
+                    )
+
+                    if not matched:
+                        continue
 
                     key = (
                         f"{symbol}_{title}"
@@ -373,6 +405,12 @@ def check_bse_announcements():
                         "BSE alert sent for %s",
                         symbol,
                     )
+
+        else:
+
+            log.warning(
+                "BSE RSS returned no entries"
+            )
 
         save_json_file(
             BSE_ALERTS_FILE,
@@ -700,10 +738,6 @@ def run():
         )
 
         export_results(df)
-
-        print("\nTOP MOMENTUM STOCKS\n")
-
-        print(df.head(15))
 
     check_bse_announcements()
 
