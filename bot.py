@@ -1,44 +1,38 @@
 # =============================================================================
-# NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL STABLE VERSION v6
+# NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL STABLE VERSION v7
 # =============================================================================
 #
-# WHAT THIS BOT DOES
+# FEATURES
 # -----------------------------------------------------------------------------
-# 1. Uses NSE API for LIVE prices
-# 2. Uses Yahoo Finance only for historical candles
-# 3. Detects momentum and breakouts
-# 4. Sends Telegram alerts
-# 5. Fetches Google News RSS
-# 6. Fetches BSE corporate announcements
-# 7. Prevents duplicate alerts
-# 8. Railway-safe stable production architecture
+# - NSE LIVE PRICE FETCH
+# - Yahoo Finance historical candles
+# - RSI calculation
+# - Breakout detection
+# - Volume spike detection
+# - Google News alerts
+# - BSE corporate announcements
+# - Telegram alerts
+# - Railway/VPS stable architecture
 #
 # =============================================================================
-# FIXES APPLIED
+# FIXES INCLUDED
 # =============================================================================
 #
 # FIXED:
-# -------
 # - TradingView failures
 # - float(series) errors
-# - yfinance MultiIndex issues
-# - Telegram failures
-# - duplicate RSS alerts
+# - yfinance MultiIndex bugs
+# - NSE blocking handling
+# - session refresh
+# - retry logic
+# - invalid JSON responses
+# - duplicate RSS spam
 # - Railway crashes
-# - invalid dataframe conversions
 #
-# IMPORTANT CHANGE:
-# -----------------
-# TradingView REMOVED.
-#
-# NSE API now used for:
-# - live prices
-# - intraday moves
-#
-# This is MUCH more stable on Railway/VPS.
 # =============================================================================
 
 import os
+import time
 import logging
 import traceback
 import requests
@@ -252,81 +246,155 @@ session = requests.Session()
 
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64)"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0 Safari/537.36"
     ),
+    "Accept": "application/json,text/plain,*/*",
     "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/",
+    "Connection": "keep-alive",
 }
 
-def prime_nse():
+def refresh_nse_session():
+
+    global session
 
     try:
+
+        session = requests.Session()
 
         session.get(
             "https://www.nseindia.com",
             headers=HEADERS,
-            timeout=10,
+            timeout=15,
         )
 
-    except:
-        pass
+        log.info("NSE session refreshed")
 
-prime_nse()
+    except Exception:
+        traceback.print_exc()
+
+refresh_nse_session()
 
 def fetch_nse_live(symbol):
 
-    try:
+    global session
 
-        url = (
-            "https://www.nseindia.com/api/"
-            f"quote-equity?symbol={symbol}"
-        )
+    url = (
+        "https://www.nseindia.com/api/"
+        f"quote-equity?symbol={symbol}"
+    )
 
-        r = session.get(
-            url,
-            headers=HEADERS,
-            timeout=10,
-        )
+    for attempt in range(3):
 
-        data = r.json()
+        try:
 
-        price = data["priceInfo"]
+            response = session.get(
+                url,
+                headers=HEADERS,
+                timeout=15,
+            )
 
-        ltp = safe_float(price.get("lastPrice"))
+            if response.status_code in [401, 403]:
 
-        prev_close = safe_float(
-            price.get("previousClose")
-        )
+                log.warning(
+                    "NSE blocked session. Refreshing..."
+                )
 
-        day_high = safe_float(
-            price["intraDayHighLow"].get("max")
-        )
+                refresh_nse_session()
 
-        total_volume = safe_float(
-            data.get("securityWiseDP", {})
-            .get("quantityTraded")
-        )
+                continue
 
-        change_pct = (
-            ((ltp - prev_close) / prev_close) * 100
-            if prev_close > 0 else 0
-        )
+            if response.status_code != 200:
 
-        return {
-            "ltp": ltp,
-            "change_pct": change_pct,
-            "day_high": day_high,
-            "volume": total_volume,
-        }
+                log.warning(
+                    "Bad NSE response %s for %s",
+                    response.status_code,
+                    symbol,
+                )
 
-    except Exception:
+                continue
 
-        log.warning(
-            "NSE fetch failed for %s",
-            symbol,
-        )
+            content_type = response.headers.get(
+                "Content-Type",
+                "",
+            )
 
-        return None
+            if "json" not in content_type.lower():
+
+                log.warning(
+                    "NSE returned non-JSON for %s",
+                    symbol,
+                )
+
+                refresh_nse_session()
+
+                continue
+
+            data = response.json()
+
+            if "priceInfo" not in data:
+
+                log.warning(
+                    "Missing priceInfo for %s",
+                    symbol,
+                )
+
+                continue
+
+            price = data["priceInfo"]
+
+            ltp = safe_float(
+                price.get("lastPrice")
+            )
+
+            prev_close = safe_float(
+                price.get("previousClose")
+            )
+
+            day_high = safe_float(
+                price.get(
+                    "intraDayHighLow",
+                    {}
+                ).get("max")
+            )
+
+            volume = safe_float(
+                data.get(
+                    "securityWiseDP",
+                    {}
+                ).get("quantityTraded")
+            )
+
+            change_pct = (
+                ((ltp - prev_close) / prev_close) * 100
+                if prev_close > 0 else 0
+            )
+
+            return {
+                "ltp": ltp,
+                "change_pct": change_pct,
+                "day_high": day_high,
+                "volume": volume,
+            }
+
+        except Exception:
+
+            log.warning(
+                "Retry %s failed for %s",
+                attempt + 1,
+                symbol,
+            )
+
+            time.sleep(2)
+
+    log.warning(
+        "FINAL NSE FAILURE %s",
+        symbol,
+    )
+
+    return None
 
 # =============================================================================
 # GOOGLE NEWS
@@ -450,6 +518,8 @@ def run():
 
         try:
 
+            time.sleep(0.5)
+
             log.info("Checking %s", symbol)
 
             hist = fetch_historical_data(symbol)
@@ -497,7 +567,7 @@ def run():
                 breakout,
             )
 
-            # NEWS CHECK
+            # NEWS ALERTS
             check_news(symbol)
 
             if score >= STRONG_SCORE:
