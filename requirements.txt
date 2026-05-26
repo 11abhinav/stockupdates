@@ -4,5 +4,5 @@ yfinance
 ta
 pyarrow
 requests
-tqdm
 openpyxl
+feedparser
