@@ -738,9 +738,24 @@ def fetch_stock(symbol: str):
             df.columns = df.columns.get_level_values(0)
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # Drop currently forming candle (partial)
+        # ── Drop partial (forming) 5m candle — timestamp boundary check ──
+        # A 5m candle starting at T is only complete after T+5min.
+        # We check how many seconds ago the last candle opened.
+        # If < 300s (5min) → still forming → drop it.
+        # If >= 300s → candle is closed → keep it.
+        # Fallback: blind drop if timestamp check fails (safe default).
         if len(df) > 1:
-            df = df.iloc[:-1]
+            try:
+                last_ts = df.index[-1]
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.tz_localize(UTC)
+                now_utc = datetime.now(timezone.utc)
+                seconds_since_open = (now_utc - last_ts).total_seconds()
+                if seconds_since_open < 300:
+                    df = df.iloc[:-1]   # still forming — drop
+                # else: candle fully closed — keep it
+            except Exception:
+                df = df.iloc[:-1]   # fallback: blind drop
 
         if len(df) < 12:
             return None
@@ -778,6 +793,15 @@ def fetch_stock(symbol: str):
                 "Close":  "last",
                 "Volume": "sum",
             }).dropna()
+
+            # Drop partial 15m candle: count how many 5m bars fall in
+            # the last 15m group. A complete 15m candle needs 3 bars.
+            # If the last group has < 3 bars it is still forming — drop it.
+            if len(today_15m) > 1:
+                last_15m_start = today_15m.index[-1]
+                bars_in_last   = df_idx[df_idx.index >= last_15m_start]
+                if len(bars_in_last) < 3:
+                    today_15m = today_15m.iloc[:-1]
         except Exception:
             today_15m = None
 
@@ -1082,8 +1106,21 @@ def process_alerts(all_data: dict):
 # =========================================================
 
 def run_bot():
-    ist_now_str = datetime.now(IST).strftime("%H:%M:%S")
+    now_ist     = datetime.now(IST)
+    ist_now_str = now_ist.strftime("%H:%M:%S")
     log(f"🚀 RUN STARTED | {ist_now_str} IST")
+
+    # ── Cron timing safety check ─────────────────────────
+    # Schedule is set to fire at :47/5 UTC (= 2 min after each
+    # NSE 5m candle close). Log the offset so you can verify
+    # in Railway logs that timing is correct.
+    # Expected: bot runs at IST HH:17, :22, :27, :32... etc.
+    # Offset from last 5m boundary (should always be ~2 min):
+    minute      = now_ist.minute
+    offset_mins = minute % 5           # mins past last 5m mark
+    log(f"⏱️  Candle offset: {offset_mins} min past last 5m mark (ideal=2)")
+    if offset_mins == 0:
+        log("⚠️  Running exactly on candle boundary — partial candle risk. Check Railway cron.")
 
     log("✅ Running scan")
 
