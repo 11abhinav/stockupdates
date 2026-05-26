@@ -1,50 +1,94 @@
 # =========================================================
-# NSE MOMENTUM ALERT BOT — v4 REWRITE
+# NSE MOMENTUM ALERT BOT — v5
 # =========================================================
 #
-# TRIGGERS (each fires its own detailed Telegram card)
+# CHANGES FROM v4
 # ---------------------------------------------------------
 #
-# 1. PRICE MOVE ALERT
-#    Price moves ≥ 3% from day open (upside or downside)
-#    - Shows: move %, current price, open, high, low, context
+# [REMOVED] Volume breakout alerts (SPIKE / 15M / 30M)
+#           Too noisy — fired constantly on normal activity
 #
-# 2. DAY HIGH BREAKOUT
-#    Current price ≥ today's running high (new intraday high)
-#    - Additional check: high must be meaningfully above open (> 0.5%)
-#      to avoid flat-market false triggers
-#    - Shows: how far above open, breakout strength
+# [CHANGED] Price move alert now fires at EVERY new price
+#           milestone crossed (every +0.5% above last alert)
+#           Instead of once-per-day, it tracks the last
+#           alerted price level and re-fires when price
+#           moves another threshold above it
+#           e.g. 3% → alert, 3.5% → alert, 4% → alert
 #
-# 3. VOLUME SURGE — MULTI-TIMEFRAME LOGIC (REALISTIC)
-#    The old 3-candle comparison was too noisy. Replaced with:
+# [CHANGED] Day high alert re-fires only when the day high
+#           is meaningfully EXTENDED (not the same high again)
+#           Tracks last alerted day-high price, fires again
+#           only when new high exceeds previous by >= 0.5%
 #
-#    a) CANDLE-LEVEL SURGE
-#       Current 5m candle volume > 2.5x average of last 20 candles
-#       (detects single spike — e.g. large block trade or news hit)
+# [ADDED]   Consolidation Breakout detection on 5m and 15m
+#           Logic: detect tight price range (consolidation)
+#           over N candles, then fire when price breaks out
+#           of that range with volume confirmation
+#           Header: 🔲 CONSOLIDATION BREAKOUT
 #
-#    b) MOMENTUM BUILDUP (multi-candle)
-#       Rolling sum of last 3 candles > 2x rolling sum of 3 candles
-#       before that (i.e. 15-min block vs previous 15-min block)
-#       AND price is moving in the direction of the volume
-#       (volume without price = distribution, not breakout)
+# [ADDED]   NSE News fetch — searches NSE search API for
+#           recent news headlines per watchlist symbol
+#           Fires alert for any new headline found
 #
-#    c) 30-MIN BLOCK SURGE
-#       Sum of last 6 candles (30 min) > 1.8x avg 30-min sum
-#       computed over the day so far
-#       Catches slower institutional accumulation
+# [KEPT]    NSE corporate announcements (board meeting,
+#           results, dividend, splits, bulk deals, etc.)
 #
-#    Only (b) or (c) in combination with a price move > 0.5%
-#    are sent as alerts — avoids spam from random spikes.
+# [KEPT]    Bug fix: load_seen_alerts() handles old plain-list
+#           format gracefully with isinstance(raw, dict) guard
 #
-# 4. NSE NOTICES / NEWS ALERT
-#    Polls NSE API for corporate announcements on watchlist symbols
-#    Every run checks: board meetings, results, buybacks, splits,
-#    dividends, mergers, block deals, bulk deals, insider trading
-#    New notices since last run are sent immediately.
+# =========================================================
 #
-# ALERT DEDUPLICATION
-#    Each alert type+symbol+day is sent only ONCE per session.
-#    State stored in seen_alerts.json (reset daily).
+# ALERT TYPES (in order of priority)
+# ---------------------------------------------------------
+#
+# 1. 🚨 PRICE MOVE ALERT
+#    Fires when price moves >= PRICE_MOVE_PCT (3%) from open
+#    Re-fires every PRICE_STEP_PCT (0.5%) beyond last alert
+#    e.g. fires at 3.0%, 3.5%, 4.0%, 4.5% etc.
+#    Both upside and downside tracked independently
+#
+# 2. 🔥 DAY HIGH BREAKOUT
+#    Fires when price is at/near day high (within 0.2%)
+#    AND high is >= DAY_HIGH_MIN_MOVE (0.5%) above open
+#    Re-fires only when new high exceeds last alerted high
+#    by >= DAY_HIGH_STEP_PCT (0.5%) — avoids repeated alerts
+#    on the same level
+#
+# 3. 🔲 CONSOLIDATION BREAKOUT
+#    Fires when price breaks out of a tight consolidation
+#    zone detected on 5m or 15m candles
+#
+#    CONSOLIDATION detection logic (best-practice):
+#      a) Look at last CONSOL_CANDLES (8) completed candles
+#      b) Compute the High-Low range across those candles
+#      c) Range must be <= CONSOL_RANGE_PCT (1.2%) of price
+#         (tight consolidation — not just low volatility)
+#      d) At least CONSOL_MIN_FLAT (5) of those candles must
+#         have body ratio < 0.4 (small-bodied / doji-like)
+#         confirming price is truly coiling, not just slow
+#      e) Breakout = current close breaks ABOVE the zone high
+#         by >= CONSOL_BREAK_PCT (0.3%) with bullish candle
+#      f) Volume on breakout candle must be >= 1.5x the avg
+#         volume of the consolidation candles (expansion)
+#    Separate checks on 5m and 15m timeframes
+#    15m consolidation breakout = stronger / more reliable
+#
+# 4. 📰 NSE NEWS ALERT
+#    Polls NSE search API for stock-specific news headlines
+#    Fires once per new headline found (deduped by headline)
+#
+# 5. 📋 NSE CORPORATE NOTICE
+#    Polls NSE corp-info API for announcements
+#    Board meetings, results, buybacks, splits, dividends,
+#    mergers, block/bulk deals, insider trading, etc.
+#
+# DEDUPLICATION
+#    Price alerts: re-fire at each 0.5% step (not once/day)
+#    Day high: re-fire only on meaningful new high
+#    Consolidation: once per symbol per timeframe per day
+#    News/notices: once per unique headline/notice key ever
+#    All state stored in seen_alerts.json (price/high reset
+#    daily; news/notice cache persists across days)
 #
 # =========================================================
 
@@ -56,6 +100,7 @@ import random
 import logging
 import traceback
 import requests
+import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -100,13 +145,23 @@ if not BOT_TOKEN or not CHAT_ID:
 # CONFIG
 # =========================================================
 
-PRICE_MOVE_PCT       = 3.0    # % from day open to trigger price alert
-DAY_HIGH_MIN_MOVE    = 0.5    # % above open — ignores flat market day highs
-VOL_SPIKE_MULT       = 2.5    # single candle spike: N x 20-candle avg
-VOL_BLOCK_15M_MULT   = 2.0    # 15-min block vs previous 15-min block
-VOL_BLOCK_30M_MULT   = 1.8    # 30-min block vs day avg 30-min block
-VOL_PRICE_CONFIRM    = 0.5    # minimum price move % to confirm volume signal
-MAX_WORKERS          = 2      # keep low to avoid Yahoo rate limits
+# ── Price move alert ──────────────────────────────────────
+PRICE_MOVE_PCT   = 3.0   # % from open to trigger first alert
+PRICE_STEP_PCT   = 0.5   # re-fire every additional % beyond last alert
+
+# ── Day high alert ────────────────────────────────────────
+DAY_HIGH_MIN_MOVE  = 0.5  # high must be >= this % above open to qualify
+DAY_HIGH_STEP_PCT  = 0.5  # re-fire only when new high exceeds last by this %
+
+# ── Consolidation breakout (5m and 15m) ──────────────────
+CONSOL_CANDLES    = 8     # look back this many completed candles
+CONSOL_RANGE_PCT  = 1.2   # max High-Low range % across zone to call it tight
+CONSOL_MIN_FLAT   = 5     # min candles with small body (body/range < 0.4)
+CONSOL_BREAK_PCT  = 0.3   # breakout: close must exceed zone high by this %
+CONSOL_VOL_MULT   = 1.5   # breakout candle volume >= N x avg zone volume
+
+# ── General ──────────────────────────────────────────────
+MAX_WORKERS = 2           # keep low to avoid Yahoo rate limits
 
 IST         = timezone(timedelta(hours=5, minutes=30))
 ALERT_START = (9, 15)
@@ -125,7 +180,7 @@ NSE_HEADERS = {
 }
 
 # =========================================================
-# WATCHLIST  — DO NOT MODIFY
+# WATCHLIST — DO NOT MODIFY
 # =========================================================
 
 WATCHLIST = sorted(list(set([
@@ -211,8 +266,9 @@ log(f"📊 Watchlist: {len(WATCHLIST)} stocks")
 # STATE FILES
 # =========================================================
 
-SEEN_FILE      = "seen_alerts.json"
+SEEN_FILE       = "seen_alerts.json"
 NSE_NOTICE_FILE = "seen_nse_notices.json"
+NSE_NEWS_FILE   = "seen_nse_news.json"
 
 
 def load_json(filename, default):
@@ -237,35 +293,56 @@ def today_str():
     return datetime.now(IST).strftime("%Y-%m-%d")
 
 
+# ── seen_alerts: dict keyed by today's date ───────────────
+# Structure:
+# {
+#   "date": "2025-05-26",
+#   "price_levels": {
+#       "SBIN-UP": 3.5,      ← last alerted move% for SBIN upside
+#       "SBIN-DOWN": -3.0,
+#   },
+#   "day_high_levels": {
+#       "SBIN": 842.50,      ← last alerted day-high price for SBIN
+#   },
+#   "keys": [               ← one-shot keys (consolidation, etc.)
+#       "SBIN-CONSOL5M-2025-05-26",
+#   ]
+# }
+
 def load_seen_alerts():
     """
-    Load seen_alerts. Auto-reset daily so alerts re-fire next day.
-    Expected structure: { "date": "YYYY-MM-DD", "keys": [...] }
-
-    Handles legacy/corrupt file formats gracefully:
-      - Old code saved a plain list [...] instead of a dict
-      - Any other unexpected type (None, str, int) -> reset cleanly
+    [FIX v4→v5] isinstance guard handles old plain-list format
+    that caused AttributeError: 'list' object has no attribute 'get'
     """
     raw = load_json(SEEN_FILE, {})
 
-    # If not a dict (e.g. old plain-list format), reset — don't crash
+    # [FIX] old code saved a plain list — reset cleanly instead of crashing
     if not isinstance(raw, dict):
-        return set()
+        return _empty_seen()
 
     if raw.get("date") != today_str():
-        return set()
+        return _empty_seen()
 
-    return set(raw.get("keys", []))
-
-
-def save_seen_alerts(seen: set):
-    save_json({"date": today_str(), "keys": list(seen)}, SEEN_FILE)
+    return raw
 
 
-seen_alerts = load_seen_alerts()
+def _empty_seen():
+    return {
+        "date":           today_str(),
+        "price_levels":   {},
+        "day_high_levels": {},
+        "keys":           [],
+    }
 
-# NSE notice cache: set of notice identifiers already sent
+
+def save_seen_alerts():
+    save_json(seen_alerts, SEEN_FILE)
+
+
+# Load state at startup
+seen_alerts     = load_seen_alerts()
 seen_nse_notices = set(load_json(NSE_NOTICE_FILE, []))
+seen_nse_news    = set(load_json(NSE_NEWS_FILE, []))
 
 # =========================================================
 # MARKET HOURS
@@ -324,47 +401,133 @@ def get_nse_session():
     return _nse_session
 
 # =========================================================
-# NSE CORPORATE ANNOUNCEMENTS
+# NSE NEWS  [NEW in v5]
 # =========================================================
 
-# Categories we care about — maps NSE subject keywords to labels
+def fetch_nse_news(symbol: str):
+    """
+    Fetches recent news headlines from NSE search API for a symbol.
+    Returns list of { "headline", "date", "url" }
+    """
+    try:
+        s = get_nse_session()
+        if not s:
+            return []
+        # NSE search endpoint returns news + announcements
+        url = (
+            "https://www.nseindia.com/api/search-autocomplete"
+            f"?q={symbol}"
+        )
+        r = s.get(url, timeout=8)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        # News items are under 'results' with type 'news'
+        news_items = []
+        for item in data.get("results", []):
+            if item.get("type", "").lower() in ("news", "announcement"):
+                news_items.append({
+                    "headline": item.get("symbol_info", "") or item.get("name", ""),
+                    "date":     item.get("date", ""),
+                    "url":      item.get("url", ""),
+                })
+        return news_items
+    except Exception:
+        return []
+
+
+def process_nse_news():
+    """
+    Poll NSE for news headlines across the full watchlist.
+    [NEW v5] Separate from corporate notices — catches market news,
+    analyst reports, regulatory headlines etc.
+    """
+    global seen_nse_news
+    new_count = 0
+
+    log("📰 Checking NSE news...")
+
+    for symbol in WATCHLIST:
+        try:
+            news_list = fetch_nse_news(symbol)
+            time.sleep(0.2)
+
+            for item in news_list:
+                headline = item.get("headline", "").strip()
+                if not headline or len(headline) < 10:
+                    continue
+
+                news_key = f"{symbol}|{headline[:100]}"
+                if news_key in seen_nse_news:
+                    continue
+
+                seen_nse_news.add(news_key)
+                new_count += 1
+
+                ist_now = datetime.now(IST).strftime("%d %b %Y  %H:%M:%S IST")
+                url_line = f"\n🔗 <a href='{item['url']}'>Read More</a>" if item.get("url") else ""
+
+                msg = "\n".join([
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    f"📰 <b>NSE NEWS — {symbol}</b>",
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    f"",
+                    f"🏷️ <b>Stock:</b>    {symbol}",
+                    f"📅 <b>Date:</b>     {item.get('date') or 'Recent'}",
+                    f"",
+                    f"📝 <b>Headline:</b>",
+                    f"   {headline[:300]}",
+                    f"{url_line}",
+                    f"",
+                    f"🕐 {ist_now}",
+                ])
+                send_telegram(msg)
+                time.sleep(0.4)
+
+        except Exception:
+            traceback.print_exc()
+            continue
+
+    save_json(list(seen_nse_news), NSE_NEWS_FILE)
+    log(f"📰 NSE news: {new_count} new alerts sent")
+
+# =========================================================
+# NSE CORPORATE NOTICES  [KEPT from v4]
+# =========================================================
+
 NOTICE_KEYWORDS = {
-    "board meeting":          ("📅", "BOARD MEETING"),
-    "financial results":      ("📊", "FINANCIAL RESULTS"),
-    "quarterly results":      ("📊", "QUARTERLY RESULTS"),
-    "buyback":                ("💸", "BUYBACK"),
-    "split":                  ("✂️",  "STOCK SPLIT"),
-    "bonus":                  ("🎁", "BONUS ISSUE"),
-    "dividend":               ("💰", "DIVIDEND"),
-    "merger":                 ("🤝", "MERGER / ACQUISITION"),
-    "acquisition":            ("🤝", "MERGER / ACQUISITION"),
-    "amalgamation":           ("🤝", "AMALGAMATION"),
-    "bulk deal":              ("🏦", "BULK DEAL"),
-    "block deal":             ("🏦", "BLOCK DEAL"),
-    "insider":                ("👤", "INSIDER TRADING"),
-    "trading window":         ("🔒", "TRADING WINDOW"),
-    "open offer":             ("📢", "OPEN OFFER"),
-    "rights issue":           ("📋", "RIGHTS ISSUE"),
-    "demerger":               ("🔀", "DEMERGER"),
-    "pledging":               ("🔗", "PROMOTER PLEDGING"),
-    "change in management":   ("👔", "MANAGEMENT CHANGE"),
-    "resignation":            ("👔", "KEY RESIGNATION"),
-    "appointment":            ("👔", "KEY APPOINTMENT"),
-    "rating":                 ("🏷️", "CREDIT RATING"),
-    "default":                ("🚨", "PAYMENT DEFAULT"),
-    "npa":                    ("🚨", "NPA NOTICE"),
-    "penalty":                ("⚠️", "PENALTY / FINE"),
-    "regulatory":             ("⚠️", "REGULATORY ACTION"),
-    "order":                  ("📜", "ORDER RECEIVED"),
-    "contract":               ("📜", "CONTRACT / ORDER"),
+    "board meeting":        ("📅", "BOARD MEETING"),
+    "financial results":    ("📊", "FINANCIAL RESULTS"),
+    "quarterly results":    ("📊", "QUARTERLY RESULTS"),
+    "buyback":              ("💸", "BUYBACK"),
+    "split":                ("✂️",  "STOCK SPLIT"),
+    "bonus":                ("🎁", "BONUS ISSUE"),
+    "dividend":             ("💰", "DIVIDEND"),
+    "merger":               ("🤝", "MERGER / ACQUISITION"),
+    "acquisition":          ("🤝", "MERGER / ACQUISITION"),
+    "amalgamation":         ("🤝", "AMALGAMATION"),
+    "bulk deal":            ("🏦", "BULK DEAL"),
+    "block deal":           ("🏦", "BLOCK DEAL"),
+    "insider":              ("👤", "INSIDER TRADING"),
+    "trading window":       ("🔒", "TRADING WINDOW"),
+    "open offer":           ("📢", "OPEN OFFER"),
+    "rights issue":         ("📋", "RIGHTS ISSUE"),
+    "demerger":             ("🔀", "DEMERGER"),
+    "pledging":             ("🔗", "PROMOTER PLEDGING"),
+    "change in management": ("👔", "MANAGEMENT CHANGE"),
+    "resignation":          ("👔", "KEY RESIGNATION"),
+    "appointment":          ("👔", "KEY APPOINTMENT"),
+    "rating":               ("🏷️", "CREDIT RATING"),
+    "default":              ("🚨", "PAYMENT DEFAULT"),
+    "npa":                  ("🚨", "NPA NOTICE"),
+    "penalty":              ("⚠️", "PENALTY / FINE"),
+    "regulatory":           ("⚠️", "REGULATORY ACTION"),
+    "order":                ("📜", "ORDER RECEIVED"),
+    "contract":             ("📜", "CONTRACT / ORDER"),
 }
 
 
 def classify_notice(subject: str):
-    """
-    Returns (emoji, label) for a notice subject line,
-    or None if it doesn't match any category we care about.
-    """
     sl = subject.lower()
     for keyword, (emoji, label) in NOTICE_KEYWORDS.items():
         if keyword in sl:
@@ -373,10 +536,6 @@ def classify_notice(subject: str):
 
 
 def fetch_nse_announcements(symbol: str):
-    """
-    Returns list of recent corporate announcements for a symbol.
-    Each item: { "subject", "desc", "date", "attchmntFile" }
-    """
     try:
         s = get_nse_session()
         if not s:
@@ -389,21 +548,15 @@ def fetch_nse_announcements(symbol: str):
         if r.status_code != 200:
             return []
         data = r.json()
-        # NSE returns announcements under "corpInfo" > "announcements"
         return data.get("corpInfo", {}).get("announcements", [])
     except Exception:
         return []
 
 
 def process_nse_notices():
-    """
-    Poll NSE for corporate announcements across the full watchlist.
-    Send one Telegram alert per NEW notice found.
-    """
     global seen_nse_notices
-    new_notice_count = 0
-
-    log("📰 Checking NSE announcements...")
+    new_count = 0
+    log("📋 Checking NSE corporate notices...")
 
     for symbol in WATCHLIST:
         try:
@@ -411,24 +564,21 @@ def process_nse_notices():
             time.sleep(0.3)
 
             for ann in announcements:
-                subject = ann.get("subject", "") or ann.get("desc", "") or ""
-                ann_date = ann.get("date", "") or ann.get("bm_date", "")
+                subject    = ann.get("subject", "") or ann.get("desc", "") or ""
+                ann_date   = ann.get("date", "") or ann.get("bm_date", "")
                 attachment = ann.get("attchmntFile", "")
 
-                # Build a unique key: symbol + subject + date
                 notice_key = f"{symbol}|{subject[:80]}|{ann_date}"
-
                 if notice_key in seen_nse_notices:
                     continue
 
                 classified = classify_notice(subject)
                 if not classified:
-                    # Don't spam with unclassified notices
                     seen_nse_notices.add(notice_key)
                     continue
 
                 seen_nse_notices.add(notice_key)
-                new_notice_count += 1
+                new_count += 1
 
                 emoji, label = classified
                 ist_now = datetime.now(IST).strftime("%d %b %Y  %H:%M:%S IST")
@@ -445,7 +595,6 @@ def process_nse_notices():
                     f"📝 <b>Subject:</b>",
                     f"   {subject[:300]}",
                 ]
-
                 if attachment:
                     doc_url = (
                         f"https://www.nseindia.com/{attachment}"
@@ -455,7 +604,6 @@ def process_nse_notices():
                     msg_lines += [f"", f"📎 <a href='{doc_url}'>View Filing</a>"]
 
                 msg_lines += [f"", f"🕐 {ist_now}"]
-
                 send_telegram("\n".join(msg_lines))
                 time.sleep(0.5)
 
@@ -464,7 +612,112 @@ def process_nse_notices():
             continue
 
     save_json(list(seen_nse_notices), NSE_NOTICE_FILE)
-    log(f"📰 NSE notices: {new_notice_count} new alerts sent")
+    log(f"📋 NSE notices: {new_count} new alerts sent")
+
+# =========================================================
+# CONSOLIDATION DETECTION  [NEW in v5]
+# =========================================================
+
+def detect_consolidation_breakout(candles: pd.DataFrame, tf_label: str):
+    """
+    Detect tight consolidation followed by a clean upside breakout.
+
+    Parameters
+    ----------
+    candles   : DataFrame with Open/High/Low/Close/Volume columns,
+                completed candles only (partial candle already dropped)
+    tf_label  : "5m" or "15m" — used in the alert message only
+
+    Returns
+    -------
+    dict with breakout details, or None if no breakout detected.
+
+    LOGIC (best-practice consolidation breakout):
+    ─────────────────────────────────────────────
+    Step 1 — Need at least CONSOL_CANDLES + 1 rows (zone + breakout)
+    Step 2 — Take the CONSOL_CANDLES candles BEFORE the last candle
+             as the consolidation zone
+    Step 3 — Zone range = (zone_high - zone_low) / zone_mid_price
+             Must be <= CONSOL_RANGE_PCT% — "tight" zone
+    Step 4 — Count candles with small body (body/range < 0.4)
+             Must be >= CONSOL_MIN_FLAT — truly coiling, not lazy
+    Step 5 — Last completed candle (breakout candle):
+             - Close must be above zone_high by >= CONSOL_BREAK_PCT%
+             - Must be a bullish candle (Close >= Open)
+             - Volume must be >= CONSOL_VOL_MULT x avg zone volume
+    Step 6 — All conditions met → return breakout details dict
+    """
+    try:
+        min_rows = CONSOL_CANDLES + 1
+        if len(candles) < min_rows:
+            return None
+
+        # Zone = last CONSOL_CANDLES candles before the breakout candle
+        zone       = candles.iloc[-(CONSOL_CANDLES + 1):-1]
+        breakout_c = candles.iloc[-1]   # the current completed candle
+
+        zone_high  = float(zone["High"].max())
+        zone_low   = float(zone["Low"].min())
+        zone_mid   = (zone_high + zone_low) / 2
+
+        if zone_mid <= 0:
+            return None
+
+        # Step 3: range tightness check
+        zone_range_pct = ((zone_high - zone_low) / zone_mid) * 100
+        if zone_range_pct > CONSOL_RANGE_PCT:
+            return None     # range too wide — not a consolidation
+
+        # Step 4: small-body count (doji/spinning top candles)
+        flat_count = 0
+        for _, row in zone.iterrows():
+            h = float(row["High"])
+            l = float(row["Low"])
+            o = float(row["Open"])
+            c = float(row["Close"])
+            candle_range = h - l
+            body         = abs(c - o)
+            if candle_range > 0 and (body / candle_range) < 0.4:
+                flat_count += 1
+
+        if flat_count < CONSOL_MIN_FLAT:
+            return None     # not enough coiling candles
+
+        # Step 5a: breakout candle must be bullish
+        b_open  = float(breakout_c["Open"])
+        b_close = float(breakout_c["Close"])
+        b_high  = float(breakout_c["High"])
+        b_vol   = float(breakout_c["Volume"])
+
+        if b_close < b_open:
+            return None     # bearish candle — not a bullish breakout
+
+        # Step 5b: close must break above zone high meaningfully
+        break_above_pct = ((b_close - zone_high) / zone_high) * 100
+        if break_above_pct < CONSOL_BREAK_PCT:
+            return None     # not a clean break above zone
+
+        # Step 5c: volume expansion on breakout candle
+        avg_zone_vol = float(zone["Volume"].mean())
+        vol_ratio    = (b_vol / avg_zone_vol) if avg_zone_vol > 0 else 0
+        if vol_ratio < CONSOL_VOL_MULT:
+            return None     # no volume expansion — weak breakout
+
+        return {
+            "tf":              tf_label,
+            "zone_high":       round(zone_high, 2),
+            "zone_low":        round(zone_low, 2),
+            "zone_range_pct":  round(zone_range_pct, 2),
+            "flat_candles":    flat_count,
+            "breakout_price":  round(b_close, 2),
+            "break_above_pct": round(break_above_pct, 2),
+            "vol_ratio":       round(vol_ratio, 2),
+            "zone_candles":    CONSOL_CANDLES,
+        }
+
+    except Exception:
+        traceback.print_exc()
+        return None
 
 # =========================================================
 # PRICE / VOLUME DATA FETCH
@@ -472,12 +725,10 @@ def process_nse_notices():
 
 def fetch_stock(symbol: str):
     """
-    Fetches 2 days of 5-min candles.
-    Returns structured data dict or None.
-
-    Today's candles are isolated (index-based, not by timestamp,
-    to work around yfinance timezone inconsistencies).
-    The currently-forming candle is always dropped.
+    Fetches 2 days of 5-min candles from Yahoo Finance.
+    Isolates today's session, drops partial candle.
+    Also builds a 15-min candle DataFrame by resampling.
+    Returns structured dict or None.
     """
     try:
         time.sleep(random.uniform(0.3, 0.8))
@@ -499,84 +750,67 @@ def fetch_stock(symbol: str):
             df.columns = df.columns.get_level_values(0)
         df = df.loc[:, ~df.columns.duplicated()]
 
-        # Drop the currently forming candle (last row may be partial)
+        # Drop currently forming candle (partial)
         if len(df) > 1:
             df = df.iloc[:-1]
 
         if len(df) < 12:
             return None
 
-        # ── Isolate today's candles ───────────────────────
-        # yfinance 2d/5m returns previous session + today
-        # Find where today's session starts by looking for a volume
-        # drop-off (end of previous session) or use last ~78 rows max
-        # (NSE has ~75 candles in a full day: 6h15m / 5m)
-        today_candles = df.tail(min(len(df), 78)).copy()
+        # Isolate today's candles (NSE: ~75 candles per day max)
+        today_5m = df.tail(min(len(df), 78)).copy()
 
-        if len(today_candles) < 3:
+        if len(today_5m) < CONSOL_CANDLES + 2:
             return None
 
         # ── Price levels ─────────────────────────────────
-        day_open   = float(today_candles["Open"].iloc[0])
-        last_price = float(today_candles["Close"].iloc[-1])
-        day_high   = float(today_candles["High"].max())
-        day_low    = float(today_candles["Low"].min())
+        day_open   = float(today_5m["Open"].iloc[0])
+        last_price = float(today_5m["Close"].iloc[-1])
+        day_high   = float(today_5m["High"].max())
+        day_low    = float(today_5m["Low"].min())
 
         if day_open <= 0 or last_price <= 0:
             return None
 
         move_pct = ((last_price - day_open) / day_open) * 100
 
-        # ── Volume analysis ───────────────────────────────
-        volumes = today_candles["Volume"].values.astype(float)
+        # ── Build 15m candles by resampling 5m ───────────
+        # [NEW v5] needed for 15m consolidation detection
+        today_15m = None
+        try:
+            # Need datetime index for resample
+            df_idx = today_5m.copy()
+            if not isinstance(df_idx.index, pd.DatetimeIndex):
+                df_idx.index = pd.to_datetime(df_idx.index)
 
-        # Candle-level spike: current vs 20-candle avg
-        last_vol   = volumes[-1]
-        avg_20     = float(pd.Series(volumes[:-1]).tail(20).mean()) if len(volumes) > 1 else 0
-        spike_ratio = (last_vol / avg_20) if avg_20 > 0 else 0
+            today_15m = df_idx.resample("15min").agg({
+                "Open":   "first",
+                "High":   "max",
+                "Low":    "min",
+                "Close":  "last",
+                "Volume": "sum",
+            }).dropna()
+        except Exception:
+            today_15m = None
 
-        # 15-min block surge: last 3 candles vs prior 3 candles
-        block_15m_now  = float(sum(volumes[-3:])) if len(volumes) >= 3 else 0
-        block_15m_prev = float(sum(volumes[-6:-3])) if len(volumes) >= 6 else 0
-        block_15m_ratio = (block_15m_now / block_15m_prev) if block_15m_prev > 0 else 0
-
-        # 30-min block surge: last 6 candles vs average 30-min block today
-        block_30m_now = float(sum(volumes[-6:])) if len(volumes) >= 6 else 0
-        # Build all non-overlapping 30-min blocks from today
-        all_30m_blocks = []
-        for i in range(0, len(volumes) - 6, 6):
-            all_30m_blocks.append(float(sum(volumes[i:i+6])))
-        avg_30m_block = float(pd.Series(all_30m_blocks).mean()) if all_30m_blocks else 0
-        block_30m_ratio = (block_30m_now / avg_30m_block) if avg_30m_block > 0 else 0
-
-        # ── Volume signal classification ──────────────────
-        # Each signal requires price confirmation (move_pct > VOL_PRICE_CONFIRM)
-        # to avoid flagging distribution / reversal volume as "breakout"
-
-        vol_spike_triggered   = spike_ratio >= VOL_SPIKE_MULT
-        vol_15m_triggered     = (
-            block_15m_ratio >= VOL_BLOCK_15M_MULT
-            and abs(move_pct) >= VOL_PRICE_CONFIRM
-        )
-        vol_30m_triggered     = (
-            block_30m_ratio >= VOL_BLOCK_30M_MULT
-            and abs(move_pct) >= VOL_PRICE_CONFIRM
+        # ── Candle direction ──────────────────────────────
+        last_candle_bullish = (
+            float(today_5m["Close"].iloc[-1]) >=
+            float(today_5m["Open"].iloc[-1])
         )
 
-        # ── Day high breakout ─────────────────────────────
-        # Must be a meaningful high (above open by > DAY_HIGH_MIN_MOVE)
-        # and the latest close must be at or very near the high
+        # ── Day high check ────────────────────────────────
         high_vs_open_pct = ((day_high - day_open) / day_open) * 100
-        day_high_breakout = (
-            last_price >= day_high * 0.998   # within 0.2% of high
+        at_day_high = (
+            last_price >= day_high * 0.998
             and high_vs_open_pct >= DAY_HIGH_MIN_MOVE
         )
 
-        # ── Candle direction for volume ───────────────────
-        last_candle_bullish = (
-            float(today_candles["Close"].iloc[-1]) >=
-            float(today_candles["Open"].iloc[-1])
-        )
+        # ── Consolidation breakout checks ─────────────────
+        consol_5m  = detect_consolidation_breakout(today_5m,  "5m")
+        consol_15m = detect_consolidation_breakout(today_15m, "15m") \
+                     if today_15m is not None and len(today_15m) >= CONSOL_CANDLES + 1 \
+                     else None
 
         return {
             "symbol":             symbol,
@@ -586,24 +820,10 @@ def fetch_stock(symbol: str):
             "day_low":            day_low,
             "move_pct":           move_pct,
             "high_vs_open_pct":   high_vs_open_pct,
-
-            # Volume metrics
-            "last_vol":           int(last_vol),
-            "avg_20_vol":         int(avg_20),
-            "spike_ratio":        round(spike_ratio, 2),
-            "block_15m_now":      int(block_15m_now),
-            "block_15m_prev":     int(block_15m_prev),
-            "block_15m_ratio":    round(block_15m_ratio, 2),
-            "block_30m_now":      int(block_30m_now),
-            "avg_30m_block":      int(avg_30m_block),
-            "block_30m_ratio":    round(block_30m_ratio, 2),
-
-            # Signal flags
-            "vol_spike_triggered":   vol_spike_triggered,
-            "vol_15m_triggered":     vol_15m_triggered,
-            "vol_30m_triggered":     vol_30m_triggered,
-            "day_high_breakout":     day_high_breakout,
-            "last_candle_bullish":   last_candle_bullish,
+            "at_day_high":        at_day_high,
+            "last_candle_bullish": last_candle_bullish,
+            "consol_5m":          consol_5m,
+            "consol_15m":         consol_15m,
         }
 
     except Exception:
@@ -651,12 +871,14 @@ def ist_stamp():
 
 
 def direction_label(move_pct):
-    if move_pct > 0:
-        return "📈 UPSIDE"
-    return "📉 DOWNSIDE"
+    return "📈 UPSIDE" if move_pct > 0 else "📉 DOWNSIDE"
 
 
-def build_price_alert(stock):
+def build_price_alert(stock, step_num: int):
+    """
+    [CHANGED v5] step_num indicates which alert step this is
+    e.g. step 1 = first 3% alert, step 2 = 3.5%, step 3 = 4% etc.
+    """
     sym      = stock["symbol"]
     price    = stock["price"]
     move_pct = stock["move_pct"]
@@ -664,6 +886,8 @@ def build_price_alert(stock):
     day_high = stock["day_high"]
     day_low  = stock["day_low"]
     direct   = direction_label(move_pct)
+
+    step_label = f"Alert #{step_num}" if step_num > 1 else "First Alert"
 
     return "\n".join([
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -673,6 +897,7 @@ def build_price_alert(stock):
         f"🏷️ <b>Stock:</b>      {sym}",
         f"💰 <b>LTP:</b>        ₹{price:,.2f}",
         f"📊 <b>Move:</b>       <b>{move_pct:+.2f}%</b> from day open",
+        f"📶 <b>Step:</b>       {step_label} (every {PRICE_STEP_PCT}% thereafter)",
         f"",
         f"━━ 📌 PRICE LEVELS ━━",
         f"  🔓 Day Open:   ₹{day_open:,.2f}",
@@ -681,19 +906,21 @@ def build_price_alert(stock):
         f"  📐 Range:      ₹{day_high - day_low:,.2f}",
         f"",
         f"━━ 🎯 WHY THIS TRIGGERED ━━",
-        f"  🚨 Price crossed <b>{PRICE_MOVE_PCT:.0f}% threshold</b> from open",
-        f"  Move of {move_pct:+.2f}% in today's session",
-        f"  {'Strong momentum — price holding gains' if move_pct > 0 else 'Heavy selling — watch for support'}",
+        f"  🚨 Price moved <b>{move_pct:+.2f}%</b> from today's open",
+        f"  Threshold: {PRICE_MOVE_PCT:.0f}% first, then every {PRICE_STEP_PCT}% step",
+        f"  {'Momentum building — strong intraday move' if abs(move_pct) > 4 else 'Significant intraday move — watch for continuation'}",
         f"",
         f"🕐 {ist_stamp()}",
     ])
 
 
-def build_day_high_alert(stock):
+def build_day_high_alert(stock, new_high: float):
+    """
+    [CHANGED v5] new_high passed explicitly so message is precise
+    """
     sym              = stock["symbol"]
     price            = stock["price"]
     day_open         = stock["day_open"]
-    day_high         = stock["day_high"]
     day_low          = stock["day_low"]
     move_pct         = stock["move_pct"]
     high_vs_open_pct = stock["high_vs_open_pct"]
@@ -705,157 +932,158 @@ def build_day_high_alert(stock):
         f"",
         f"🏷️ <b>Stock:</b>      {sym}",
         f"💰 <b>LTP:</b>        ₹{price:,.2f}",
-        f"⬆️ <b>Day High:</b>   ₹{day_high:,.2f}",
-        f"📊 <b>Move:</b>       {move_pct:+.2f}% from open",
+        f"⬆️ <b>New Day High:</b> ₹{new_high:,.2f}",
+        f"📊 <b>Move:</b>        {move_pct:+.2f}% from open",
         f"",
         f"━━ 📌 PRICE LEVELS ━━",
-        f"  🔓 Day Open:   ₹{day_open:,.2f}",
-        f"  ⬆️ Day High:   ₹{day_high:,.2f}  ← at/near current price",
-        f"  ⬇️ Day Low:    ₹{day_low:,.2f}",
-        f"  📐 High vs Open: +{high_vs_open_pct:.2f}%",
+        f"  🔓 Day Open:      ₹{day_open:,.2f}",
+        f"  ⬆️ Day High:      ₹{new_high:,.2f}  ← NEW HIGH",
+        f"  ⬇️ Day Low:       ₹{day_low:,.2f}",
+        f"  📐 High vs Open:  +{high_vs_open_pct:.2f}%",
         f"",
         f"━━ 🎯 WHY THIS TRIGGERED ━━",
-        f"  🔥 Price is at/near intraday high",
-        f"  High is <b>{high_vs_open_pct:.2f}% above open</b> — meaningful breakout",
-        f"  {'Strong buying pressure — price making new highs' if move_pct > 1 else 'Pushing higher — watch for follow-through'}",
+        f"  🔥 Price printing a new intraday high",
+        f"  Re-fires every {DAY_HIGH_STEP_PCT}% above previous high alert",
+        f"  {'Strong buying — price pushing to fresh highs' if move_pct > 1.5 else 'Grinding higher — watch for volume confirmation'}",
         f"",
         f"🕐 {ist_stamp()}",
     ])
 
 
-def build_volume_alert(stock, trigger_type):
-    sym      = stock["symbol"]
-    price    = stock["price"]
-    day_open = stock["day_open"]
-    day_high = stock["day_high"]
-    day_low  = stock["day_low"]
-    move_pct = stock["move_pct"]
-    direction = "buying" if stock["last_candle_bullish"] else "selling"
+def build_consolidation_alert(stock, consol: dict):
+    """
+    [NEW v5] Consolidation breakout alert card.
+    Shows zone details, breakout metrics, and why it triggered.
+    """
+    sym   = stock["symbol"]
+    price = stock["price"]
+    tf    = consol["tf"]
+    tf_full = "5-Minute" if tf == "5m" else "15-Minute"
+    strength = "🔥 STRONG" if consol["vol_ratio"] >= 2.5 else "✅ CONFIRMED"
 
-    lines = [
+    return "\n".join([
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"📊 <b>VOLUME SURGE ALERT</b>",
+        f"🔲 <b>CONSOLIDATION BREAKOUT</b>  [{tf_full}]",
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"",
-        f"🏷️ <b>Stock:</b>      {sym}",
-        f"💰 <b>LTP:</b>        ₹{price:,.2f}",
-        f"📊 <b>Move:</b>       {move_pct:+.2f}% from open",
+        f"🏷️ <b>Stock:</b>         {sym}",
+        f"💰 <b>LTP:</b>           ₹{price:,.2f}",
+        f"⏱️ <b>Timeframe:</b>     {tf_full} candles",
+        f"📶 <b>Strength:</b>      {strength}",
         f"",
-        f"━━ 📌 PRICE LEVELS ━━",
-        f"  🔓 Day Open:   ₹{day_open:,.2f}",
-        f"  ⬆️ Day High:   ₹{day_high:,.2f}",
-        f"  ⬇️ Day Low:    ₹{day_low:,.2f}",
+        f"━━ 🔲 CONSOLIDATION ZONE ━━",
+        f"  📦 Zone candles:    {consol['zone_candles']} completed candles",
+        f"  ⬆️ Zone High:       ₹{consol['zone_high']:,.2f}",
+        f"  ⬇️ Zone Low:        ₹{consol['zone_low']:,.2f}",
+        f"  📐 Zone Range:      {consol['zone_range_pct']:.2f}%  (tight ≤ {CONSOL_RANGE_PCT}%)",
+        f"  🕯️ Flat candles:    {consol['flat_candles']}/{consol['zone_candles']} coiling",
         f"",
-        f"━━ 🔊 VOLUME DATA ━━",
-    ]
-
-    if trigger_type == "SPIKE":
-        lines += [
-            f"  🔊 Last 5m candle vol:  {stock['last_vol']:,}",
-            f"  📏 20-candle avg vol:   {stock['avg_20_vol']:,}",
-            f"  📊 Spike ratio:         <b>{stock['spike_ratio']:.2f}x</b> avg",
-            f"  ⚡ Type: Single-candle spike",
-        ]
-    elif trigger_type == "15M":
-        lines += [
-            f"  🔊 Last 15m vol:        {stock['block_15m_now']:,}",
-            f"  📏 Prior 15m vol:       {stock['block_15m_prev']:,}",
-            f"  📊 15m block ratio:     <b>{stock['block_15m_ratio']:.2f}x</b>",
-            f"  ⚡ Type: 15-min momentum buildup",
-        ]
-    elif trigger_type == "30M":
-        lines += [
-            f"  🔊 Last 30m vol:        {stock['block_30m_now']:,}",
-            f"  📏 Avg 30m vol today:   {stock['avg_30m_block']:,}",
-            f"  📊 30m block ratio:     <b>{stock['block_30m_ratio']:.2f}x</b>",
-            f"  ⚡ Type: 30-min accumulation surge",
-        ]
-
-    lines += [
+        f"━━ 💥 BREAKOUT DETAILS ━━",
+        f"  🚀 Breakout price:  ₹{consol['breakout_price']:,.2f}",
+        f"  📊 Above zone by:   +{consol['break_above_pct']:.2f}%",
+        f"  🔊 Volume ratio:    {consol['vol_ratio']:.2f}x zone avg",
         f"",
         f"━━ 🎯 WHY THIS TRIGGERED ━━",
-    ]
-
-    if trigger_type == "SPIKE":
-        lines += [
-            f"  📊 A single 5m candle just saw <b>{stock['spike_ratio']:.1f}x</b> normal volume",
-            f"  This often signals news, block trade, or breakout entry",
-            f"  Direction: <b>{direction.upper()}</b> candle",
-        ]
-    elif trigger_type == "15M":
-        lines += [
-            f"  📊 Volume over last 15 mins is <b>{stock['block_15m_ratio']:.1f}x</b> the prior 15 mins",
-            f"  Sustained buying/selling — not a single spike",
-            f"  Price confirming: {move_pct:+.2f}% move | Direction: <b>{direction.upper()}</b>",
-        ]
-    elif trigger_type == "30M":
-        lines += [
-            f"  📊 This 30-min window is <b>{stock['block_30m_ratio']:.1f}x</b> the avg 30-min volume today",
-            f"  Institutional-style accumulation/distribution pattern",
-            f"  Price confirming: {move_pct:+.2f}% move | Direction: <b>{direction.upper()}</b>",
-        ]
-
-    lines += [f"", f"🕐 {ist_stamp()}"]
-    return "\n".join(lines)
+        f"  🔲 Price coiled in {consol['zone_range_pct']:.2f}% range for {consol['zone_candles']} {tf} candles",
+        f"  {consol['flat_candles']} of those were small-bodied / doji — true compression",
+        f"  Breakout candle closed <b>+{consol['break_above_pct']:.2f}% above zone</b>",
+        f"  Volume expanded to <b>{consol['vol_ratio']:.1f}x</b> avg — real buying, not noise",
+        f"  {'15m breakout = higher conviction setup' if tf == '15m' else '5m breakout — fast move, watch for 15m confirmation'}",
+        f"",
+        f"🕐 {ist_stamp()}",
+    ])
 
 # =========================================================
-# ALERT PROCESSOR
+# ALERT PROCESSOR  [CHANGED v5]
 # =========================================================
 
 def process_alerts(all_data: dict):
+    """
+    [CHANGED v5]
+    - Price alerts: re-fire at every PRICE_STEP_PCT beyond last alerted level
+    - Day high: re-fire only when new high > last alerted high by DAY_HIGH_STEP_PCT
+    - Consolidation: once per symbol per timeframe per day
+    - Volume alerts: REMOVED (too noisy)
+    """
     alert_count = 0
 
+    price_levels    = seen_alerts.setdefault("price_levels", {})
+    day_high_levels = seen_alerts.setdefault("day_high_levels", {})
+    one_shot_keys   = seen_alerts.setdefault("keys", [])
+
     for symbol, stock in all_data.items():
-        move_pct = stock["move_pct"]
+        move_pct   = stock["move_pct"]
+        last_price = stock["price"]
+        day_high   = stock["day_high"]
 
         # ── 1. Price Move Alert ─────────────────────────
+        # [CHANGED] Re-fires at every PRICE_STEP_PCT step
         if abs(move_pct) >= PRICE_MOVE_PCT:
             direction = "UP" if move_pct > 0 else "DOWN"
-            key = f"{symbol}-PRICE-{direction}-{today_str()}"
-            if key not in seen_alerts:
-                seen_alerts.add(key)
-                log(f"🚨 PRICE ALERT: {symbol} {move_pct:+.2f}%")
-                send_telegram(build_price_alert(stock))
+            level_key = f"{symbol}-{direction}"
+
+            last_alerted = price_levels.get(level_key)  # last alerted move%
+
+            should_fire = False
+            step_num    = 1
+
+            if last_alerted is None:
+                # First time crossing threshold
+                should_fire = True
+                step_num    = 1
+            else:
+                # Re-fire if moved another PRICE_STEP_PCT beyond last alert
+                gap = abs(abs(move_pct) - abs(last_alerted))
+                if gap >= PRICE_STEP_PCT:
+                    should_fire = True
+                    # Calculate which step number this is
+                    step_num = int(
+                        (abs(move_pct) - PRICE_MOVE_PCT) / PRICE_STEP_PCT
+                    ) + 1
+
+            if should_fire:
+                price_levels[level_key] = move_pct
+                log(f"🚨 PRICE ALERT #{step_num}: {symbol} {move_pct:+.2f}%")
+                send_telegram(build_price_alert(stock, step_num))
                 alert_count += 1
                 time.sleep(0.5)
 
         # ── 2. Day High Breakout ────────────────────────
-        if stock["day_high_breakout"]:
-            key = f"{symbol}-DAYHIGH-{today_str()}"
-            if key not in seen_alerts:
-                seen_alerts.add(key)
-                log(f"🔥 DAY HIGH: {symbol} ₹{stock['day_high']:,.2f}")
-                send_telegram(build_day_high_alert(stock))
+        # [CHANGED] Re-fires only when new high exceeds last alerted high
+        # by at least DAY_HIGH_STEP_PCT — avoids repeated same-level alerts
+        if stock["at_day_high"]:
+            last_high_alerted = day_high_levels.get(symbol, 0.0)
+
+            high_extension = 0.0
+            if last_high_alerted > 0:
+                high_extension = ((day_high - last_high_alerted) / last_high_alerted) * 100
+
+            if last_high_alerted == 0.0 or high_extension >= DAY_HIGH_STEP_PCT:
+                day_high_levels[symbol] = day_high
+                log(f"🔥 DAY HIGH: {symbol} ₹{day_high:,.2f}")
+                send_telegram(build_day_high_alert(stock, day_high))
                 alert_count += 1
                 time.sleep(0.5)
 
-        # ── 3a. Volume Spike (single candle) ───────────
-        if stock["vol_spike_triggered"]:
-            key = f"{symbol}-VOLSPIKE-{today_str()}"
-            if key not in seen_alerts:
-                seen_alerts.add(key)
-                log(f"📊 VOL SPIKE: {symbol} {stock['spike_ratio']:.1f}x")
-                send_telegram(build_volume_alert(stock, "SPIKE"))
+        # ── 3. Consolidation Breakout — 5m ─────────────
+        # [NEW v5] Once per symbol per timeframe per day
+        if stock["consol_5m"]:
+            key = f"{symbol}-CONSOL5M-{today_str()}"
+            if key not in one_shot_keys:
+                one_shot_keys.append(key)
+                log(f"🔲 CONSOL 5M: {symbol} break +{stock['consol_5m']['break_above_pct']:.2f}%")
+                send_telegram(build_consolidation_alert(stock, stock["consol_5m"]))
                 alert_count += 1
                 time.sleep(0.5)
 
-        # ── 3b. Volume 15-min Block Surge ──────────────
-        if stock["vol_15m_triggered"]:
-            key = f"{symbol}-VOL15M-{today_str()}"
-            if key not in seen_alerts:
-                seen_alerts.add(key)
-                log(f"📊 VOL 15M: {symbol} {stock['block_15m_ratio']:.1f}x")
-                send_telegram(build_volume_alert(stock, "15M"))
-                alert_count += 1
-                time.sleep(0.5)
-
-        # ── 3c. Volume 30-min Block Surge ──────────────
-        if stock["vol_30m_triggered"]:
-            key = f"{symbol}-VOL30M-{today_str()}"
-            if key not in seen_alerts:
-                seen_alerts.add(key)
-                log(f"📊 VOL 30M: {symbol} {stock['block_30m_ratio']:.1f}x")
-                send_telegram(build_volume_alert(stock, "30M"))
+        # ── 4. Consolidation Breakout — 15m ────────────
+        # [NEW v5] 15m is stronger signal — fires independently of 5m
+        if stock["consol_15m"]:
+            key = f"{symbol}-CONSOL15M-{today_str()}"
+            if key not in one_shot_keys:
+                one_shot_keys.append(key)
+                log(f"🔲 CONSOL 15M: {symbol} break +{stock['consol_15m']['break_above_pct']:.2f}%")
+                send_telegram(build_consolidation_alert(stock, stock["consol_15m"]))
                 alert_count += 1
                 time.sleep(0.5)
 
@@ -875,26 +1103,33 @@ def run_bot():
 
     log("✅ Market hours active")
 
-    # ── NSE Notices (runs every cycle) ───────────────
+    # ── NSE News [NEW v5] ─────────────────────────────
+    try:
+        process_nse_news()
+    except Exception:
+        log("⚠️ NSE news check failed — continuing")
+        traceback.print_exc()
+
+    # ── NSE Corporate Notices [KEPT] ──────────────────
     try:
         process_nse_notices()
     except Exception:
         log("⚠️ NSE notice check failed — continuing")
         traceback.print_exc()
 
-    # ── Price / Volume data ───────────────────────────
+    # ── Price / Consolidation data ────────────────────
     all_data = fetch_all()
 
     if not all_data:
         log("⚠️ No data fetched this run")
-        save_seen_alerts(seen_alerts)
+        save_seen_alerts()
         return
 
     # ── Process alerts ────────────────────────────────
     alert_count = process_alerts(all_data)
 
     # ── Persist state ─────────────────────────────────
-    save_seen_alerts(seen_alerts)
+    save_seen_alerts()
 
     log(
         f"✅ RUN COMPLETE | "
