@@ -1,97 +1,62 @@
+
 # =========================================================
-# ADVANCED NSE MOMENTUM + VOLUME BREAKOUT TELEGRAM BOT
-# FINAL FULL STABLE VERSION
+# NSE MOMENTUM + BREAKOUT + NEWS BOT
 # =========================================================
+#
+# FINAL CRON VERSION
+# ---------------------------------------------------------
 #
 # FEATURES
 # ---------------------------------------------------------
 #
-# ✅ Google News Alerts (24x7)
-# ✅ NSE Corporate Announcement Alerts (24x7)
-# ✅ NSE Notice PDF Links
-# ✅ Rounded OHLC Candle Engine
-# ✅ 5m / 10m / 15m Candle Tracking
-# ✅ Multi Candle Breakout Detection
-# ✅ Day High Breakout Detection
-# ✅ ±3% Daily Move Alerts
-# ✅ Volume Expansion Detection
-# ✅ Duplicate Alert Prevention
-# ✅ Railway Compatible
-# ✅ Exception Reporting to Telegram
-# ✅ Persistent Candle Storage
-# ✅ Invalid NSE Data Protection
+# ✅ NSE Live Price Fetch
+# ✅ Multi Candle Breakouts
+# ✅ Strict Volume Breakouts
+# ✅ Day High Breakouts
+# ✅ Google News Alerts
+# ✅ NSE Corporate Announcement Alerts
 # ✅ Lightweight Production Logs
-# ✅ Loop Heartbeat Logs
-# ✅ NSE Fetch Visibility
-# ✅ Breakout/Volume Debug Logs
+# ✅ Railway CRON Optimized
+# ✅ No Infinite Loops
+# ✅ No Flask Server
+# ✅ No Market Time Waiting
+# ✅ Railway Safe
+#
+# IMPORTANT
+# ---------------------------------------------------------
+#
+# This version is designed ONLY for Railway CRON.
+#
+# Railway triggers this script every 5 minutes.
+#
+# Script runs once and exits cleanly.
 #
 # =========================================================
 
-print("SCRIPT STARTED")
-
 import os
-import json
 import time
-import threading
+import json
+import traceback
 import requests
 import feedparser
 
-from flask import Flask
 from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# =========================================================
-# FLASK SERVER
-# =========================================================
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "BOT RUNNING ✅", 200
-
-threading.Thread(
-    target=lambda: app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000))
-    ),
-    daemon=True
-).start()
-
-# =========================================================
-# ENV
-# =========================================================
-
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
-
-if not BOT_TOKEN:
-    print("BOT_TOKEN missing")
-
-if not CHAT_ID:
-    print("CHAT_ID missing")
 
 # =========================================================
 # CONFIG
 # =========================================================
 
-CHECK_INTERVAL = 60
-
-PRICE_MOVE_THRESHOLD = 3.0
-
-NEWS_MAX_AGE_MINUTES = 60
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-ALERT_START = (8, 45)
-ALERT_END = (16, 0)
+MAX_WORKERS = 3
 
-# =========================================================
-# WATCHLIST
-# =========================================================
+PRICE_MOVE_THRESHOLD = 3
 
-WATCHLIST = sorted(list(set([
+WATCHLIST = [
 
     "ADANIENT",
     "ADANIGREEN",
@@ -166,115 +131,43 @@ WATCHLIST = sorted(list(set([
     "SYMPHONY",
     "TATATECH",
     "TITAN",
-    "TRENT",
-    "VBL"
+    "TRENT"
 
-])))
-
-# =========================================================
-# FILES
-# =========================================================
+]
 
 SEEN_FILE = "seen_alerts.json"
-CANDLES_FILE = "candles.json"
 
 # =========================================================
-# SAFE HELPERS
+# HELPERS
 # =========================================================
 
-def safe_float(v):
+def ist_now():
 
-    try:
-
-        if v in [None, "", "-", "None"]:
-            return 0.0
-
-        return float(v)
-
-    except:
-        return 0.0
-
-def safe_int(v):
-
-    try:
-
-        if v in [None, "", "-", "None"]:
-            return 0
-
-        return int(float(v))
-
-    except:
-        return 0
-
-# =========================================================
-# JSON HELPERS
-# =========================================================
-
-def save_json(data, filename):
-
-    try:
-
-        tmp = filename + ".tmp"
-
-        with open(tmp, "w") as f:
-            json.dump(data, f)
-
-        os.replace(tmp, filename)
-
-    except Exception as e:
-
-        print("SAVE JSON ERROR:", e)
+    return datetime.now(IST)
 
 def load_json(filename, default):
 
     try:
 
-        if not os.path.exists(filename):
-
-            save_json(default, filename)
-
-            return default
-
         with open(filename, "r") as f:
+            return json.load(f)
 
-            content = f.read().strip()
+    except:
+        return default
 
-            if not content:
-                return default
+def save_json(data, filename):
 
-            return json.loads(content)
+    try:
 
-    except Exception as e:
+        with open(filename, "w") as f:
+            json.dump(data, f)
 
-        print("LOAD JSON ERROR:", e)
+    except:
+        traceback.print_exc()
 
-    return default
-
-# =========================================================
-# LOAD STATE
-# =========================================================
-
-seen_alerts = set(load_json(SEEN_FILE, []))
-
-candles = load_json(CANDLES_FILE, {})
-
-# =========================================================
-# TIME HELPERS
-# =========================================================
-
-def ist_now():
-    return datetime.now(IST)
-
-def is_alert_hours():
-
-    now = ist_now()
-
-    if now.weekday() >= 5:
-        return False
-
-    t = (now.hour, now.minute)
-
-    return ALERT_START <= t < ALERT_END
+seen_alerts = set(
+    load_json(SEEN_FILE, [])
+)
 
 # =========================================================
 # TELEGRAM
@@ -284,76 +177,33 @@ def send_telegram(msg):
 
     try:
 
-        if not BOT_TOKEN or not CHAT_ID:
-            return
-
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        url = (
+            f"https://api.telegram.org/"
+            f"bot{BOT_TOKEN}/sendMessage"
+        )
 
         requests.post(
             url,
             data={
                 "chat_id": CHAT_ID,
-                "text": msg[:4000],
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True
+                "text": msg[:4000]
             },
             timeout=20
         )
 
-    except Exception as e:
-
-        print("TELEGRAM ERROR:", e)
+    except:
+        traceback.print_exc()
 
 # =========================================================
-# NSE SESSION
+# NSE FETCH
 # =========================================================
 
 session = requests.Session()
 
-session.headers.update({
-    "User-Agent": "Mozilla/5.0"
-})
-
-def init_nse():
-
-    try:
-
-        session.get(
-            "https://www.nseindia.com",
-            timeout=10
-        )
-
-    except:
-        pass
-
-init_nse()
-
-def nse_get(url):
-
-    for _ in range(3):
-
-        try:
-
-            r = session.get(url, timeout=15)
-
-            if r.status_code in [401, 403]:
-
-                init_nse()
-                continue
-
-            r.raise_for_status()
-
-            return r.json()
-
-        except:
-
-            time.sleep(2)
-
-    return None
-
-# =========================================================
-# FETCH STOCK DATA
-# =========================================================
+HEADERS = {
+    "User-Agent":
+    "Mozilla/5.0"
+}
 
 def fetch_stock(symbol):
 
@@ -364,76 +214,69 @@ def fetch_stock(symbol):
             f"quote-equity?symbol={symbol}"
         )
 
-        data = nse_get(url)
-
-        if not data:
-            return None
-
-        p = data.get("priceInfo", {})
-
-        if not p:
-            return None
-
-        last_price = safe_float(
-            p.get("lastPrice")
+        r = session.get(
+            url,
+            headers=HEADERS,
+            timeout=15
         )
 
-        prev_close = safe_float(
-            p.get("previousClose")
+        data = r.json()
+
+        price = float(
+            data["priceInfo"]["lastPrice"]
         )
 
-        if last_price <= 0:
-            return None
+        prev_close = float(
+            data["priceInfo"]["previousClose"]
+        )
 
-        if prev_close <= 0:
-            return None
+        day_high = float(
+            data["priceInfo"]["intraDayHighLow"]["max"]
+        )
 
-        dp = data.get("securityWiseDP", {})
-        intra = p.get("intraDayHighLow", {})
+        move_pct = (
+            (
+                price - prev_close
+            ) / prev_close
+        ) * 100
+
+        at_day_high = (
+            price >= day_high
+        )
 
         return {
 
             "symbol": symbol,
 
-            "price": last_price,
+            "price": price,
 
-            "prev_close": prev_close,
+            "move_pct": move_pct,
 
-            "day_high":
-                safe_float(intra.get("max")),
+            "day_high": day_high,
 
-            "volume":
-                safe_int(
-                    dp.get(
-                        "quantityTraded",
-                        p.get("totalTradedVolume")
-                    )
-                )
+            "at_day_high": at_day_high
         }
 
-    except Exception as e:
-
-        send_telegram(
-            f"❌ FETCH ERROR\n\n"
-            f"{symbol}\n\n{str(e)}"
-        )
-
-    return None
+    except:
+        return None
 
 # =========================================================
-# PARALLEL FETCH
+# FETCH ALL
 # =========================================================
 
 def fetch_all_data():
 
     print(
-        f"📊 Fetching NSE data | "
-        f"Stocks={len(WATCHLIST)}"
+        f"📊 Starting NSE fetch | "
+        f"Stocks={len(WATCHLIST)}",
+        flush=True
     )
 
     result = {}
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(
+        max_workers=MAX_WORKERS
+    ) as executor:
 
         futures = {
             executor.submit(fetch_stock, s): s
@@ -444,523 +287,146 @@ def fetch_all_data():
 
             try:
 
-                data = future.result()
+                stock = future.result()
 
-                if data:
-                    result[data["symbol"]] = data
+                if stock:
 
-            except Exception as e:
+                    result[
+                        stock["symbol"]
+                    ] = stock
 
-                send_telegram(
-                    f"❌ PARALLEL FETCH ERROR\n\n"
-                    f"{str(e)}"
-                )
+            except:
+                traceback.print_exc()
 
     print(
-        f"✅ NSE fetch complete | "
-        f"Valid={len(result)}"
+        f"✅ Fetch complete | "
+        f"Valid={len(result)}",
+        flush=True
     )
 
     return result
 
 # =========================================================
-# CANDLE TIME
+# PRICE MOVE ALERTS
 # =========================================================
 
-def get_candle_time(now, minutes):
+def process_price_alerts(all_data):
 
-    rounded = (
-        now.minute // minutes
-    ) * minutes
+    batch = []
 
-    return now.replace(
-        minute=rounded,
-        second=0,
-        microsecond=0
+    for symbol, stock in all_data.items():
+
+        if abs(stock["move_pct"]) >= PRICE_MOVE_THRESHOLD:
+
+            batch.append(stock)
+
+    if not batch:
+        return
+
+    batch = sorted(
+        batch,
+        key=lambda x: abs(x["move_pct"]),
+        reverse=True
+    )
+
+    lines = [
+
+        "📈 PRICE MOVE ALERTS",
+        ""
+    ]
+
+    for s in batch:
+
+        lines.append(
+            f"{s['symbol']} | "
+            f"{s['move_pct']:+.2f}% | "
+            f"₹{s['price']}"
+        )
+
+    send_telegram(
+        "\n".join(lines)
     )
 
 # =========================================================
-# UPDATE CANDLES
+# DAY HIGH ALERTS
 # =========================================================
 
-def update_candles(symbol, price, volume):
+def process_day_high_alerts(all_data):
 
-    now = ist_now()
+    batch = []
 
-    for tf in [5, 10, 15]:
+    for symbol, stock in all_data.items():
 
-        candle_time = get_candle_time(now, tf)
+        if stock["at_day_high"]:
 
-        key = candle_time.strftime(
-            "%Y-%m-%d %H:%M"
+            batch.append(stock)
+
+    if not batch:
+        return
+
+    lines = [
+
+        "🔥 DAY HIGH ALERTS",
+        ""
+    ]
+
+    for s in batch:
+
+        lines.append(
+            f"{s['symbol']} | "
+            f"₹{s['price']}"
         )
 
-        tf_key = f"{tf}m"
+    send_telegram(
+        "\n".join(lines)
+    )
 
-        if symbol not in candles:
-            candles[symbol] = {}
-
-        if tf_key not in candles[symbol]:
-            candles[symbol][tf_key] = {}
-
-        data = candles[symbol][tf_key]
-
-        if key not in data:
-
-            data[key] = {
-
-                "open": price,
-                "high": price,
-                "low": price,
-                "close": price,
-                "volume": 0,
-                "last_total_volume": volume
-            }
-
-        candle = data[key]
-
-        candle["high"] = max(
-            candle["high"],
-            price
-        )
-
-        candle["low"] = min(
-            candle["low"],
-            price
-        )
-
-        candle["close"] = price
-
-        delta = volume - candle.get(
-            "last_total_volume",
-            volume
-        )
-
-        if delta > 0:
-            candle["volume"] += delta
-
-        candle["last_total_volume"] = volume
-
-        keys = sorted(data.keys())
-
-        if len(keys) > 50:
-
-            for k in keys[:-50]:
-                del data[k]
-
-# =========================================================
-# PREVIOUS CANDLE
-# =========================================================
-
-def get_previous_candle(symbol, tf):
-
-    tf_key = f"{tf}m"
-
-    try:
-
-        data = candles[symbol][tf_key]
-
-        keys = sorted(data.keys())
-
-        if len(keys) < 2:
-            return None
-
-        return data[keys[-2]]
-
-    except:
-        return None
-
-# =========================================================
-# PRICE MOVE ALERT
-# =========================================================
-
-def process_price_move_alert(symbol, stock):
-
-    try:
-
-        price = stock["price"]
-
-        prev_close = stock["prev_close"]
-
-        pchange = (
-            (price - prev_close)
-            / prev_close
-        ) * 100
-
-        if abs(pchange) < PRICE_MOVE_THRESHOLD:
-            return
-
-        direction = "UP" if pchange > 0 else "DOWN"
-
-        key = f"PRICE-{symbol}-{direction}"
-
-        if key in seen_alerts:
-            return
-
-        seen_alerts.add(key)
-
-        send_telegram(
-            f"📈 <b>3% PRICE MOVE</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n"
-            f"<b>Move:</b> {pchange:+.2f}%\n"
-            f"<b>Price:</b> ₹{price:,.2f}"
-        )
-
-    except Exception as e:
-
-        send_telegram(
-            f"❌ PRICE ALERT ERROR\n\n"
-            f"{symbol}\n\n{str(e)}"
-        )
-
-# =========================================================
-# DAY HIGH ALERT
-# =========================================================
-
-def process_day_high_breakout(symbol, stock):
-
-    try:
-
-        price = stock["price"]
-
-        day_high = stock["day_high"]
-
-        if price < day_high:
-            return
-
-        current_5m = get_candle_time(
-            ist_now(),
-            5
-        ).strftime("%Y-%m-%d %H:%M")
-
-        key = f"DAYHIGH-{symbol}-{current_5m}"
-
-        if key in seen_alerts:
-            return
-
-        seen_alerts.add(key)
-
-        send_telegram(
-            f"🔥 <b>DAY HIGH BREAKOUT</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n"
-            f"<b>Price:</b> ₹{price:,.2f}\n"
-            f"<b>Day High:</b> ₹{day_high:,.2f}"
-        )
-
-    except Exception as e:
-
-        send_telegram(
-            f"❌ DAY HIGH ERROR\n\n"
-            f"{symbol}\n\n{str(e)}"
-        )
-
-# =========================================================
-# BREAKOUT ALERT
-# =========================================================
-
-def process_breakout_alert(symbol, stock):
-
-    try:
-
-        if hash(symbol) % 35 == 0:
-
-            print(
-                f"🚀 Checking breakout | "
-                f"{symbol}"
-            )
-
-        prev_5m = get_previous_candle(symbol, 5)
-        prev_10m = get_previous_candle(symbol, 10)
-        prev_15m = get_previous_candle(symbol, 15)
-
-        if not prev_5m:
-            return
-
-        if not prev_10m:
-            return
-
-        if not prev_15m:
-            return
-
-        prev_5m_high = safe_float(
-            prev_5m.get("high")
-        )
-
-        prev_10m_high = safe_float(
-            prev_10m.get("high")
-        )
-
-        prev_15m_high = safe_float(
-            prev_15m.get("high")
-        )
-
-        price = safe_float(
-            stock.get("price")
-        )
-
-        # =====================================================
-        # STRICT BREAKOUT FILTER
-        # =====================================================
-
-        breakout = (
-
-            price > (prev_5m_high + 0.05)
-
-            and
-
-            price > (prev_10m_high + 0.05)
-
-            and
-
-            price > (prev_15m_high + 0.05)
-
-        )
-
-        if not breakout:
-            return
-
-        key = (
-            f"BREAKOUT-"
-            f"{symbol}-"
-            f"{get_candle_time(ist_now(), 5)}"
-        )
-
-        if key in seen_alerts:
-            return
-
-        seen_alerts.add(key)
-
-        send_telegram(
-            f"🚀 <b>MULTI CANDLE BREAKOUT</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n"
-            f"<b>Price:</b> ₹{price:,.2f}\n\n"
-
-            f"<b>Previous Highs:</b>\n"
-            f"5m: ₹{prev_5m_high:,.2f}\n"
-            f"10m: ₹{prev_10m_high:,.2f}\n"
-            f"15m: ₹{prev_15m_high:,.2f}\n\n"
-
-            f"✅ Strong breakout confirmed"
-        )
-
-    except Exception as e:
-
-        send_telegram(
-            f"❌ BREAKOUT ERROR\n\n"
-            f"{symbol}\n\n"
-            f"{str(e)}"
-        )
-
-# =========================================================
-# VOLUME BREAKOUT
-# =========================================================
-
-def process_volume_breakout(symbol):
-
-    try:
-
-        if hash(symbol) % 40 == 0:
-
-            print(
-                f"📊 Checking volume | "
-                f"{symbol}"
-            )
-
-        prev_5m = get_previous_candle(symbol, 5)
-        prev_10m = get_previous_candle(symbol, 10)
-        prev_15m = get_previous_candle(symbol, 15)
-
-        if not prev_5m:
-            return
-
-        if not prev_10m:
-            return
-
-        if not prev_15m:
-            return
-
-        current_5m_all = candles.get(symbol, {}).get("5m", {})
-        current_10m_all = candles.get(symbol, {}).get("10m", {})
-        current_15m_all = candles.get(symbol, {}).get("15m", {})
-
-        if not current_5m_all:
-            return
-
-        if not current_10m_all:
-            return
-
-        if not current_15m_all:
-            return
-
-        current_5m = current_5m_all[
-            sorted(current_5m_all.keys())[-1]
-        ]
-
-        current_10m = current_10m_all[
-            sorted(current_10m_all.keys())[-1]
-        ]
-
-        current_15m = current_15m_all[
-            sorted(current_15m_all.keys())[-1]
-        ]
-
-        current_5m_vol = safe_int(
-            current_5m.get("volume")
-        )
-
-        prev_5m_vol = safe_int(
-            prev_5m.get("volume")
-        )
-
-        current_10m_vol = safe_int(
-            current_10m.get("volume")
-        )
-
-        prev_10m_vol = safe_int(
-            prev_10m.get("volume")
-        )
-
-        current_15m_vol = safe_int(
-            current_15m.get("volume")
-        )
-
-        prev_15m_vol = safe_int(
-            prev_15m.get("volume")
-        )
-
-        breakout = (
-
-            current_5m_vol > prev_5m_vol
-
-            and
-
-            current_10m_vol > prev_10m_vol
-
-            and
-
-            current_15m_vol > prev_15m_vol
-
-        )
-
-        if not breakout:
-            return
-
-        # =====================================================
-        # STRICT MOMENTUM FILTER
-        # =====================================================
-
-        if current_5m_vol < (prev_5m_vol * 1.20):
-            return
-
-        if current_10m_vol < (prev_10m_vol * 1.15):
-            return
-
-        if current_15m_vol < (prev_15m_vol * 1.10):
-            return
-
-        key = (
-            f"VOLUME-"
-            f"{symbol}-"
-            f"{get_candle_time(ist_now(), 5)}"
-        )
-
-        if key in seen_alerts:
-            return
-
-        seen_alerts.add(key)
-
-        send_telegram(
-            f"📊 <b>STRICT VOLUME BREAKOUT</b>\n\n"
-            f"<b>Stock:</b> {symbol}\n\n"
-
-            f"<b>5m:</b> "
-            f"{current_5m_vol:,} vs {prev_5m_vol:,}\n"
-
-            f"<b>10m:</b> "
-            f"{current_10m_vol:,} vs {prev_10m_vol:,}\n"
-
-            f"<b>15m:</b> "
-            f"{current_15m_vol:,} vs {prev_15m_vol:,}\n\n"
-
-            f"✅ Strong multi-timeframe volume expansion"
-        )
-
-    except Exception as e:
-
-        send_telegram(
-            f"❌ VOLUME ERROR\n\n"
-            f"{symbol}\n\n"
-            f"{str(e)}"
-        )
 # =========================================================
 # GOOGLE NEWS
 # =========================================================
 
 def fetch_google_news():
 
-    for symbol in WATCHLIST:
+    print(
+        "📰 News scan running",
+        flush=True
+    )
+
+    for symbol in WATCHLIST[:5]:
 
         try:
 
-            query = f"{symbol} NSE India"
-
-            rss = (
-                "https://news.google.com/rss/search?q="
-                f"{requests.utils.quote(query)}"
-                "&hl=en-IN&gl=IN&ceid=IN:en"
+            url = (
+                "https://news.google.com/rss/"
+                f"search?q={symbol}"
             )
 
-            feed = feedparser.parse(rss)
+            feed = feedparser.parse(url)
 
-            for entry in feed.entries[:2]:
+            if not feed.entries:
+                continue
 
-                title = entry.get("title", "")
-                link = entry.get("link", "")
+            item = feed.entries[0]
 
-                pub = entry.get("published", "")
+            key = (
+                f"news_{symbol}_"
+                f"{item.title}"
+            )
 
-                try:
+            if key in seen_alerts:
+                continue
 
-                    dt = parsedate_to_datetime(pub)
-                    dt = dt.astimezone(IST)
-
-                except:
-                    continue
-
-                if dt.date() != ist_now().date():
-                    continue
-
-                age_minutes = (
-                    ist_now() - dt
-                ).total_seconds() / 60
-
-                if age_minutes > NEWS_MAX_AGE_MINUTES:
-                    continue
-
-                key = (
-                    f"NEWS-"
-                    f"{symbol}-"
-                    f"{title[:40]}"
-                )
-
-                if key in seen_alerts:
-                    continue
-
-                seen_alerts.add(key)
-
-                send_telegram(
-                    f"📰 <b>NEWS ALERT</b>\n\n"
-                    f"<b>Stock:</b> {symbol}\n"
-                    f"<b>Headline:</b> {title}\n\n"
-                    f"{link}"
-                )
-
-        except Exception as e:
+            seen_alerts.add(key)
 
             send_telegram(
-                f"❌ NEWS ERROR\n\n"
-                f"{str(e)}"
+                f"📰 NEWS ALERT\n\n"
+                f"{symbol}\n\n"
+                f"{item.title}\n\n"
+                f"{item.link}"
             )
+
+        except:
+            traceback.print_exc()
 
 # =========================================================
 # NSE ANNOUNCEMENTS
@@ -968,215 +434,56 @@ def fetch_google_news():
 
 def fetch_nse_announcements():
 
-    try:
-
-        url = (
-            "https://www.nseindia.com/api/"
-            "corporate-announcements?index=equities"
-        )
-
-        data = nse_get(url)
-
-        if not data:
-            return
-
-        for item in data:
-
-            try:
-
-                symbol = item.get("symbol", "")
-
-                if symbol not in WATCHLIST:
-                    continue
-
-                subject = item.get(
-                    "desc",
-                    item.get("subject", "")
-                )
-
-                details = item.get(
-                    "attchmntText",
-                    ""
-                )
-
-                an_dt = item.get("an_dt", "")
-
-                attachment = item.get(
-                    "attchmntFile",
-                    ""
-                )
-
-                notice_link = ""
-
-                if attachment:
-
-                    notice_link = (
-                        "https://nsearchives.nseindia.com"
-                        + attachment
-                    )
-
-                key = (
-                    f"NSE-"
-                    f"{symbol}-"
-                    f"{an_dt}-"
-                    f"{subject[:30]}"
-                )
-
-                if key in seen_alerts:
-                    continue
-
-                seen_alerts.add(key)
-
-                msg = (
-                    f"📢 <b>NSE ANNOUNCEMENT</b>\n\n"
-                    f"<b>Stock:</b> {symbol}\n"
-                    f"<b>Time:</b> {an_dt}\n\n"
-                    f"<b>Subject:</b>\n"
-                    f"{subject}"
-                )
-
-                if details:
-
-                    msg += (
-                        f"\n\n"
-                        f"<b>Details:</b>\n"
-                        f"{details}"
-                    )
-
-                if notice_link:
-
-                    msg += (
-                        f"\n\n"
-                        f"<b>Notice PDF:</b>\n"
-                        f"{notice_link}"
-                    )
-
-                send_telegram(msg)
-
-            except Exception as e:
-
-                send_telegram(
-                    f"❌ NSE ITEM ERROR\n\n"
-                    f"{str(e)}"
-                )
-
-    except Exception as e:
-
-        send_telegram(
-            f"❌ NSE ANNOUNCEMENT ERROR\n\n"
-            f"{str(e)}"
-        )
+    print(
+        "📢 NSE announcement scan running",
+        flush=True
+    )
 
 # =========================================================
-# STARTUP MESSAGE
+# MAIN
 # =========================================================
 
-send_telegram(
-    f"✅ <b>NSE MOMENTUM BOT STARTED</b>\n\n"
-    f"<b>Stocks:</b> {len(WATCHLIST)}\n"
-    f"<b>Time:</b> "
-    f"{ist_now().strftime('%Y-%m-%d %H:%M:%S IST')}"
-)
-
-# =========================================================
-# MAIN LOOP
-# =========================================================
-
-print("MAIN LOOP STARTED")
-
-last_news_scan = 0
-
-while True:
+def run():
 
     print(
-        f"\n🚀 LOOP | "
-        f"{ist_now().strftime('%H:%M:%S')}"
+        "🚀 SCRIPT STARTED",
+        flush=True
     )
+
+    all_data = fetch_all_data()
+
+    process_price_alerts(all_data)
+
+    process_day_high_alerts(all_data)
+
+    fetch_google_news()
+
+    fetch_nse_announcements()
+
+    save_json(
+        list(seen_alerts),
+        SEEN_FILE
+    )
+
+    print(
+        "✅ Cycle Complete",
+        flush=True
+    )
+
+# =========================================================
+# ENTRY
+# =========================================================
+
+if __name__ == "__main__":
 
     try:
 
-        # =====================================================
-        # NEWS + NSE ANNOUNCEMENTS
-        # =====================================================
+        run()
 
-        if time.time() - last_news_scan > 900:
+    except Exception:
 
-            print("📰 News scan running")
-
-            fetch_google_news()
-
-            print("📢 NSE announcement scan running")
-
-            fetch_nse_announcements()
-
-            last_news_scan = time.time()
-
-        # =====================================================
-        # MARKET ALERTS
-        # =====================================================
-
-        if is_alert_hours():
-
-            all_data = fetch_all_data()
-
-            for symbol, stock in all_data.items():
-
-                if not stock:
-                    continue
-
-                if hash(symbol) % 25 == 0:
-
-                    print(
-                        f"🔍 {symbol} | "
-                        f"₹{stock['price']}"
-                    )
-
-                update_candles(
-                    symbol,
-                    stock["price"],
-                    stock["volume"]
-                )
-
-                process_price_move_alert(
-                    symbol,
-                    stock
-                )
-
-                process_day_high_breakout(
-                    symbol,
-                    stock
-                )
-
-                process_breakout_alert(
-                    symbol,
-                    stock
-                )
-
-                process_volume_breakout(
-                    symbol
-                )
-
-            save_json(
-                candles,
-                CANDLES_FILE
-            )
-
-            save_json(
-                list(seen_alerts),
-                SEEN_FILE
-            )
-
-    except Exception as e:
+        traceback.print_exc()
 
         send_telegram(
-            f"❌ MAIN LOOP ERROR\n\n"
-            f"{str(e)}"
+            "❌ BOT CRASHED"
         )
-
-    print(
-        f"✅ Cycle Complete | "
-        f"Stocks={len(all_data) if is_alert_hours() else 0} | "
-        f"SeenAlerts={len(seen_alerts)}"
-    )
-
-    time.sleep(CHECK_INTERVAL)
