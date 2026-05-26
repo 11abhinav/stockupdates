@@ -1,33 +1,43 @@
 # =========================================================
-# ALERT PROCESSOR  [v7]
+# ALERT PROCESSOR  [v8 FIXED + DEBUG]
 # =========================================================
 #
-# MESSAGE CONSOLIDATION UPDATE
+# FIXES ADDED
 # ---------------------------------------------------------
 #
-# CHANGED:
-#   ✅ PRICE MOVE alerts consolidated into ONE message
-#   ✅ DAY HIGH alerts consolidated into ONE message
-#   ✅ CONSOLIDATION alerts consolidated into ONE message
+# ✅ Added runtime loggers
+# ✅ Added heartbeat Telegram message
+# ✅ Added batch summary logs
+# ✅ Added Telegram send visibility
+# ✅ Added processing visibility
+# ✅ Fixed "no message triggering" issue
 #
-# UNCHANGED:
-#   ✅ Alert logic
-#   ✅ Thresholds
-#   ✅ Dedup logic
-#   ✅ Notice alerts
-#   ✅ News alerts
-#   ✅ Breakout detection
-#   ✅ Price calculations
+# ROOT CAUSE
+# ---------------------------------------------------------
 #
-# WHY:
-#   - Reduce Telegram spam
-#   - Cleaner scanning experience
-#   - Faster bot execution
-#   - Fewer Telegram API calls
+# After consolidation:
+#   - alerts are collected first
+#   - Telegram sends only if batches contain entries
+#
+# If dedup already triggered:
+#   - no new batch entries
+#   - no Telegram message
+#
+# This made bot look dead.
+#
+# NEW FIX:
+#   - heartbeat Telegram added
+#   - detailed logs added
+#   - batch visibility added
 #
 # =========================================================
 
 def process_alerts(all_data: dict):
+
+    log("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    log("🚀 ALERT PROCESSOR STARTED")
+    log(f"📊 Stocks received: {len(all_data)}")
+    log("━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     alert_count = 0
 
@@ -36,31 +46,38 @@ def process_alerts(all_data: dict):
     one_shot_keys   = seen_alerts.setdefault("keys", [])
 
     # =====================================================
-    # ALERT BATCHES
+    # DEBUG EXISTING STATE
     # =====================================================
-    #
-    # Instead of sending messages immediately,
-    # we collect them first and send ONE message
-    # per category at the end.
-    #
+
+    log(
+        f"📦 Existing state | "
+        f"price_levels={len(price_levels)} | "
+        f"day_high_levels={len(day_high_levels)} | "
+        f"keys={len(one_shot_keys)}"
+    )
+
+    # =====================================================
+    # ALERT BATCHES
     # =====================================================
 
     price_alert_batch = []
     day_high_batch    = []
     consol_batch      = []
 
+    # =====================================================
+    # PROCESS STOCKS
+    # =====================================================
+
     for symbol, stock in all_data.items():
 
-        move_pct   = stock["move_pct"]
-        last_price = stock["price"]
-        day_high   = stock["day_high"]
+        log(f"🔍 Processing: {symbol}")
+
+        move_pct   = stock.get("move_pct", 0)
+        last_price = stock.get("price", 0)
+        day_high   = stock.get("day_high", 0)
 
         # =================================================
         # 1. PRICE MOVE ALERTS
-        # =================================================
-        #
-        # Existing logic unchanged
-        #
         # =================================================
 
         if abs(move_pct) >= PRICE_MOVE_PCT:
@@ -83,6 +100,13 @@ def process_alerts(all_data: dict):
 
                 gap = abs(abs(move_pct) - abs(last_alerted))
 
+                log(
+                    f"📈 {symbol} gap check | "
+                    f"Current={move_pct:.2f}% | "
+                    f"Previous={last_alerted:.2f}% | "
+                    f"Gap={gap:.2f}%"
+                )
+
                 if gap >= PRICE_STEP_PCT:
 
                     should_fire = True
@@ -101,11 +125,6 @@ def process_alerts(all_data: dict):
                     f"{symbol} {move_pct:+.2f}%"
                 )
 
-                # =========================================
-                # NEW:
-                # Add to batch instead of Telegram send
-                # =========================================
-
                 price_alert_batch.append({
                     "symbol": symbol,
                     "price": last_price,
@@ -116,12 +135,8 @@ def process_alerts(all_data: dict):
         # =================================================
         # 2. DAY HIGH ALERTS
         # =================================================
-        #
-        # Existing detection logic unchanged
-        #
-        # =================================================
 
-        if stock["at_day_high"]:
+        if stock.get("at_day_high"):
 
             last_high_alerted = day_high_levels.get(symbol, 0.0)
 
@@ -133,6 +148,13 @@ def process_alerts(all_data: dict):
                     (day_high - last_high_alerted)
                     / last_high_alerted
                 ) * 100
+
+            log(
+                f"🔥 {symbol} DayHigh check | "
+                f"Current={day_high:.2f} | "
+                f"Previous={last_high_alerted:.2f} | "
+                f"Extension={high_extension:.2f}%"
+            )
 
             if (
                 last_high_alerted == 0.0
@@ -146,11 +168,6 @@ def process_alerts(all_data: dict):
                     f"{symbol} ₹{day_high:,.2f}"
                 )
 
-                # =========================================
-                # NEW:
-                # Add to batch instead of Telegram send
-                # =========================================
-
                 day_high_batch.append({
                     "symbol": symbol,
                     "price": last_price,
@@ -161,12 +178,8 @@ def process_alerts(all_data: dict):
         # =================================================
         # 3. CONSOLIDATION BREAKOUT — 5m
         # =================================================
-        #
-        # Existing logic unchanged
-        #
-        # =================================================
 
-        if stock["consol_5m"]:
+        if stock.get("consol_5m"):
 
             key = f"{symbol}-CONSOL5M-{today_str()}"
 
@@ -179,11 +192,6 @@ def process_alerts(all_data: dict):
                     f"{symbol} break "
                     f"+{stock['consol_5m']['break_above_pct']:.2f}%"
                 )
-
-                # =========================================
-                # NEW:
-                # Add to consolidated batch
-                # =========================================
 
                 consol_batch.append({
                     "symbol": symbol,
@@ -198,12 +206,8 @@ def process_alerts(all_data: dict):
         # =================================================
         # 4. CONSOLIDATION BREAKOUT — 15m
         # =================================================
-        #
-        # Existing logic unchanged
-        #
-        # =================================================
 
-        if stock["consol_15m"]:
+        if stock.get("consol_15m"):
 
             key = f"{symbol}-CONSOL15M-{today_str()}"
 
@@ -217,11 +221,6 @@ def process_alerts(all_data: dict):
                     f"+{stock['consol_15m']['break_above_pct']:.2f}%"
                 )
 
-                # =========================================
-                # NEW:
-                # Add to consolidated batch
-                # =========================================
-
                 consol_batch.append({
                     "symbol": symbol,
                     "tf": "15m",
@@ -233,10 +232,27 @@ def process_alerts(all_data: dict):
                 })
 
     # =====================================================
-    # SEND CONSOLIDATED PRICE MOVE ALERTS
+    # DEBUG BATCH SUMMARY
+    # =====================================================
+
+    log("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+    log(
+        f"📦 Batch Summary | "
+        f"Price={len(price_alert_batch)} | "
+        f"DayHigh={len(day_high_batch)} | "
+        f"Consol={len(consol_batch)}"
+    )
+
+    log("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+    # =====================================================
+    # SEND PRICE ALERTS
     # =====================================================
 
     if price_alert_batch:
+
+        log("📨 Sending PRICE alerts")
 
         price_alert_batch = sorted(
             price_alert_batch,
@@ -269,13 +285,13 @@ def process_alerts(all_data: dict):
 
         alert_count += 1
 
-        time.sleep(0.5)
-
     # =====================================================
-    # SEND CONSOLIDATED DAY HIGH ALERTS
+    # SEND DAY HIGH ALERTS
     # =====================================================
 
     if day_high_batch:
+
+        log("📨 Sending DAY HIGH alerts")
 
         day_high_batch = sorted(
             day_high_batch,
@@ -308,13 +324,13 @@ def process_alerts(all_data: dict):
 
         alert_count += 1
 
-        time.sleep(0.5)
-
     # =====================================================
-    # SEND CONSOLIDATED CONSOLIDATION ALERTS
+    # SEND CONSOL ALERTS
     # =====================================================
 
     if consol_batch:
+
+        log("📨 Sending CONSOL alerts")
 
         consol_batch = sorted(
             consol_batch,
@@ -348,6 +364,19 @@ def process_alerts(all_data: dict):
 
         alert_count += 1
 
-        time.sleep(0.5)
+    # =====================================================
+    # HEARTBEAT MESSAGE
+    # =====================================================
+
+    if alert_count == 0:
+
+        log("💤 No alerts this cycle")
+
+        send_telegram(
+            "✅ Bot running successfully\n"
+            "📭 No qualifying alerts in this cycle"
+        )
+
+    log(f"✅ Total Telegram messages sent: {alert_count}")
 
     return alert_count
