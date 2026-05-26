@@ -1,41 +1,25 @@
 # =============================================================================
-# PRODUCTION NSE MOMENTUM BOT - RAILWAY SAFE VERSION
+# PRODUCTION NSE MOMENTUM BOT - FINAL STABLE VERSION
 # =============================================================================
 #
-# WHAT THIS BOT DOES
+# FEATURES
 # -----------------------------------------------------------------------------
 #
-# ✅ Uses TradingView Screener as PRIMARY data source
-# ✅ Uses your custom watchlist only
-# ✅ Avoids NSE direct scraping completely
-# ✅ Uses lightweight yfinance confirmation only
-# ✅ Detects momentum breakout stocks
-# ✅ Calculates RSI using ta library
+# ✅ TradingView-first architecture
+# ✅ Uses ONLY your custom watchlist
+# ✅ Railway-safe architecture
+# ✅ NO NSE scraping
+# ✅ Minimal yfinance usage
+# ✅ RSI confirmation using ta library
 # ✅ EMA trend confirmation
+# ✅ Breakout detection
 # ✅ Volume spike detection
 # ✅ Telegram alerts
 # ✅ Excel export using openpyxl
 # ✅ Parquet export using pyarrow
-# ✅ Progress tracking using tqdm
-# ✅ Railway/VPS optimized
-# ✅ Retry-safe architecture
+# ✅ tqdm progress tracking
+# ✅ Retry-safe structure
 # ✅ Cron-safe execution
-# ✅ Minimal API calls
-#
-# =============================================================================
-# WHY THIS VERSION IS STABLE
-# =============================================================================
-#
-# ❌ NO NSE scraping
-# ❌ NO session refresh loops
-# ❌ NO cookie handling
-# ❌ NO browser emulation
-# ❌ NO repeated quote API hits
-#
-# ✅ TradingView handles screening
-# ✅ yfinance used only for confirmation
-# ✅ Lower API traffic
-# ✅ Safer for Railway shared IPs
 #
 # =============================================================================
 
@@ -90,7 +74,7 @@ EMA_SLOW = 50
 STRONG_SCORE = 6
 
 # =============================================================================
-# CUSTOM WATCHLIST
+# WATCHLIST
 # =============================================================================
 
 WATCHLIST = [
@@ -204,8 +188,9 @@ def fetch_tradingview_stocks():
 
         log.info("Fetching TradingView screener data")
 
-        _, df = (
+        query = (
             Query()
+            .set_markets("india")
             .select(
                 "name",
                 "close",
@@ -219,8 +204,9 @@ def fetch_tradingview_stocks():
                 "RSI > 55",
             )
             .limit(200)
-            .get_scanner_data()
         )
+
+        _, df = query.get_scanner_data()
 
         if df is None or df.empty:
             return pd.DataFrame()
@@ -424,10 +410,6 @@ def run():
                 row["volume"]
             )
 
-            tv_rsi = safe_float(
-                row["RSI"]
-            )
-
             hist = fetch_confirmation_data(symbol)
 
             if hist is None:
@@ -554,6 +536,4 @@ if __name__ == "__main__":
 
         traceback.print_exc()
 
-        send_telegram(
-            "BOT CRASHED"
-        )
+        send_telegram("BOT CRASHED")
