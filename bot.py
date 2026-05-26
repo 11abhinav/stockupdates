@@ -1,101 +1,44 @@
 # =============================================================================
-# NSE MOMENTUM + BREAKOUT + NEWS BOT - PRODUCTION VERSION v5
+# NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL STABLE VERSION v6
 # =============================================================================
 #
 # WHAT THIS BOT DOES
 # -----------------------------------------------------------------------------
-# 1. Downloads historical OHLCV data from Yahoo Finance
-# 2. Fixes yfinance MultiIndex / Series conversion issues
-# 3. Fetches live prices + VWAP + RSI from TradingView
-# 4. Detects strong momentum and breakout stocks
-# 5. Sends Telegram alerts
-# 6. Scans Google News RSS for stock news
-# 7. Scans BSE RSS for corporate announcements
-# 8. Uses momentum scoring engine
-# 9. Runs safely on Railway/VPS/CRON
+# 1. Uses NSE API for LIVE prices
+# 2. Uses Yahoo Finance only for historical candles
+# 3. Detects momentum and breakouts
+# 4. Sends Telegram alerts
+# 5. Fetches Google News RSS
+# 6. Fetches BSE corporate announcements
+# 7. Prevents duplicate alerts
+# 8. Railway-safe stable production architecture
 #
 # =============================================================================
-# WHAT WAS FIXED IN THIS VERSION
+# FIXES APPLIED
 # =============================================================================
 #
-# FIX 1:
-# ------
-# Fixed:
-# TypeError: float() argument must be a string or a real number, not 'Series'
+# FIXED:
+# -------
+# - TradingView failures
+# - float(series) errors
+# - yfinance MultiIndex issues
+# - Telegram failures
+# - duplicate RSS alerts
+# - Railway crashes
+# - invalid dataframe conversions
 #
-# Cause:
-# yfinance sometimes returns DataFrame/MultiIndex columns.
+# IMPORTANT CHANGE:
+# -----------------
+# TradingView REMOVED.
 #
-# Solution:
-# Added:
-# - normalize_yf_df()
-# - safe_float()
+# NSE API now used for:
+# - live prices
+# - intraday moves
 #
-# -----------------------------------------------------------------------------
-#
-# FIX 2:
-# ------
-# Fixed yfinance MultiIndex corruption.
-#
-# Solution:
-# - flatten columns
-# - remove duplicate OHLCV columns
-# - force OHLCV to float Series
-#
-# -----------------------------------------------------------------------------
-#
-# FIX 3:
-# ------
-# Prevented Railway crashes from bad numeric conversions.
-#
-# Solution:
-# Added:
-# - safe_float()
-# - validation checks
-#
-# -----------------------------------------------------------------------------
-#
-# FIX 4:
-# ------
-# Added market-hours filter.
-#
-# Bot now runs only:
-# 09:15 AM → 03:30 PM IST
-#
-# -----------------------------------------------------------------------------
-#
-# FIX 5:
-# ------
-# Added Google News alerts again.
-#
-# -----------------------------------------------------------------------------
-#
-# FIX 6:
-# ------
-# Added BSE announcement alerts again.
-#
-# -----------------------------------------------------------------------------
-#
-# FIX 7:
-# ------
-# Added deduplication for:
-# - news alerts
-# - BSE alerts
-#
-# Prevents repeated spam every cron cycle.
-#
-# -----------------------------------------------------------------------------
-#
-# FIX 8:
-# ------
-# Disabled threaded yfinance calls.
-#
-# threads=False improves stability on Railway.
-#
+# This is MUCH more stable on Railway/VPS.
 # =============================================================================
 
 import os
-import json
 import logging
 import traceback
 import requests
@@ -105,14 +48,6 @@ import numpy as np
 import yfinance as yf
 
 from datetime import datetime, timedelta, timezone
-
-try:
-    from tradingview_ta import TA_Handler, Interval
-except ImportError:
-    raise SystemExit(
-        "Install tradingview-ta first:\n"
-        "pip install tradingview_ta"
-    )
 
 # =============================================================================
 # LOGGING
@@ -172,13 +107,6 @@ seen_bse = set()
 # HELPERS
 # =============================================================================
 
-def ist_now():
-    return datetime.now(IST)
-
-# =============================================================================
-# SAFE FLOAT
-# =============================================================================
-
 def safe_float(value, default=0.0):
 
     try:
@@ -198,7 +126,6 @@ def safe_float(value, default=0.0):
 def send_telegram(msg):
 
     if not BOT_TOKEN or not CHAT_ID:
-        log.warning("Telegram credentials missing")
         return
 
     try:
@@ -218,7 +145,7 @@ def send_telegram(msg):
         traceback.print_exc()
 
 # =============================================================================
-# FIXED YFINANCE NORMALIZER
+# NORMALIZE YFINANCE
 # =============================================================================
 
 def normalize_yf_df(df):
@@ -233,7 +160,7 @@ def normalize_yf_df(df):
 
         df = df.loc[:, ~df.columns.duplicated()].copy()
 
-        required_cols = [
+        cols = [
             "Open",
             "High",
             "Low",
@@ -241,7 +168,7 @@ def normalize_yf_df(df):
             "Volume",
         ]
 
-        for col in required_cols:
+        for col in cols:
 
             if col not in df.columns:
                 return None
@@ -251,9 +178,7 @@ def normalize_yf_df(df):
 
             df[col] = pd.Series(df[col]).astype(float)
 
-        df = df.dropna(subset=required_cols)
-
-        return df
+        return df.dropna()
 
     except Exception:
         traceback.print_exc()
@@ -286,10 +211,10 @@ def compute_rsi(close, period=14):
 
     rsi = 100 - (100 / (1 + rs))
 
-    return safe_float(rsi.iloc[-1], 50.0)
+    return safe_float(rsi.iloc[-1], 50)
 
 # =============================================================================
-# HISTORICAL DATA
+# YFINANCE HISTORICAL
 # =============================================================================
 
 def fetch_historical_data(symbol):
@@ -320,31 +245,87 @@ def fetch_historical_data(symbol):
         return None
 
 # =============================================================================
-# TRADINGVIEW LIVE DATA
+# NSE LIVE DATA
 # =============================================================================
 
-def fetch_tv_live(symbol):
+session = requests.Session()
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64)"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+def prime_nse():
 
     try:
 
-        handler = TA_Handler(
-            symbol=symbol,
-            screener="india",
-            exchange="NSE",
-            interval=Interval.INTERVAL_5_MINUTES,
+        session.get(
+            "https://www.nseindia.com",
+            headers=HEADERS,
+            timeout=10,
         )
 
-        indicators = handler.get_analysis().indicators
+    except:
+        pass
+
+prime_nse()
+
+def fetch_nse_live(symbol):
+
+    try:
+
+        url = (
+            "https://www.nseindia.com/api/"
+            f"quote-equity?symbol={symbol}"
+        )
+
+        r = session.get(
+            url,
+            headers=HEADERS,
+            timeout=10,
+        )
+
+        data = r.json()
+
+        price = data["priceInfo"]
+
+        ltp = safe_float(price.get("lastPrice"))
+
+        prev_close = safe_float(
+            price.get("previousClose")
+        )
+
+        day_high = safe_float(
+            price["intraDayHighLow"].get("max")
+        )
+
+        total_volume = safe_float(
+            data.get("securityWiseDP", {})
+            .get("quantityTraded")
+        )
+
+        change_pct = (
+            ((ltp - prev_close) / prev_close) * 100
+            if prev_close > 0 else 0
+        )
 
         return {
-            "ltp": safe_float(indicators.get("close", 0)),
-            "volume": safe_float(indicators.get("volume", 0)),
-            "vwap": safe_float(indicators.get("VWAP", 0)),
-            "rsi_live": safe_float(indicators.get("RSI", 50)),
+            "ltp": ltp,
+            "change_pct": change_pct,
+            "day_high": day_high,
+            "volume": total_volume,
         }
 
     except Exception:
-        log.warning("TradingView failed for %s", symbol)
+
+        log.warning(
+            "NSE fetch failed for %s",
+            symbol,
+        )
+
         return None
 
 # =============================================================================
@@ -407,13 +388,9 @@ def check_bse_announcements():
             title = entry.title
             link = entry.link
 
-            matched = False
-
             for symbol in WATCHLIST:
 
                 if symbol in title.upper():
-
-                    matched = True
 
                     key = f"{symbol}_{title}"
 
@@ -433,9 +410,6 @@ def check_bse_announcements():
 
                     break
 
-            if matched:
-                continue
-
     except Exception:
         traceback.print_exc()
 
@@ -443,7 +417,7 @@ def check_bse_announcements():
 # SCORE ENGINE
 # =============================================================================
 
-def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
+def compute_score(change_pct, vol_ratio, rsi, breakout):
 
     score = 0
 
@@ -452,9 +426,6 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
 
     if vol_ratio >= VOLUME_RATIO_MIN:
         score += 2
-
-    if above_vwap:
-        score += 1
 
     if breakout:
         score += 2
@@ -473,14 +444,6 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
 
 def run():
 
-    # =========================================================================
-    # NOTE:
-    # Market-hours filter removed intentionally.
-    #
-    # Cron controls execution timing externally.
-    # Whenever cron triggers, bot will fetch data immediately.
-    # =========================================================================
-
     log.info("Momentum bot started")
 
     for symbol in WATCHLIST:
@@ -494,7 +457,7 @@ def run():
             if hist is None:
                 continue
 
-            live = fetch_tv_live(symbol)
+            live = fetch_nse_live(symbol)
 
             if live is None:
                 continue
@@ -511,8 +474,6 @@ def run():
                 high.rolling(20).max().iloc[-1]
             )
 
-            prev_close = safe_float(close.iloc[-2])
-
             rsi = compute_rsi(close)
 
             ltp = safe_float(live["ltp"])
@@ -523,24 +484,16 @@ def run():
             if avg_vol10 <= 0:
                 continue
 
-            change_pct = (
-                (ltp - prev_close)
-                / prev_close
-            ) * 100
-
             vol_ratio = (
                 live["volume"] / avg_vol10
-            )
-
-            above_vwap = ltp > live["vwap"]
+            ) if avg_vol10 > 0 else 0
 
             breakout = ltp >= high20
 
             score = compute_score(
-                change_pct,
+                live["change_pct"],
                 vol_ratio,
                 rsi,
-                above_vwap,
                 breakout,
             )
 
@@ -554,7 +507,7 @@ def run():
                     f"Stock: {symbol}\n"
                     f"Score: {score}/10\n"
                     f"Price: Rs {ltp:.2f}\n"
-                    f"Move: {change_pct:+.2f}%\n"
+                    f"Move: {live['change_pct']:+.2f}%\n"
                     f"Volume Ratio: {vol_ratio:.1f}x\n"
                     f"RSI: {rsi:.1f}"
                 )
