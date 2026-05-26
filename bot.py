@@ -1,6 +1,3 @@
-# Enhanced NSE Momentum + Breakout + News Bot (v8)
-
-```python
 # =============================================================================
 # ENHANCED NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL VERSION v8
 # =============================================================================
