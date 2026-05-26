@@ -694,5 +694,3 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         send_telegram("BOT CRASHED")
-
-Source file used: fileciteturn0file0
