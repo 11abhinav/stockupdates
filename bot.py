@@ -1,44 +1,49 @@
 # =============================================================================
-# ENHANCED NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL VERSION v8
+# PRODUCTION NSE MOMENTUM BOT - RAILWAY SAFE VERSION
 # =============================================================================
 #
-# FEATURES
+# WHAT THIS BOT DOES
 # -----------------------------------------------------------------------------
-# ✅ NSE live price fetch
-# ✅ Yahoo Finance historical candles
-# ✅ TradingView screener integration
-# ✅ RSI using ta library
-# ✅ EMA trend detection
-# ✅ Breakout detection
+#
+# ✅ Uses TradingView Screener as PRIMARY data source
+# ✅ Uses your custom watchlist only
+# ✅ Avoids NSE direct scraping completely
+# ✅ Uses lightweight yfinance confirmation only
+# ✅ Detects momentum breakout stocks
+# ✅ Calculates RSI using ta library
+# ✅ EMA trend confirmation
 # ✅ Volume spike detection
-# ✅ Google News alerts
-# ✅ BSE corporate announcements
 # ✅ Telegram alerts
-# ✅ Progress tracking with tqdm
-# ✅ Parquet export using pyarrow
 # ✅ Excel export using openpyxl
-# ✅ Railway/VPS stable architecture
+# ✅ Parquet export using pyarrow
+# ✅ Progress tracking using tqdm
+# ✅ Railway/VPS optimized
+# ✅ Retry-safe architecture
+# ✅ Cron-safe execution
+# ✅ Minimal API calls
 #
 # =============================================================================
-# REQUIRED LIBRARIES
+# WHY THIS VERSION IS STABLE
 # =============================================================================
-# pandas
-# numpy
-# yfinance
-# tradingview_screener
-# ta
-# pyarrow
-# requests
-# tqdm
-# openpyxl
+#
+# ❌ NO NSE scraping
+# ❌ NO session refresh loops
+# ❌ NO cookie handling
+# ❌ NO browser emulation
+# ❌ NO repeated quote API hits
+#
+# ✅ TradingView handles screening
+# ✅ yfinance used only for confirmation
+# ✅ Lower API traffic
+# ✅ Safer for Railway shared IPs
+#
 # =============================================================================
 
 import os
 import time
-import logging
 import traceback
+import logging
 import requests
-import feedparser
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -47,7 +52,7 @@ from tqdm import tqdm
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 from tradingview_screener import Query
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 # =============================================================================
 # LOGGING
@@ -61,50 +66,117 @@ logging.basicConfig(
 log = logging.getLogger("momentum_bot")
 
 # =============================================================================
-# CONFIG
+# ENV VARIABLES
 # =============================================================================
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHAT_ID = os.environ.get("CHAT_ID", "")
 
-IST = timezone(timedelta(hours=5, minutes=30))
+# =============================================================================
+# CONFIG
+# =============================================================================
 
-YF_HISTORY = "1y"
-YF_INTERVAL = "1d"
+EXPORT_FOLDER = "exports"
+
+os.makedirs(EXPORT_FOLDER, exist_ok=True)
+
+RSI_MIN = 60
+PRICE_CHANGE_MIN = 2
+VOLUME_RATIO_MIN = 1.5
+
+EMA_FAST = 20
+EMA_SLOW = 50
 
 STRONG_SCORE = 6
 
-PRICE_CHANGE_MIN = 2
-VOLUME_RATIO_MIN = 2
-
-RSI_MOMENTUM = 60
-RSI_OVERBOUGHT = 80
-
-BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
-
-EXPORT_FOLDER = "exports"
-os.makedirs(EXPORT_FOLDER, exist_ok=True)
+# =============================================================================
+# CUSTOM WATCHLIST
+# =============================================================================
 
 WATCHLIST = [
-    "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA",
-    "ANANTRAJ", "ASIANPAINT", "ATGL", "BAJAJFINSV", "BEL",
-    "BLS", "BLUEDART", "CASTROLIND", "CGPOWER", "CLEAN",
-    "DBL", "EIDPARRY", "FILATEX", "FORTIS", "GILLETTE",
-    "GSFC", "HDFCBANK", "HINDCOPPER", "HINDUNILVR",
-    "ICICIBANK", "IDBI", "IFCI", "INDUSTOWER", "INFY",
-    "IRB", "IRCTC", "JIOFIN", "JSWENERGY", "LATENTVIEW",
-    "LLOYDSENGG", "LT", "MARUTI", "MAZDOCK", "NATCOPHARM",
-    "ONGC", "ORIENTCEM", "PFC", "PIDILITIND", "POONAWALLA",
-    "PVRINOX", "RELIANCE", "RVNL", "SBIN", "SUZLON",
-    "SWIGGY", "SYMPHONY", "TATATECH", "TITAN", "TRENT",
+    "ADANIENT",
+    "ADANIGREEN",
+    "ADANIPORTS",
+    "AKZOINDIA",
+    "ANANTRAJ",
+    "ASIANPAINT",
+    "ATGL",
+    "BAJAJFINSV",
+    "BEL",
+    "BLS",
+    "BLUEDART",
+    "CASTROLIND",
+    "CGPOWER",
+    "CLEAN",
+    "COALINDIA",
+    "DBL",
+    "EIDPARRY",
+    "FILATEX",
+    "FORTIS",
+    "GILLETTE",
+    "GSFC",
+    "HDFCBANK",
+    "HINDCOPPER",
+    "HINDUNILVR",
+    "ICICIBANK",
+    "IDBI",
+    "IFCI",
+    "INDUSTOWER",
+    "INFY",
+    "IRB",
+    "IRCTC",
+    "JIOFIN",
+    "JSWENERGY",
+    "LATENTVIEW",
+    "LLOYDSENGG",
+    "LT",
+    "MARUTI",
+    "MAZDOCK",
+    "NATCOPHARM",
+    "ONGC",
+    "ORIENTCEM",
+    "PFC",
+    "PIDILITIND",
+    "POONAWALLA",
+    "PVRINOX",
+    "RELIANCE",
+    "RVNL",
+    "SBIN",
+    "SUZLON",
+    "SWIGGY",
+    "SYMPHONY",
+    "TATATECH",
+    "TITAN",
+    "TRENT",
 ]
 
 # =============================================================================
-# DEDUP STORAGE
+# TELEGRAM
 # =============================================================================
 
-seen_news = set()
-seen_bse = set()
+def send_telegram(message):
+
+    if not BOT_TOKEN or not CHAT_ID:
+        return
+
+    try:
+
+        url = (
+            f"https://api.telegram.org/"
+            f"bot{BOT_TOKEN}/sendMessage"
+        )
+
+        requests.post(
+            url,
+            data={
+                "chat_id": CHAT_ID,
+                "text": message[:4096],
+            },
+            timeout=20,
+        )
+
+    except Exception:
+        traceback.print_exc()
 
 # =============================================================================
 # HELPERS
@@ -123,393 +195,143 @@ def safe_float(value, default=0.0):
         return default
 
 # =============================================================================
-# TELEGRAM
+# TRADINGVIEW SCREENER
 # =============================================================================
 
-def send_telegram(msg):
-
-    if not BOT_TOKEN or not CHAT_ID:
-        return
+def fetch_tradingview_stocks():
 
     try:
 
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        log.info("Fetching TradingView screener data")
 
-        requests.post(
-            url,
-            data={
-                "chat_id": CHAT_ID,
-                "text": msg[:4096],
-            },
-            timeout=20,
+        _, df = (
+            Query()
+            .select(
+                "name",
+                "close",
+                "volume",
+                "change",
+                "RSI",
+            )
+            .where(
+                "exchange == 'NSE'",
+                "change > 1",
+                "RSI > 55",
+            )
+            .limit(200)
+            .get_scanner_data()
         )
 
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        return df
+
     except Exception:
+
         traceback.print_exc()
 
-# =============================================================================
-# NORMALIZE YFINANCE
-# =============================================================================
-
-def normalize_yf_df(df):
-
-    if df is None or df.empty:
-        return None
-
-    try:
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df = df.loc[:, ~df.columns.duplicated()].copy()
-
-        cols = [
-            "Open",
-            "High",
-            "Low",
-            "Close",
-            "Volume",
-        ]
-
-        for col in cols:
-
-            if col not in df.columns:
-                return None
-
-            if isinstance(df[col], pd.DataFrame):
-                df[col] = df[col].iloc[:, 0]
-
-            df[col] = pd.Series(df[col]).astype(float)
-
-        return df.dropna()
-
-    except Exception:
-        traceback.print_exc()
-        return None
+        return pd.DataFrame()
 
 # =============================================================================
-# TECHNICAL INDICATORS USING ta LIBRARY
+# YFINANCE CONFIRMATION
 # =============================================================================
 
-def compute_rsi(close, period=14):
-
-    try:
-
-        rsi_indicator = RSIIndicator(close=close, window=period)
-        rsi = rsi_indicator.rsi()
-
-        return safe_float(rsi.iloc[-1], 50)
-
-    except Exception:
-        return 50.0
-
-
-def compute_ema(close, period=20):
-
-    try:
-
-        ema_indicator = EMAIndicator(close=close, window=period)
-        ema = ema_indicator.ema_indicator()
-
-        return safe_float(ema.iloc[-1], 0)
-
-    except Exception:
-        return 0.0
-
-# =============================================================================
-# YFINANCE HISTORICAL
-# =============================================================================
-
-def fetch_historical_data(symbol):
+def fetch_confirmation_data(symbol):
 
     try:
 
         df = yf.download(
             f"{symbol}.NS",
-            period=YF_HISTORY,
-            interval=YF_INTERVAL,
-            auto_adjust=True,
+            period="6mo",
+            interval="1d",
             progress=False,
+            auto_adjust=True,
             threads=False,
         )
 
         if df is None or df.empty:
             return None
 
-        df = normalize_yf_df(df)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-        if df is None or len(df) < 50:
+        df = df.dropna()
+
+        if len(df) < 60:
             return None
 
         return df
 
     except Exception:
+
         traceback.print_exc()
+
         return None
 
 # =============================================================================
-# NSE LIVE DATA
+# TECHNICALS
 # =============================================================================
 
-session = requests.Session()
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0 Safari/537.36"
-    ),
-    "Accept": "application/json,text/plain,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.nseindia.com/",
-    "Connection": "keep-alive",
-}
-
-
-def refresh_nse_session():
-
-    global session
+def calculate_rsi(close):
 
     try:
 
-        session = requests.Session()
+        indicator = RSIIndicator(close=close, window=14)
 
-        session.get(
-            "https://www.nseindia.com",
-            headers=HEADERS,
-            timeout=15,
+        return safe_float(
+            indicator.rsi().iloc[-1],
+            50,
         )
 
-        log.info("NSE session refreshed")
-
     except Exception:
-        traceback.print_exc()
+        return 50.0
 
-
-refresh_nse_session()
-
-
-def fetch_nse_live(symbol):
-
-    global session
-
-    url = (
-        "https://www.nseindia.com/api/"
-        f"quote-equity?symbol={symbol}"
-    )
-
-    for attempt in range(3):
-
-        try:
-
-            response = session.get(
-                url,
-                headers=HEADERS,
-                timeout=15,
-            )
-
-            if response.status_code in [401, 403]:
-
-                log.warning(
-                    "NSE blocked session. Refreshing..."
-                )
-
-                refresh_nse_session()
-                continue
-
-            if response.status_code != 200:
-                continue
-
-            data = response.json()
-
-            if "priceInfo" not in data:
-                continue
-
-            price = data["priceInfo"]
-
-            ltp = safe_float(
-                price.get("lastPrice")
-            )
-
-            prev_close = safe_float(
-                price.get("previousClose")
-            )
-
-            volume = safe_float(
-                data.get(
-                    "securityWiseDP",
-                    {}
-                ).get("quantityTraded")
-            )
-
-            change_pct = (
-                ((ltp - prev_close) / prev_close) * 100
-                if prev_close > 0 else 0
-            )
-
-            return {
-                "ltp": ltp,
-                "change_pct": change_pct,
-                "volume": volume,
-            }
-
-        except Exception:
-
-            log.warning(
-                "Retry %s failed for %s",
-                attempt + 1,
-                symbol,
-            )
-
-            time.sleep(2)
-
-    return None
-
-# =============================================================================
-# TRADINGVIEW SCREENER
-# =============================================================================
-
-def get_tradingview_momentum_stocks():
+def calculate_ema(close, period):
 
     try:
 
-        _, df = (
-            Query()
-            .select(
-                'name',
-                'close',
-                'volume',
-                'RSI',
-                'change'
-            )
-            .where(
-                'exchange == "NSE"',
-                'RSI > 55',
-                'change > 1'
-            )
-            .limit(20)
-            .get_scanner_data()
+        indicator = EMAIndicator(
+            close=close,
+            window=period,
         )
 
-        if df is not None and not df.empty:
-            log.info("TradingView screener fetched")
-            return df
-
-    except Exception:
-        traceback.print_exc()
-
-    return pd.DataFrame()
-
-# =============================================================================
-# GOOGLE NEWS
-# =============================================================================
-
-def check_news(symbol):
-
-    try:
-
-        url = (
-            f"https://news.google.com/rss/search?"
-            f"q={symbol}%20NSE"
+        return safe_float(
+            indicator.ema_indicator().iloc[-1],
+            0,
         )
 
-        feed = feedparser.parse(url)
-
-        if not feed.entries:
-            return
-
-        entry = feed.entries[0]
-
-        title = entry.title
-        link = entry.link
-
-        key = f"{symbol}_{title}"
-
-        if key in seen_news:
-            return
-
-        seen_news.add(key)
-
-        msg = (
-            f"NEWS ALERT\n\n"
-            f"{symbol}\n\n"
-            f"{title}\n\n"
-            f"{link}"
-        )
-
-        send_telegram(msg)
-
     except Exception:
-        traceback.print_exc()
-
-# =============================================================================
-# BSE ANNOUNCEMENTS
-# =============================================================================
-
-def check_bse_announcements():
-
-    try:
-
-        feed = feedparser.parse(BSE_RSS)
-
-        if not feed.entries:
-            return
-
-        for entry in feed.entries[:10]:
-
-            title = entry.title
-            link = entry.link
-
-            for symbol in WATCHLIST:
-
-                if symbol in title.upper():
-
-                    key = f"{symbol}_{title}"
-
-                    if key in seen_bse:
-                        break
-
-                    seen_bse.add(key)
-
-                    msg = (
-                        f"BSE ANNOUNCEMENT\n\n"
-                        f"{symbol}\n\n"
-                        f"{title}\n\n"
-                        f"{link}"
-                    )
-
-                    send_telegram(msg)
-
-                    break
-
-    except Exception:
-        traceback.print_exc()
+        return 0.0
 
 # =============================================================================
 # SCORE ENGINE
 # =============================================================================
 
-def compute_score(change_pct, vol_ratio, rsi, breakout, ema_bullish):
+def compute_score(
+    change_pct,
+    volume_ratio,
+    rsi,
+    breakout,
+    ema_bullish,
+):
 
     score = 0
 
-    if abs(change_pct) >= PRICE_CHANGE_MIN:
+    if change_pct >= PRICE_CHANGE_MIN:
         score += 2
 
-    if vol_ratio >= VOLUME_RATIO_MIN:
+    if volume_ratio >= VOLUME_RATIO_MIN:
         score += 2
 
     if breakout:
         score += 2
 
-    if rsi >= RSI_MOMENTUM:
-        score += 1
+    if rsi >= RSI_MIN:
+        score += 2
 
     if ema_bullish:
         score += 2
-
-    if rsi > RSI_OVERBOUGHT:
-        score -= 1
 
     return score
 
@@ -517,135 +339,170 @@ def compute_score(change_pct, vol_ratio, rsi, breakout, ema_bullish):
 # EXPORT RESULTS
 # =============================================================================
 
-def export_results(results_df):
+def export_results(df):
 
     try:
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        parquet_file = os.path.join(
-            EXPORT_FOLDER,
-            f"momentum_results_{timestamp}.parquet"
+        timestamp = datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
         )
 
-        excel_file = os.path.join(
-            EXPORT_FOLDER,
-            f"momentum_results_{timestamp}.xlsx"
+        parquet_file = (
+            f"{EXPORT_FOLDER}/"
+            f"momentum_{timestamp}.parquet"
         )
 
-        results_df.to_parquet(
+        excel_file = (
+            f"{EXPORT_FOLDER}/"
+            f"momentum_{timestamp}.xlsx"
+        )
+
+        df.to_parquet(
             parquet_file,
             engine="pyarrow",
             index=False,
         )
 
-        results_df.to_excel(
+        df.to_excel(
             excel_file,
             engine="openpyxl",
             index=False,
         )
 
-        log.info("Results exported")
+        log.info("Exports completed")
 
     except Exception:
+
         traceback.print_exc()
 
 # =============================================================================
-# MAIN
+# MAIN ENGINE
 # =============================================================================
 
 def run():
 
-    log.info("Momentum bot started")
+    log.info("Momentum scan started")
+
+    tv_df = fetch_tradingview_stocks()
+
+    if tv_df.empty:
+
+        log.warning("No TradingView data")
+
+        return
+
+    tv_symbols = set(tv_df["name"].tolist())
+
+    filtered_watchlist = [
+        s for s in WATCHLIST
+        if s in tv_symbols
+    ]
+
+    log.info(
+        "Filtered watchlist size: %s",
+        len(filtered_watchlist),
+    )
 
     results = []
 
-    tv_df = get_tradingview_momentum_stocks()
-
-    if not tv_df.empty:
-        log.info("TradingView Top Momentum Stocks:")
-        log.info(tv_df.head())
-
-    for symbol in tqdm(WATCHLIST, desc="Scanning Stocks"):
+    for symbol in tqdm(
+        filtered_watchlist,
+        desc="Scanning",
+    ):
 
         try:
 
-            hist = fetch_historical_data(symbol)
+            row = tv_df[
+                tv_df["name"] == symbol
+            ].iloc[0]
+
+            change_pct = safe_float(
+                row["change"]
+            )
+
+            tv_volume = safe_float(
+                row["volume"]
+            )
+
+            tv_rsi = safe_float(
+                row["RSI"]
+            )
+
+            hist = fetch_confirmation_data(symbol)
 
             if hist is None:
                 continue
 
-            live = fetch_nse_live(symbol)
+            close = hist["Close"].astype(float)
+            high = hist["High"].astype(float)
+            volume = hist["Volume"].astype(float)
 
-            if live is None:
-                continue
-
-            close = pd.Series(hist["Close"]).astype(float)
-            volume = pd.Series(hist["Volume"]).astype(float)
-            high = pd.Series(hist["High"]).astype(float)
-
-            avg_vol10 = safe_float(
-                volume.rolling(10).mean().iloc[-1]
+            avg_volume = safe_float(
+                volume.rolling(20).mean().iloc[-1]
             )
 
             high20 = safe_float(
                 high.rolling(20).max().iloc[-1]
             )
 
-            rsi = compute_rsi(close)
+            current_price = safe_float(
+                close.iloc[-1]
+            )
 
-            ema20 = compute_ema(close, 20)
-            ema50 = compute_ema(close, 50)
+            rsi = calculate_rsi(close)
+
+            ema20 = calculate_ema(
+                close,
+                EMA_FAST,
+            )
+
+            ema50 = calculate_ema(
+                close,
+                EMA_SLOW,
+            )
 
             ema_bullish = ema20 > ema50
 
-            ltp = safe_float(live["ltp"])
+            breakout = current_price >= high20
 
-            if ltp <= 0:
-                continue
-
-            if avg_vol10 <= 0:
-                continue
-
-            vol_ratio = (
-                live["volume"] / avg_vol10
-            ) if avg_vol10 > 0 else 0
-
-            breakout = ltp >= high20
+            volume_ratio = (
+                tv_volume / avg_volume
+            ) if avg_volume > 0 else 0
 
             score = compute_score(
-                live["change_pct"],
-                vol_ratio,
+                change_pct,
+                volume_ratio,
                 rsi,
                 breakout,
                 ema_bullish,
             )
 
-            check_news(symbol)
-
-            results.append({
+            result = {
                 "symbol": symbol,
-                "ltp": round(ltp, 2),
-                "change_pct": round(live["change_pct"], 2),
-                "volume_ratio": round(vol_ratio, 2),
+                "price": round(current_price, 2),
+                "change_pct": round(change_pct, 2),
                 "rsi": round(rsi, 2),
+                "volume_ratio": round(volume_ratio, 2),
                 "ema20": round(ema20, 2),
                 "ema50": round(ema50, 2),
                 "breakout": breakout,
                 "score": score,
-            })
+            }
+
+            results.append(result)
 
             if score >= STRONG_SCORE:
 
                 msg = (
-                    f"STRONG MOMENTUM\n\n"
+                    f"🚀 STRONG MOMENTUM\n\n"
                     f"Stock: {symbol}\n"
                     f"Score: {score}/10\n"
-                    f"Price: Rs {ltp:.2f}\n"
-                    f"Move: {live['change_pct']:+.2f}%\n"
-                    f"Volume Ratio: {vol_ratio:.1f}x\n"
+                    f"Price: ₹{current_price:.2f}\n"
+                    f"Move: {change_pct:+.2f}%\n"
                     f"RSI: {rsi:.1f}\n"
-                    f"EMA20 > EMA50: {ema_bullish}"
+                    f"Volume Ratio: {volume_ratio:.1f}x\n"
+                    f"EMA20 > EMA50: {ema_bullish}\n"
+                    f"Breakout: {breakout}"
                 )
 
                 send_telegram(msg)
@@ -656,26 +513,28 @@ def run():
                     score,
                 )
 
-        except Exception:
-            traceback.print_exc()
+            time.sleep(1)
 
-    check_bse_announcements()
+        except Exception:
+
+            traceback.print_exc()
 
     if results:
 
-        results_df = pd.DataFrame(results)
+        df = pd.DataFrame(results)
 
-        results_df = results_df.sort_values(
+        df = df.sort_values(
             by="score",
             ascending=False,
         )
 
-        export_results(results_df)
+        export_results(df)
 
         print("\nTOP MOMENTUM STOCKS\n")
-        print(results_df.head(10))
 
-    log.info("Cycle completed")
+        print(df.head(15))
+
+    log.info("Scan completed")
 
 # =============================================================================
 # ENTRY
@@ -684,13 +543,17 @@ def run():
 if __name__ == "__main__":
 
     try:
+
         run()
 
     except KeyboardInterrupt:
+
         log.info("Stopped")
 
     except Exception:
 
         traceback.print_exc()
 
-        send_telegram("BOT CRASHED")
+        send_telegram(
+            "BOT CRASHED"
+        )
