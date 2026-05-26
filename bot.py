@@ -1,5 +1,5 @@
 # =============================================================================
-# FINAL PRODUCTION MOMENTUM BOT - ULTRA STABLE VERSION
+# FINAL PRODUCTION MOMENTUM BOT - DEPLOYMENT VERSION
 # =============================================================================
 #
 # FEATURES
@@ -8,7 +8,6 @@
 # ✅ Uses ONLY yfinance
 # ✅ Uses ONLY your custom watchlist
 # ✅ NO NSE scraping
-# ✅ NO TradingView dependency
 # ✅ Railway-safe architecture
 # ✅ RSI confirmation using ta library
 # ✅ EMA trend confirmation
@@ -17,13 +16,13 @@
 # ✅ Volume spike detection
 # ✅ Duplicate alert prevention
 # ✅ Telegram alerts
-# ✅ Hybrid BSE + Google announcement alerts
+# ✅ SAME-DAY market announcement alerts
+# ✅ Google RSS + BSE RSS hybrid detection
 # ✅ Excel export using openpyxl
 # ✅ Parquet export using pyarrow
+# ✅ Lightweight logs
 # ✅ Retry-safe structure
 # ✅ Cron-safe execution
-# ✅ Minimal API traffic
-# ✅ Lightweight logs
 #
 # =============================================================================
 
@@ -67,7 +66,7 @@ CHAT_ID = os.environ.get("CHAT_ID", "")
 EXPORT_FOLDER = "exports"
 
 ALERTS_FILE = "alerts_sent.json"
-BSE_ALERTS_FILE = "bse_alerts.json"
+ANNOUNCEMENT_ALERTS_FILE = "announcement_alerts.json"
 
 BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
 
@@ -144,7 +143,7 @@ WATCHLIST = [
 ]
 
 # =============================================================================
-# BSE NAME MAP
+# FULL NAME MAP
 # =============================================================================
 
 BSE_NAME_MAP = {
@@ -301,7 +300,7 @@ def safe_float(value, default=0.0):
 # MARKET ANNOUNCEMENTS
 # =============================================================================
 
-def check_bse_announcements():
+def check_market_announcements():
 
     try:
 
@@ -310,7 +309,7 @@ def check_bse_announcements():
         )
 
         alerts = load_json_file(
-            BSE_ALERTS_FILE
+            ANNOUNCEMENT_ALERTS_FILE
         )
 
         today = datetime.now().strftime(
@@ -333,7 +332,7 @@ def check_bse_announcements():
         ]
 
         # =========================================================
-        # GOOGLE RSS FALLBACK
+        # GOOGLE RSS
         # =========================================================
 
         for symbol in WATCHLIST:
@@ -342,7 +341,7 @@ def check_bse_announcements():
 
                 (
                     "https://news.google.com/rss/search?"
-                    f"q={symbol}+OFS+OR+"
+                    f"q=when:1d+{symbol}+OFS+OR+"
                     f"{symbol}+dividend+OR+"
                     f"{symbol}+board+meeting+OR+"
                     f"{symbol}+stake+sale"
@@ -350,7 +349,7 @@ def check_bse_announcements():
 
                 (
                     "https://news.google.com/rss/search?"
-                    f"q={symbol}+BSE+announcement"
+                    f"q=when:1d+{symbol}+BSE+announcement"
                 ),
 
             ]
@@ -363,6 +362,25 @@ def check_bse_announcements():
                     continue
 
                 for entry in feed.entries[:5]:
+
+                    try:
+
+                        published = entry.get(
+                            "published_parsed"
+                        )
+
+                        if not published:
+                            continue
+
+                        news_date = datetime(
+                            *published[:6]
+                        ).strftime("%Y-%m-%d")
+
+                        if news_date != today:
+                            continue
+
+                    except Exception:
+                        continue
 
                     title = entry.title.upper()
 
@@ -402,7 +420,7 @@ def check_bse_announcements():
                     time.sleep(1)
 
         # =========================================================
-        # BSE RSS CHECK
+        # BSE RSS
         # =========================================================
 
         feed = feedparser.parse(BSE_RSS)
@@ -460,7 +478,7 @@ def check_bse_announcements():
             )
 
         save_json_file(
-            BSE_ALERTS_FILE,
+            ANNOUNCEMENT_ALERTS_FILE,
             alerts,
         )
 
@@ -786,7 +804,7 @@ def run():
 
         export_results(df)
 
-    check_bse_announcements()
+    check_market_announcements()
 
     log.info(
         "Completed scanning %s stocks",
