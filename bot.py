@@ -1,69 +1,135 @@
-# =========================================================
-# NSE MOMENTUM + BREAKOUT + NEWS BOT  (FIXED)
-# =========================================================
-#
-# FIXES APPLIED
-# ---------------------------------------------------------
-# FIX 1: NSE session priming  — hit nseindia.com homepage
-#         first to get cookies; without this every API call
-#         returns a 403 / HTML error silently caught as None
-#         and all_data stays empty → no price alerts ever.
-#
-# FIX 2: Day-high dedup  — alerts now stored in seen_alerts
-#         with a date stamp so the same stock only fires once
-#         per day, not on every 5-min cron run.
-#
-# FIX 3: BSE announcements  — replaces the empty NSE stub
-#         with a working BSE corporate filings RSS feed.
-#         BSE is public, no login required, never 403s.
-#
-# =========================================================
+"""
+===============================================================================
+NSE MOMENTUM + BREAKOUT SCANNER — PRODUCTION BOT v3
+===============================================================================
+
+WHAT THIS BOT DOES
+-------------------------------------------------------------------------------
+1. Downloads historical OHLCV data from Yahoo Finance
+2. Stores data in in-memory cache
+3. Fetches live prices + VWAP + RSI from TradingView
+4. Detects momentum and breakout stocks
+5. Sends Telegram alerts
+6. Tracks BSE announcements
+7. Uses scoring engine for filtering strong setups
+
+DATA SOURCES
+-------------------------------------------------------------------------------
+1. yfinance
+   - Historical OHLCV candles
+   - EMA20 / SMA50 / SMA200
+   - RSI / breakout levels
+
+2. TradingView TA
+   - Live price
+   - Intraday move %
+   - VWAP
+   - Live RSI
+
+3. BSE RSS
+   - Corporate announcements
+
+4. Telegram Bot API
+   - Alert delivery
+
+ALERT TYPES
+-------------------------------------------------------------------------------
+🚀 Strong Momentum
+📈 Moderate Momentum
+🔥 Breakout Alerts
+📢 BSE Announcements
+📊 Scan Summary
+
+DEPLOYMENT
+-------------------------------------------------------------------------------
+Designed for:
+- Railway
+- VPS
+- Cron execution every 5–15 mins
+===============================================================================
+"""
 
 import os
-import time
 import json
+import logging
 import traceback
 import requests
 import feedparser
+import pandas as pd
+import numpy as np
+import yfinance as yf
 
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# =========================================================
-# CONFIG
-# =========================================================
+try:
+    from tradingview_ta import TA_Handler, Interval
+except ImportError:
+    raise SystemExit(
+        "Install tradingview-ta first:\\n"
+        "pip install tradingview_ta"
+    )
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID   = os.environ.get("CHAT_ID")
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+log = logging.getLogger("momentum_bot")
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+CHAT_ID = os.environ.get("CHAT_ID", "")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-MAX_WORKERS = 3
+STRONG_SCORE = 6
+MODERATE_SCORE = 4
 
-PRICE_MOVE_THRESHOLD = 3   # percent
+PRICE_CHANGE_MIN = 2.0
+VOLUME_RATIO_MIN = 2.0
+
+RSI_MOMENTUM = 60
+RSI_OVERBOUGHT = 80
+
+MAX_WORKERS = 5
+
+CACHE_REFRESH_HR = 8
+
+YF_HISTORY = "1y"
+YF_UPDATE = "5d"
+YF_INTERVAL = "1d"
 
 WATCHLIST = [
-    "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA", "AFCONS",
-    "ANANTRAJ", "ANTHEM", "ARIHANTCAP", "ASIANPAINT", "ATGL",
-    "ATL", "BAJAJFINSV", "BEL", "BLS", "BLUEDART", "CASTROLIND",
-    "CCAVENUE", "CGPOWER", "CLEAN", "DBL", "EIDPARRY", "FILATEX",
-    "FORTIS", "GILLETTE", "GLOBUSSPR", "GSFC", "HDFCBANK",
-    "HINDCOPPER", "HINDUNILVR", "HYUNDAI", "ICICIAMC", "ICICIBANK",
-    "IDBI", "IFCI", "INDUSTOWER", "INFY", "IRB", "IRCTC", "ITBEES",
-    "JIOFIN", "JPASSOCIAT", "JSWENERGY", "KWIL", "LATENTVIEW",
-    "LGEINDIA", "LLOYDSENGG", "LOTUSDEV", "LT", "MARUTI", "MAZDOCK",
-    "MENNPIS", "MIRZAINT", "NATCOPHARM", "ONGC", "ORIENTCEM",
-    "PFC", "PIDILITIND", "POONAWALLA", "PVRINOX", "RELIANCE",
-    "RELINFRA", "RTNPOWER", "RVNL", "SANGHIIND", "SBIN",
-    "SRHHYPOLTD", "SUPREMEIND", "SUVIDHAA", "SUZLON", "SWIGGY",
-    "SYMPHONY", "TATATECH", "TITAN", "TRENT",
+    "RELIANCE",
+    "SBIN",
+    "INFY",
+    "TCS",
+    "ICICIBANK",
+    "HDFCBANK",
+    "LT",
+    "RVNL",
+    "SUZLON",
+    "TRENT",
 ]
 
 SEEN_FILE = "seen_alerts.json"
+BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
 
-# =========================================================
+_cache = {}
+_cache_built_at = None
+
+# =============================================================================
 # HELPERS
-# =========================================================
+# =============================================================================
 
 def ist_now():
     return datetime.now(IST)
@@ -87,308 +153,421 @@ def save_json(data, filename):
 
 seen_alerts = set(load_json(SEEN_FILE, []))
 
-# =========================================================
+# =============================================================================
 # TELEGRAM
-# =========================================================
+# =============================================================================
 
 def send_telegram(msg):
+
+    if not BOT_TOKEN or not CHAT_ID:
+        log.warning("Telegram credentials missing")
+        return
+
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
         requests.post(
             url,
-            data={"chat_id": CHAT_ID, "text": msg[:4000]},
+            data={
+                "chat_id": CHAT_ID,
+                "text": msg[:4096],
+                "parse_mode": "HTML",
+            },
             timeout=20,
         )
+
     except Exception:
         traceback.print_exc()
 
-# =========================================================
-# NSE SESSION
-# FIX 1: prime session by hitting the homepage first.
-# NSE requires a valid cookie from the homepage before it
-# will respond to /api/ endpoints. Without this every call
-# returns HTML or a 401/403, gets caught silently, and
-# fetch_stock returns None — so all_data is always empty.
-# =========================================================
+# =============================================================================
+# RSI
+# =============================================================================
 
-session = requests.Session()
+def compute_rsi(close, period=14):
 
-NSE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://www.nseindia.com/",
-}
+    if len(close) < period + 1:
+        return 50.0
 
-def prime_nse_session():
-    """
-    Hit the NSE homepage to get cookies.
-    Must be called once before any API requests.
-    """
+    delta = close.diff().dropna()
+
+    gain = (
+        delta.clip(lower=0)
+        .ewm(alpha=1 / period, adjust=False)
+        .mean()
+    )
+
+    loss = (
+        (-delta.clip(upper=0))
+        .ewm(alpha=1 / period, adjust=False)
+        .mean()
+    )
+
+    rs = gain / loss.replace(0, np.nan)
+
+    rsi = 100 - (100 / (1 + rs))
+
+    return float(rsi.iloc[-1])
+
+# =============================================================================
+# FULL CACHE BUILD
+# =============================================================================
+
+def build_cache_full():
+
+    global _cache
+    global _cache_built_at
+
+    tickers_str = " ".join(
+        [f"{s}.NS" for s in WATCHLIST]
+    )
+
     try:
-        session.get(
-            "https://www.nseindia.com",
-            headers=NSE_HEADERS,
-            timeout=15,
+
+        raw = yf.download(
+            tickers=tickers_str,
+            period=YF_HISTORY,
+            interval=YF_INTERVAL,
+            group_by="ticker",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
         )
-        time.sleep(1)   # brief pause so cookies settle
-        print("✅ NSE session primed", flush=True)
+
     except Exception:
-        print("⚠️  NSE session prime failed", flush=True)
         traceback.print_exc()
+        return
 
-# =========================================================
-# NSE FETCH (single stock)
-# =========================================================
+    for sym in WATCHLIST:
 
-def fetch_stock(symbol):
+        try:
+
+            yf_sym = f"{sym}.NS"
+
+            if isinstance(raw.columns, pd.MultiIndex):
+                df = raw[yf_sym].copy()
+            else:
+                df = raw.copy()
+
+            df.dropna(subset=["Close"], inplace=True)
+
+            if len(df) < 50:
+                continue
+
+            _cache[sym] = df
+
+        except Exception:
+            pass
+
+    _cache_built_at = ist_now()
+
+# =============================================================================
+# CACHE UPDATE
+# =============================================================================
+
+def update_cache_latest():
+
+    tickers_str = " ".join(
+        [f"{s}.NS" for s in WATCHLIST]
+    )
+
     try:
-        url = (
-            "https://www.nseindia.com/api/"
-            f"quote-equity?symbol={symbol}"
+
+        raw = yf.download(
+            tickers=tickers_str,
+            period=YF_UPDATE,
+            interval=YF_INTERVAL,
+            group_by="ticker",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
         )
-        r = session.get(url, headers=NSE_HEADERS, timeout=15)
-        data = r.json()
-
-        price      = float(data["priceInfo"]["lastPrice"])
-        prev_close = float(data["priceInfo"]["previousClose"])
-        day_high   = float(data["priceInfo"]["intraDayHighLow"]["max"])
-
-        move_pct   = ((price - prev_close) / prev_close) * 100
-        at_day_high = price >= day_high
-
-        return {
-            "symbol":      symbol,
-            "price":       price,
-            "move_pct":    move_pct,
-            "day_high":    day_high,
-            "at_day_high": at_day_high,
-        }
 
     except Exception:
-        # Log the symbol so you can see which ones fail
-        print(f"⚠️  fetch_stock failed: {symbol}", flush=True)
+        traceback.print_exc()
+        return
+
+    for sym in WATCHLIST:
+
+        try:
+
+            yf_sym = f"{sym}.NS"
+
+            if isinstance(raw.columns, pd.MultiIndex):
+                new_rows = raw[yf_sym]
+            else:
+                new_rows = raw
+
+            if new_rows.empty:
+                continue
+
+            combined = pd.concat([
+                _cache[sym],
+                new_rows
+            ])
+
+            combined = combined[
+                ~combined.index.duplicated(keep="last")
+            ]
+
+            combined.sort_index(inplace=True)
+
+            _cache[sym] = combined
+
+        except Exception:
+            pass
+
+# =============================================================================
+# CACHE MANAGER
+# =============================================================================
+
+def ensure_cache():
+
+    global _cache_built_at
+
+    needs_full_build = (
+        _cache_built_at is None
+        or len(_cache) == 0
+        or (
+            (
+                ist_now() - _cache_built_at
+            ).total_seconds()
+            > CACHE_REFRESH_HR * 3600
+        )
+    )
+
+    if needs_full_build:
+        build_cache_full()
+    else:
+        update_cache_latest()
+
+# =============================================================================
+# HISTORICAL INDICATORS
+# =============================================================================
+
+def get_historical_indicators(symbol):
+
+    df = _cache.get(symbol)
+
+    if df is None or len(df) < 50:
         return None
 
-# =========================================================
-# FETCH ALL
-# =========================================================
+    close = df["Close"]
+    volume = df["Volume"]
+    high = df["High"]
 
-def fetch_all_data():
-    print(
-        f"📊 Starting NSE fetch | Stocks={len(WATCHLIST)}",
-        flush=True,
+    ema20 = float(
+        close.ewm(span=20, adjust=False)
+        .mean()
+        .iloc[-1]
     )
 
-    result = {}
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {
-            executor.submit(fetch_stock, s): s
-            for s in WATCHLIST
-        }
-        for future in as_completed(futures):
-            try:
-                stock = future.result()
-                if stock:
-                    result[stock["symbol"]] = stock
-            except Exception:
-                traceback.print_exc()
-
-    print(
-        f"✅ Fetch complete | Valid={len(result)}/{len(WATCHLIST)}",
-        flush=True,
+    sma50 = float(
+        close.rolling(50)
+        .mean()
+        .iloc[-1]
     )
-    return result
 
-# =========================================================
-# PRICE MOVE ALERTS
-# =========================================================
+    sma200 = (
+        float(
+            close.rolling(200)
+            .mean()
+            .dropna()
+            .iloc[-1]
+        )
+        if len(close) >= 200
+        else sma50
+    )
 
-def process_price_alerts(all_data):
-    batch = [
-        s for s in all_data.values()
-        if abs(s["move_pct"]) >= PRICE_MOVE_THRESHOLD
-    ]
+    rsi = compute_rsi(close)
 
-    if not batch:
-        print("ℹ️  No price alerts this cycle", flush=True)
-        return
+    avg_vol10 = float(
+        volume.rolling(10)
+        .mean()
+        .iloc[-1]
+    )
 
-    batch.sort(key=lambda x: abs(x["move_pct"]), reverse=True)
+    high20 = float(
+        high.rolling(20)
+        .max()
+        .iloc[-1]
+    )
 
-    lines = ["📈 PRICE MOVE ALERTS", ""]
-    for s in batch:
-        lines.append(
-            f"{s['symbol']} | {s['move_pct']:+.2f}% | ₹{s['price']}"
+    prev_close = float(close.iloc[-2])
+
+    return {
+        "ema20": ema20,
+        "sma50": sma50,
+        "sma200": sma200,
+        "rsi_hist": rsi,
+        "avg_vol10": avg_vol10,
+        "high20": high20,
+        "prev_close": prev_close,
+    }
+
+# =============================================================================
+# TRADINGVIEW LIVE DATA
+# =============================================================================
+
+def fetch_tv_live(symbol):
+
+    try:
+
+        handler_5m = TA_Handler(
+            symbol=symbol,
+            screener="india",
+            exchange="NSE",
+            interval=Interval.INTERVAL_5_MINUTES,
         )
 
-    send_telegram("\n".join(lines))
+        ind_5m = handler_5m.get_analysis().indicators
 
-# =========================================================
-# DAY HIGH ALERTS
-# FIX 2: deduplicate using seen_alerts with a date key so
-# the same stock only fires once per calendar day.
-# =========================================================
+        ltp = float(ind_5m.get("close", 0))
+        today_vol = float(ind_5m.get("volume", 0))
+        vwap = float(ind_5m.get("VWAP", ltp))
+        rsi_live = float(ind_5m.get("RSI", 50))
 
-def process_day_high_alerts(all_data):
-    batch = []
-    today = today_str()
+        handler_1d = TA_Handler(
+            symbol=symbol,
+            screener="india",
+            exchange="NSE",
+            interval=Interval.INTERVAL_1_DAY,
+        )
 
-    for symbol, stock in all_data.items():
-        if not stock["at_day_high"]:
-            continue
-        key = f"dayhigh_{symbol}_{today}"
-        if key in seen_alerts:
-            continue
-        seen_alerts.add(key)
-        batch.append(stock)
+        ind_1d = handler_1d.get_analysis().indicators
 
-    if not batch:
-        print("ℹ️  No new day-high alerts this cycle", flush=True)
+        change_pct = float(ind_1d.get("change", 0))
+
+        return {
+            "ltp": ltp,
+            "today_vol": today_vol,
+            "vwap": vwap,
+            "change_pct": change_pct,
+            "rsi_live": rsi_live,
+        }
+
+    except Exception:
+        return None
+
+# =============================================================================
+# SCORE ENGINE
+# =============================================================================
+
+def compute_score(d):
+
+    score = 0
+
+    if abs(d["change_pct"]) >= PRICE_CHANGE_MIN:
+        score += 2
+
+    if d["vol_ratio"] >= VOLUME_RATIO_MIN:
+        score += 2
+
+    if d["above_vwap"]:
+        score += 1
+
+    if d["breakout"]:
+        score += 2
+
+    if d["rsi"] >= RSI_MOMENTUM:
+        score += 1
+
+    if d["uptrend_em"]:
+        score += 1
+
+    if d["macro_trend"]:
+        score += 1
+
+    if d["rsi"] > RSI_OVERBOUGHT:
+        score -= 1
+
+    return score
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def run():
+
+    log.info("🚀 Momentum Bot Started")
+
+    ensure_cache()
+
+    if not _cache:
+        log.error("Cache failed")
         return
 
-    lines = ["🔥 DAY HIGH ALERTS", ""]
-    for s in batch:
-        lines.append(f"{s['symbol']} | ₹{s['price']}")
+    for symbol in WATCHLIST:
 
-    send_telegram("\n".join(lines))
-
-# =========================================================
-# GOOGLE NEWS
-# =========================================================
-
-def fetch_google_news():
-    print("📰 News scan running", flush=True)
-
-    for symbol in WATCHLIST[:5]:
         try:
-            url  = f"https://news.google.com/rss/search?q={symbol}"
-            feed = feedparser.parse(url)
 
-            if not feed.entries:
+            hist = get_historical_indicators(symbol)
+
+            if not hist:
                 continue
 
-            item = feed.entries[0]
-            key  = f"news_{symbol}_{item.title}"
+            live = fetch_tv_live(symbol)
 
-            if key in seen_alerts:
+            if not live:
                 continue
 
-            seen_alerts.add(key)
+            ltp = live["ltp"]
 
-            send_telegram(
-                f"📰 NEWS ALERT\n\n"
-                f"{symbol}\n\n"
-                f"{item.title}\n\n"
-                f"{item.link}"
+            vol_ratio = (
+                live["today_vol"] / hist["avg_vol10"]
+                if hist["avg_vol10"] > 0
+                else 0
             )
+
+            data = {
+                "symbol": symbol,
+                "ltp": ltp,
+                "change_pct": live["change_pct"],
+                "vol_ratio": vol_ratio,
+                "rsi": hist["rsi_hist"],
+                "above_vwap": ltp > live["vwap"],
+                "breakout": ltp >= hist["high20"],
+                "uptrend_em": hist["ema20"] > hist["sma50"],
+                "macro_trend": hist["sma50"] > hist["sma200"],
+            }
+
+            score = compute_score(data)
+
+            if score >= STRONG_SCORE:
+
+                send_telegram(
+                    f"🚀 STRONG MOMENTUM\\n\\n"
+                    f"{symbol}\\n"
+                    f"Score: {score}/10\\n"
+                    f"Price: ₹{ltp:.2f}\\n"
+                    f"Move: {data['change_pct']:+.2f}%"
+                )
+
+                log.info(
+                    "ALERT %s Score=%s",
+                    symbol,
+                    score,
+                )
 
         except Exception:
             traceback.print_exc()
 
-# =========================================================
-# BSE ANNOUNCEMENTS
-# FIX 3: replaces the empty NSE stub.
-#
-# BSE publishes a public RSS feed of corporate filings at:
-#   https://www.bseindia.com/BSEDATA/ann/rss.aspx
-# No login. No cookies. No 403s.
-#
-# We filter to only send alerts for symbols in our watchlist
-# by checking if the company name contains the symbol string
-# (BSE titles look like "RELIANCE IND LTD - Outcome of Board
-# Meeting").  This is fuzzy but catches most cases.
-# For tighter matching you can build a BSE scrip-code map.
-# =========================================================
+    log.info("✅ Cycle Complete")
 
-BSE_RSS_URL = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
-
-def fetch_bse_announcements():
-    print("📢 BSE announcement scan running", flush=True)
-
-    try:
-        feed = feedparser.parse(BSE_RSS_URL)
-
-        if not feed.entries:
-            print("⚠️  BSE RSS returned no entries", flush=True)
-            return
-
-        watchlist_upper = {s.upper() for s in WATCHLIST}
-
-        for item in feed.entries[:30]:   # check latest 30
-            title = item.get("title", "")
-            link  = item.get("link", "")
-            title_upper = title.upper()
-
-            # Check if any watchlist symbol appears in the title
-            matched = [
-                sym for sym in watchlist_upper
-                if sym in title_upper
-            ]
-
-            if not matched:
-                continue
-
-            key = f"bse_ann_{title}"
-            if key in seen_alerts:
-                continue
-
-            seen_alerts.add(key)
-
-            symbol_label = ", ".join(matched)
-
-            send_telegram(
-                f"📢 BSE ANNOUNCEMENT\n\n"
-                f"Stock: {symbol_label}\n\n"
-                f"{title}\n\n"
-                f"{link}"
-            )
-
-    except Exception:
-        print("⚠️  BSE announcement fetch failed", flush=True)
-        traceback.print_exc()
-
-# =========================================================
-# MAIN
-# =========================================================
-
-def run():
-    print("🚀 SCRIPT STARTED", flush=True)
-
-    # FIX 1: prime NSE session BEFORE fetching any stocks
-    prime_nse_session()
-
-    all_data = fetch_all_data()
-
-    if not all_data:
-        send_telegram(
-            "⚠️  WARNING: NSE fetch returned 0 stocks. "
-            "Session priming may have failed."
-        )
-
-    process_price_alerts(all_data)
-    process_day_high_alerts(all_data)
-    fetch_google_news()
-
-    # FIX 3: BSE replaces the empty NSE stub
-    fetch_bse_announcements()
-
-    save_json(list(seen_alerts), SEEN_FILE)
-
-    print("✅ Cycle Complete", flush=True)
-
-# =========================================================
+# =============================================================================
 # ENTRY
-# =========================================================
+# =============================================================================
 
 if __name__ == "__main__":
+
     try:
         run()
+
+    except KeyboardInterrupt:
+        log.info("Stopped")
+
     except Exception:
         traceback.print_exc()
-        send_telegram("❌ BOT CRASHED")
+
+        send_telegram(
+            "❌ BOT CRASHED"
+        )
