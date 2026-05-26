@@ -163,9 +163,7 @@ CONSOL_VOL_MULT   = 1.5   # breakout candle volume >= N x avg zone volume
 # ── General ──────────────────────────────────────────────
 MAX_WORKERS = 2           # keep low to avoid Yahoo rate limits
 
-IST         = timezone(timedelta(hours=5, minutes=30))
-ALERT_START = (9, 15)
-ALERT_END   = (15, 30)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 NSE_HEADERS = {
     "User-Agent": (
@@ -345,16 +343,6 @@ seen_nse_notices = set(load_json(NSE_NOTICE_FILE, []))
 seen_nse_news    = set(load_json(NSE_NEWS_FILE, []))
 
 # =========================================================
-# MARKET HOURS
-# =========================================================
-
-def is_market_open():
-    now = datetime.now(IST)
-    if now.weekday() >= 5:
-        return False
-    t = (now.hour, now.minute)
-    return ALERT_START <= t < ALERT_END
-
 # =========================================================
 # TELEGRAM
 # =========================================================
@@ -1097,11 +1085,7 @@ def run_bot():
     ist_now_str = datetime.now(IST).strftime("%H:%M:%S")
     log(f"🚀 RUN STARTED | {ist_now_str} IST")
 
-    if not is_market_open():
-        log("⏰ Outside market hours — skipping")
-        return
-
-    log("✅ Market hours active")
+    log("✅ Running scan")
 
     # ── NSE News [NEW v5] ─────────────────────────────
     try:
