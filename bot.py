@@ -17,12 +17,14 @@
 # ✅ Volume spike detection
 # ✅ Duplicate alert prevention
 # ✅ Telegram alerts
+# ✅ Google News alerts
+# ✅ BSE announcement alerts
 # ✅ Excel export using openpyxl
 # ✅ Parquet export using pyarrow
-# ✅ tqdm progress tracking
 # ✅ Retry-safe structure
 # ✅ Cron-safe execution
 # ✅ Minimal API traffic
+# ✅ Lightweight logs
 #
 # =============================================================================
 
@@ -32,11 +34,11 @@ import json
 import traceback
 import logging
 import requests
+import feedparser
 import pandas as pd
 import numpy as np
 import yfinance as yf
 
-from tqdm import tqdm
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
 from datetime import datetime
@@ -64,7 +66,12 @@ CHAT_ID = os.environ.get("CHAT_ID", "")
 # =============================================================================
 
 EXPORT_FOLDER = "exports"
+
 ALERTS_FILE = "alerts_sent.json"
+BSE_ALERTS_FILE = "bse_alerts.json"
+NEWS_ALERTS_FILE = "news_alerts.json"
+
+BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
 
 os.makedirs(EXPORT_FOLDER, exist_ok=True)
 
@@ -167,35 +174,39 @@ def send_telegram(message):
         traceback.print_exc()
 
 # =============================================================================
-# ALERT STORAGE
+# JSON HELPERS
 # =============================================================================
 
-def load_alerts():
+def load_json_file(path):
 
-    if not os.path.exists(ALERTS_FILE):
+    if not os.path.exists(path):
         return {}
 
     try:
 
-        with open(ALERTS_FILE, "r") as f:
+        with open(path, "r") as f:
             return json.load(f)
 
     except Exception:
         return {}
 
-def save_alerts(alerts):
+def save_json_file(path, data):
 
     try:
 
-        with open(ALERTS_FILE, "w") as f:
-            json.dump(alerts, f)
+        with open(path, "w") as f:
+            json.dump(data, f)
 
     except Exception:
         traceback.print_exc()
 
+# =============================================================================
+# ALERT STORAGE
+# =============================================================================
+
 def already_alerted(symbol):
 
-    alerts = load_alerts()
+    alerts = load_json_file(ALERTS_FILE)
 
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -203,13 +214,13 @@ def already_alerted(symbol):
 
 def mark_alert_sent(symbol):
 
-    alerts = load_alerts()
+    alerts = load_json_file(ALERTS_FILE)
 
     today = datetime.now().strftime("%Y-%m-%d")
 
     alerts[symbol] = today
 
-    save_alerts(alerts)
+    save_json_file(ALERTS_FILE, alerts)
 
 # =============================================================================
 # HELPERS
@@ -226,6 +237,123 @@ def safe_float(value, default=0.0):
 
     except Exception:
         return default
+
+# =============================================================================
+# NEWS ALERTS
+# =============================================================================
+
+def check_news(symbol):
+
+    try:
+
+        alerts = load_json_file(
+            NEWS_ALERTS_FILE
+        )
+
+        today = datetime.now().strftime(
+            "%Y-%m-%d"
+        )
+
+        url = (
+            "https://news.google.com/rss/search?"
+            f"q={symbol}+NSE"
+        )
+
+        feed = feedparser.parse(url)
+
+        if not feed.entries:
+            return
+
+        entry = feed.entries[0]
+
+        title = entry.title
+        link = entry.link
+
+        key = f"{symbol}_{title}"
+
+        if alerts.get(key) == today:
+            return
+
+        msg = (
+            f"📰 NEWS ALERT\n\n"
+            f"Stock: {symbol}\n\n"
+            f"{title}\n\n"
+            f"{link}"
+        )
+
+        send_telegram(msg)
+
+        alerts[key] = today
+
+        save_json_file(
+            NEWS_ALERTS_FILE,
+            alerts,
+        )
+
+    except Exception:
+
+        traceback.print_exc()
+
+# =============================================================================
+# BSE ANNOUNCEMENTS
+# =============================================================================
+
+def check_bse_announcements():
+
+    try:
+
+        log.info(
+            "Checking BSE announcements"
+        )
+
+        alerts = load_json_file(
+            BSE_ALERTS_FILE
+        )
+
+        today = datetime.now().strftime(
+            "%Y-%m-%d"
+        )
+
+        feed = feedparser.parse(BSE_RSS)
+
+        if not feed.entries:
+            return
+
+        for entry in feed.entries[:30]:
+
+            title = entry.title.upper()
+            link = entry.link
+
+            for symbol in WATCHLIST:
+
+                if symbol in title:
+
+                    key = (
+                        f"{symbol}_{title}"
+                    )
+
+                    if alerts.get(key) == today:
+                        continue
+
+                    msg = (
+                        f"📢 BSE ANNOUNCEMENT\n\n"
+                        f"Stock: {symbol}\n\n"
+                        f"{entry.title}\n\n"
+                        f"{link}"
+                    )
+
+                    send_telegram(msg)
+
+                    alerts[key] = today
+
+        save_json_file(
+            BSE_ALERTS_FILE,
+            alerts,
+        )
+
+    except Exception:
+
+        traceback.print_exc()
 
 # =============================================================================
 # YFINANCE DATA
@@ -275,7 +403,10 @@ def calculate_rsi(close):
 
     try:
 
-        indicator = RSIIndicator(close=close, window=14)
+        indicator = RSIIndicator(
+            close=close,
+            window=14,
+        )
 
         return safe_float(
             indicator.rsi().iloc[-1],
@@ -380,12 +511,22 @@ def run():
 
     results = []
 
-    for symbol in tqdm(
+    total_stocks = len(WATCHLIST)
+
+    for index, symbol in enumerate(
         WATCHLIST,
-        desc="Scanning",
+        start=1,
     ):
 
         try:
+
+            if index % 10 == 0:
+
+                log.info(
+                    "Processed %s/%s stocks",
+                    index,
+                    total_stocks,
+                )
 
             hist = fetch_stock_data(symbol)
 
@@ -488,6 +629,8 @@ def run():
 
             results.append(result)
 
+            check_news(symbol)
+
             if (
                 score >= STRONG_SCORE
                 and not already_alerted(symbol)
@@ -535,6 +678,13 @@ def run():
         print("\nTOP MOMENTUM STOCKS\n")
 
         print(df.head(15))
+
+    check_bse_announcements()
+
+    log.info(
+        "Completed scanning %s stocks",
+        total_stocks,
+    )
 
     log.info("Scan completed")
 
