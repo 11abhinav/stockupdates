@@ -3,23 +3,25 @@
 # ADVANCED NSE MOMENTUM TELEGRAM BOT
 # =========================================================
 #
-# FINAL FIXED VERSION
+# FINAL CONSOLIDATED VERSION
 # ---------------------------------------------------------
 #
-# FIXES DONE
+# FEATURES
 # ---------------------------------------------------------
 #
-# ✅ Removed unnecessary candle waiting logic
-# ✅ Uses ONLY completed candles automatically
-# ✅ Prevents partial candle alerts
-# ✅ Keeps consolidated Telegram batching
-# ✅ Keeps advanced dedup system
-# ✅ Keeps day-high extension logic
-# ✅ Reduced Yahoo rate-limit risk
-# ✅ Added lightweight throttling
-# ✅ Handles MultiIndex dataframe issue
+# ✅ Uses ONLY completed 5m candles
+# ✅ Removes currently forming candle automatically
+# ✅ Consolidated category-wise Telegram alerts
+# ✅ Price move alerts grouped together
+# ✅ Day high alerts grouped together
+# ✅ Volume breakout alerts grouped together
+# ✅ Reduced Telegram spam
+# ✅ Reduced Yahoo Finance rate limit issues
+# ✅ Lightweight throttling added
+# ✅ Handles yfinance MultiIndex issue
 # ✅ Railway-safe execution
-# ✅ Telegram instant alerts
+# ✅ Random lightweight logs
+# ✅ Graceful failure handling
 #
 # =========================================================
 
@@ -299,7 +301,6 @@ def fetch_stock(symbol):
 
         # =============================================
         # LIGHT REQUEST THROTTLING
-        # REDUCES YAHOO RATE LIMIT
         # =============================================
 
         time.sleep(0.35)
@@ -428,9 +429,7 @@ def fetch_stock(symbol):
             "move_pct": move_pct,
             "day_high": day_high,
             "at_day_high": at_day_high,
-            "volume_breakout": volume_breakout,
-            "consol_5m": None,
-            "consol_15m": None
+            "volume_breakout": volume_breakout
         }
 
     except Exception:
@@ -483,40 +482,198 @@ def fetch_all_data():
     return result
 
 # =========================================================
-# SIMPLE ALERT ENGINE
+# CONSOLIDATED ALERT ENGINE
 # =========================================================
 
 def process_alerts(all_data):
 
     alert_count = 0
 
+    price_batch = []
+    day_high_batch = []
+    volume_batch = []
+
     for symbol, stock in all_data.items():
 
         try:
 
             move_pct = stock["move_pct"]
+            price = stock["price"]
+
+            # =================================================
+            # PRICE MOVE ALERTS
+            # =================================================
 
             if abs(move_pct) >= PRICE_MOVE_THRESHOLD:
 
                 log(
-                    f"🚨 ALERT | "
+                    f"🚨 PRICE ALERT | "
                     f"{symbol} | "
                     f"{move_pct:+.2f}%"
                 )
 
-                msg = (
-                    f"📈 <b>PRICE MOVE ALERT</b>\n\n"
-                    f"<b>Stock:</b> {symbol}\n"
-                    f"<b>Move:</b> {move_pct:+.2f}%\n"
-                    f"<b>Price:</b> ₹{stock['price']:,.2f}"
+                price_batch.append({
+
+                    "symbol": symbol,
+                    "move_pct": move_pct,
+                    "price": price
+                })
+
+            # =================================================
+            # DAY HIGH ALERTS
+            # =================================================
+
+            if stock["at_day_high"]:
+
+                log(
+                    f"🔥 DAY HIGH | "
+                    f"{symbol}"
                 )
 
-                send_telegram(msg)
+                day_high_batch.append({
 
-                alert_count += 1
+                    "symbol": symbol,
+                    "move_pct": move_pct,
+                    "price": price
+                })
+
+            # =================================================
+            # VOLUME BREAKOUT ALERTS
+            # =================================================
+
+            if stock["volume_breakout"]:
+
+                log(
+                    f"📊 VOLUME BREAKOUT | "
+                    f"{symbol}"
+                )
+
+                volume_batch.append({
+
+                    "symbol": symbol,
+                    "move_pct": move_pct,
+                    "price": price
+                })
 
         except Exception:
             traceback.print_exc()
+
+    # =====================================================
+    # SEND PRICE ALERTS
+    # =====================================================
+
+    if price_batch:
+
+        price_batch = sorted(
+            price_batch,
+            key=lambda x: abs(x["move_pct"]),
+            reverse=True
+        )
+
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━",
+            "📈 <b>PRICE MOVE ALERTS</b>",
+            "━━━━━━━━━━━━━━━━━━━━",
+            ""
+        ]
+
+        for s in price_batch:
+
+            lines.append(
+                f"• <b>{s['symbol']}</b>  |  "
+                f"{s['move_pct']:+.2f}%  |  "
+                f"₹{s['price']:,.2f}"
+            )
+
+        lines += [
+            "",
+            f"📊 Stocks: {len(price_batch)}",
+            f"🕐 {ist_now().strftime('%H:%M:%S')}"
+        ]
+
+        send_telegram("\n".join(lines))
+
+        alert_count += 1
+
+        time.sleep(0.5)
+
+    # =====================================================
+    # SEND DAY HIGH ALERTS
+    # =====================================================
+
+    if day_high_batch:
+
+        day_high_batch = sorted(
+            day_high_batch,
+            key=lambda x: x["move_pct"],
+            reverse=True
+        )
+
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━",
+            "🔥 <b>DAY HIGH ALERTS</b>",
+            "━━━━━━━━━━━━━━━━━━━━",
+            ""
+        ]
+
+        for s in day_high_batch:
+
+            lines.append(
+                f"• <b>{s['symbol']}</b>  |  "
+                f"₹{s['price']:,.2f}  |  "
+                f"{s['move_pct']:+.2f}%"
+            )
+
+        lines += [
+            "",
+            f"📊 Stocks: {len(day_high_batch)}",
+            f"🕐 {ist_now().strftime('%H:%M:%S')}"
+        ]
+
+        send_telegram("\n".join(lines))
+
+        alert_count += 1
+
+        time.sleep(0.5)
+
+    # =====================================================
+    # SEND VOLUME BREAKOUT ALERTS
+    # =====================================================
+
+    if volume_batch:
+
+        volume_batch = sorted(
+            volume_batch,
+            key=lambda x: x["move_pct"],
+            reverse=True
+        )
+
+        lines = [
+            "━━━━━━━━━━━━━━━━━━━━",
+            "📊 <b>VOLUME BREAKOUTS</b>",
+            "━━━━━━━━━━━━━━━━━━━━",
+            ""
+        ]
+
+        for s in volume_batch:
+
+            lines.append(
+                f"• <b>{s['symbol']}</b>  |  "
+                f"₹{s['price']:,.2f}  |  "
+                f"{s['move_pct']:+.2f}%"
+            )
+
+        lines += [
+            "",
+            f"📊 Stocks: {len(volume_batch)}",
+            f"🕐 {ist_now().strftime('%H:%M:%S')}"
+        ]
+
+        send_telegram("\n".join(lines))
+
+        alert_count += 1
+
+        time.sleep(0.5)
 
     return alert_count
 
