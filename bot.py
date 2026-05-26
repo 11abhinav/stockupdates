@@ -3,25 +3,61 @@
 # ADVANCED NSE MOMENTUM TELEGRAM BOT
 # =========================================================
 #
-# FINAL CONSOLIDATED VERSION
+# FINAL CONSOLIDATED BREAKOUT VERSION
 # ---------------------------------------------------------
 #
 # FEATURES
 # ---------------------------------------------------------
 #
 # ✅ Uses ONLY completed 5m candles
+#
 # ✅ Removes currently forming candle automatically
+#
 # ✅ Consolidated category-wise Telegram alerts
-# ✅ Price move alerts grouped together
-# ✅ Day high alerts grouped together
-# ✅ Volume breakout alerts grouped together
+#
+# ✅ PRICE MOVE alerts grouped together
+#
+# ✅ DAY HIGH alerts grouped together
+#
+# ✅ MULTI TIMEFRAME BREAKOUT alerts grouped together
+#
+# ✅ Detects:
+#
+#    • 5m breakout
+#    • 10m breakout
+#    • 15m breakout
+#    • 30m breakout
+#
 # ✅ Reduced Telegram spam
+#
 # ✅ Reduced Yahoo Finance rate limit issues
+#
 # ✅ Lightweight throttling added
+#
 # ✅ Handles yfinance MultiIndex issue
+#
 # ✅ Railway-safe execution
+#
 # ✅ Random lightweight logs
+#
 # ✅ Graceful failure handling
+#
+# IMPORTANT
+# ---------------------------------------------------------
+#
+# Bot ALWAYS uses completed candles.
+#
+# Example:
+#
+# Current Time = 10:03
+#
+# Ignored Candle:
+#    10:00 → 10:05
+#
+# Used Candle:
+#    09:55 → 10:00
+#
+# This prevents fake intraday alerts.
 #
 # =========================================================
 
@@ -98,6 +134,7 @@ if not BOT_TOKEN or not CHAT_ID:
 PRICE_MOVE_THRESHOLD = 3.0
 
 # KEEP LOW TO REDUCE YAHOO RATE LIMIT
+
 MAX_WORKERS = 2
 
 IST = timezone(
@@ -341,9 +378,12 @@ def fetch_stock(symbol):
         # =============================================
 
         if len(df) > 1:
+
             df = df.iloc[:-1]
 
+        # =============================================
         # KEEP RECENT DATA ONLY
+        # =============================================
 
         df = df.tail(50)
 
@@ -386,29 +426,31 @@ def fetch_stock(symbol):
         )
 
         # =============================================
-        # STRICT VOLUME BREAKOUT
+        # MULTI TIMEFRAME BREAKOUTS
         # =============================================
 
-        current_volume = float(
-            latest["Volume"]
+        breakout_5m = (
+            last_price > float(
+                df["High"].iloc[-2]
+            )
         )
 
-        prev_5m_volume = float(
-            df["Volume"].iloc[-2]
+        breakout_10m = (
+            last_price > float(
+                df["High"].iloc[-3:-1].max()
+            )
         )
 
-        prev_10m_volume = float(
-            df["Volume"].iloc[-3:-1].mean()
+        breakout_15m = (
+            last_price > float(
+                df["High"].iloc[-4:-1].max()
+            )
         )
 
-        prev_15m_volume = float(
-            df["Volume"].iloc[-4:-1].mean()
-        )
-
-        volume_breakout = (
-            current_volume > prev_5m_volume
-            and current_volume > prev_10m_volume
-            and current_volume > prev_15m_volume
+        breakout_30m = (
+            last_price > float(
+                df["High"].iloc[-7:-1].max()
+            )
         )
 
         # =============================================
@@ -424,12 +466,24 @@ def fetch_stock(symbol):
             )
 
         return {
+
             "symbol": symbol,
+
             "price": last_price,
+
             "move_pct": move_pct,
+
             "day_high": day_high,
+
             "at_day_high": at_day_high,
-            "volume_breakout": volume_breakout
+
+            "breakout_5m": breakout_5m,
+
+            "breakout_10m": breakout_10m,
+
+            "breakout_15m": breakout_15m,
+
+            "breakout_30m": breakout_30m
         }
 
     except Exception:
@@ -490,14 +544,17 @@ def process_alerts(all_data):
     alert_count = 0
 
     price_batch = []
+
     day_high_batch = []
-    volume_batch = []
+
+    breakout_batch = []
 
     for symbol, stock in all_data.items():
 
         try:
 
             move_pct = stock["move_pct"]
+
             price = stock["price"]
 
             # =================================================
@@ -515,7 +572,9 @@ def process_alerts(all_data):
                 price_batch.append({
 
                     "symbol": symbol,
+
                     "move_pct": move_pct,
+
                     "price": price
                 })
 
@@ -533,29 +592,53 @@ def process_alerts(all_data):
                 day_high_batch.append({
 
                     "symbol": symbol,
+
                     "move_pct": move_pct,
+
                     "price": price
                 })
 
             # =================================================
-            # VOLUME BREAKOUT ALERTS
+            # MULTI TF BREAKOUTS
             # =================================================
 
-            if stock["volume_breakout"]:
+            timeframes = []
+
+            if stock["breakout_5m"]:
+                timeframes.append("5m")
+
+            if stock["breakout_10m"]:
+                timeframes.append("10m")
+
+            if stock["breakout_15m"]:
+                timeframes.append("15m")
+
+            if stock["breakout_30m"]:
+                timeframes.append("30m")
+
+            if timeframes:
+
+                tf_text = "/".join(timeframes)
 
                 log(
-                    f"📊 VOLUME BREAKOUT | "
-                    f"{symbol}"
+                    f"🚀 BREAKOUT | "
+                    f"{symbol} | "
+                    f"{tf_text}"
                 )
 
-                volume_batch.append({
+                breakout_batch.append({
 
                     "symbol": symbol,
+
                     "move_pct": move_pct,
-                    "price": price
+
+                    "price": price,
+
+                    "timeframes": tf_text
                 })
 
         except Exception:
+
             traceback.print_exc()
 
     # =====================================================
@@ -637,35 +720,35 @@ def process_alerts(all_data):
         time.sleep(0.5)
 
     # =====================================================
-    # SEND VOLUME BREAKOUT ALERTS
+    # SEND BREAKOUT ALERTS
     # =====================================================
 
-    if volume_batch:
+    if breakout_batch:
 
-        volume_batch = sorted(
-            volume_batch,
+        breakout_batch = sorted(
+            breakout_batch,
             key=lambda x: x["move_pct"],
             reverse=True
         )
 
         lines = [
             "━━━━━━━━━━━━━━━━━━━━",
-            "📊 <b>VOLUME BREAKOUTS</b>",
+            "🚀 <b>MULTI TF BREAKOUTS</b>",
             "━━━━━━━━━━━━━━━━━━━━",
             ""
         ]
 
-        for s in volume_batch:
+        for s in breakout_batch:
 
             lines.append(
                 f"• <b>{s['symbol']}</b>  |  "
-                f"₹{s['price']:,.2f}  |  "
+                f"{s['timeframes']}  |  "
                 f"{s['move_pct']:+.2f}%"
             )
 
         lines += [
             "",
-            f"📊 Stocks: {len(volume_batch)}",
+            f"📊 Stocks: {len(breakout_batch)}",
             f"🕐 {ist_now().strftime('%H:%M:%S')}"
         ]
 
