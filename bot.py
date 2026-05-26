@@ -1,38 +1,11 @@
 # =============================================================================
-# NSE MOMENTUM + BREAKOUT SCANNER - PRODUCTION BOT v3
-# =============================================================================
-#
-# WHAT THIS BOT DOES
-# -----------------------------------------------------------------------------
-# 1. Downloads historical OHLCV data from Yahoo Finance
-# 2. Stores data in memory cache
-# 3. Fetches live price + VWAP + RSI from TradingView
-# 4. Detects momentum and breakout stocks
-# 5. Sends Telegram alerts
-# 6. Tracks BSE announcements
-# 7. Uses scoring engine for filtering strong setups
-#
-# DATA SOURCES
-# -----------------------------------------------------------------------------
-# yfinance      -> Historical candles / EMA / SMA / RSI
-# TradingView   -> Live price / VWAP / RSI
-# Telegram API  -> Alerts
-# BSE RSS       -> Corporate announcements
-#
-# DEPLOYMENT
-# -----------------------------------------------------------------------------
-# Designed for:
-# - Railway
-# - VPS
-# - Cron execution every 5-15 mins
+# NSE MOMENTUM BOT - FIXED PRODUCTION VERSION
 # =============================================================================
 
 import os
-import json
 import logging
 import traceback
 import requests
-import feedparser
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -43,7 +16,7 @@ try:
     from tradingview_ta import TA_Handler, Interval
 except ImportError:
     raise SystemExit(
-        "Install tradingview-ta first using: pip install tradingview_ta"
+        "Install tradingview-ta using: pip install tradingview_ta"
     )
 
 # =============================================================================
@@ -53,7 +26,6 @@ except ImportError:
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 log = logging.getLogger("momentum_bot")
@@ -67,16 +39,10 @@ CHAT_ID = os.environ.get("CHAT_ID", "")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-STRONG_SCORE = 6
-
-PRICE_CHANGE_MIN = 2.0
-VOLUME_RATIO_MIN = 2.0
-
-RSI_MOMENTUM = 60
-RSI_OVERBOUGHT = 80
-
 YF_HISTORY = "1y"
 YF_INTERVAL = "1d"
+
+STRONG_SCORE = 6
 
 WATCHLIST = [
     "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA",
@@ -98,6 +64,18 @@ WATCHLIST = [
 
 def ist_now():
     return datetime.now(IST)
+
+def safe_float(value, default=0.0):
+
+    try:
+
+        if isinstance(value, pd.Series):
+            value = value.iloc[-1]
+
+        return float(value)
+
+    except Exception:
+        return default
 
 # =============================================================================
 # TELEGRAM
@@ -126,6 +104,48 @@ def send_telegram(msg):
         traceback.print_exc()
 
 # =============================================================================
+# NORMALIZE YFINANCE DATAFRAME
+# =============================================================================
+
+def normalize_yf_df(df):
+
+    if df is None or df.empty:
+        return None
+
+    try:
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df = df.loc[:, ~df.columns.duplicated()].copy()
+
+        required_cols = [
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Volume",
+        ]
+
+        for col in required_cols:
+
+            if col not in df.columns:
+                return None
+
+            if isinstance(df[col], pd.DataFrame):
+                df[col] = df[col].iloc[:, 0]
+
+            df[col] = pd.Series(df[col]).astype(float)
+
+        df = df.dropna(subset=required_cols)
+
+        return df
+
+    except Exception:
+        traceback.print_exc()
+        return None
+
+# =============================================================================
 # RSI
 # =============================================================================
 
@@ -152,7 +172,7 @@ def compute_rsi(close, period=14):
 
     rsi = 100 - (100 / (1 + rs))
 
-    return float(rsi.iloc[-1])
+    return safe_float(rsi.iloc[-1], 50.0)
 
 # =============================================================================
 # HISTORICAL DATA
@@ -168,18 +188,25 @@ def fetch_historical_data(symbol):
             interval=YF_INTERVAL,
             auto_adjust=True,
             progress=False,
+            threads=False,
         )
 
-        if df.empty or len(df) < 50:
+        if df is None or df.empty:
+            return None
+
+        df = normalize_yf_df(df)
+
+        if df is None or len(df) < 50:
             return None
 
         return df
 
     except Exception:
+        traceback.print_exc()
         return None
 
 # =============================================================================
-# LIVE DATA
+# TRADINGVIEW LIVE DATA
 # =============================================================================
 
 def fetch_tv_live(symbol):
@@ -196,13 +223,14 @@ def fetch_tv_live(symbol):
         indicators = handler.get_analysis().indicators
 
         return {
-            "ltp": float(indicators.get("close", 0)),
-            "volume": float(indicators.get("volume", 0)),
-            "vwap": float(indicators.get("VWAP", 0)),
-            "rsi_live": float(indicators.get("RSI", 50)),
+            "ltp": safe_float(indicators.get("close", 0)),
+            "volume": safe_float(indicators.get("volume", 0)),
+            "vwap": safe_float(indicators.get("VWAP", 0)),
+            "rsi_live": safe_float(indicators.get("RSI", 50)),
         }
 
     except Exception:
+        log.warning("TradingView failed for %s", symbol)
         return None
 
 # =============================================================================
@@ -213,10 +241,10 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
 
     score = 0
 
-    if abs(change_pct) >= PRICE_CHANGE_MIN:
+    if abs(change_pct) >= 2:
         score += 2
 
-    if vol_ratio >= VOLUME_RATIO_MIN:
+    if vol_ratio >= 2:
         score += 2
 
     if above_vwap:
@@ -225,10 +253,10 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
     if breakout:
         score += 2
 
-    if rsi >= RSI_MOMENTUM:
+    if rsi >= 60:
         score += 1
 
-    if rsi > RSI_OVERBOUGHT:
+    if rsi > 80:
         score -= 1
 
     return score
@@ -238,6 +266,17 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
 # =============================================================================
 
 def run():
+
+    current_time = ist_now().time()
+
+    market_open = (
+        current_time >= datetime.strptime("09:15", "%H:%M").time()
+        and current_time <= datetime.strptime("15:30", "%H:%M").time()
+    )
+
+    if not market_open:
+        log.info("Market closed")
+        return
 
     log.info("Momentum bot started")
 
@@ -257,27 +296,29 @@ def run():
             if live is None:
                 continue
 
-            close = hist["Close"]
+            close = pd.Series(hist["Close"]).astype(float)
+            volume = pd.Series(hist["Volume"]).astype(float)
+            high = pd.Series(hist["High"]).astype(float)
 
-            avg_vol10 = float(
-                hist["Volume"]
-                .rolling(10)
-                .mean()
-                .iloc[-1]
+            avg_vol10 = safe_float(
+                volume.rolling(10).mean().iloc[-1]
             )
 
-            high20 = float(
-                hist["High"]
-                .rolling(20)
-                .max()
-                .iloc[-1]
+            high20 = safe_float(
+                high.rolling(20).max().iloc[-1]
             )
 
-            prev_close = float(close.iloc[-2])
+            prev_close = safe_float(close.iloc[-2])
 
             rsi = compute_rsi(close)
 
-            ltp = live["ltp"]
+            ltp = safe_float(live["ltp"])
+
+            if ltp <= 0:
+                continue
+
+            if avg_vol10 <= 0:
+                continue
 
             change_pct = (
                 (ltp - prev_close)
@@ -286,7 +327,6 @@ def run():
 
             vol_ratio = (
                 live["volume"] / avg_vol10
-                if avg_vol10 > 0 else 0
             )
 
             above_vwap = ltp > live["vwap"]
