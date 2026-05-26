@@ -473,16 +473,13 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
 
 def run():
 
-    current_time = ist_now().time()
-
-    market_open = (
-        current_time >= datetime.strptime("09:15", "%H:%M").time()
-        and current_time <= datetime.strptime("15:30", "%H:%M").time()
-    )
-
-    if not market_open:
-        log.info("Market closed")
-        return
+    # =========================================================================
+    # NOTE:
+    # Market-hours filter removed intentionally.
+    #
+    # Cron controls execution timing externally.
+    # Whenever cron triggers, bot will fetch data immediately.
+    # =========================================================================
 
     log.info("Momentum bot started")
 
