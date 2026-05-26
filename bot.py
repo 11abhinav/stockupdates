@@ -1,11 +1,105 @@
 # =============================================================================
-# NSE MOMENTUM BOT - FIXED PRODUCTION VERSION
+# NSE MOMENTUM + BREAKOUT + NEWS BOT - PRODUCTION VERSION v5
+# =============================================================================
+#
+# WHAT THIS BOT DOES
+# -----------------------------------------------------------------------------
+# 1. Downloads historical OHLCV data from Yahoo Finance
+# 2. Fixes yfinance MultiIndex / Series conversion issues
+# 3. Fetches live prices + VWAP + RSI from TradingView
+# 4. Detects strong momentum and breakout stocks
+# 5. Sends Telegram alerts
+# 6. Scans Google News RSS for stock news
+# 7. Scans BSE RSS for corporate announcements
+# 8. Uses momentum scoring engine
+# 9. Runs safely on Railway/VPS/CRON
+#
+# =============================================================================
+# WHAT WAS FIXED IN THIS VERSION
+# =============================================================================
+#
+# FIX 1:
+# ------
+# Fixed:
+# TypeError: float() argument must be a string or a real number, not 'Series'
+#
+# Cause:
+# yfinance sometimes returns DataFrame/MultiIndex columns.
+#
+# Solution:
+# Added:
+# - normalize_yf_df()
+# - safe_float()
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 2:
+# ------
+# Fixed yfinance MultiIndex corruption.
+#
+# Solution:
+# - flatten columns
+# - remove duplicate OHLCV columns
+# - force OHLCV to float Series
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 3:
+# ------
+# Prevented Railway crashes from bad numeric conversions.
+#
+# Solution:
+# Added:
+# - safe_float()
+# - validation checks
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 4:
+# ------
+# Added market-hours filter.
+#
+# Bot now runs only:
+# 09:15 AM → 03:30 PM IST
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 5:
+# ------
+# Added Google News alerts again.
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 6:
+# ------
+# Added BSE announcement alerts again.
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 7:
+# ------
+# Added deduplication for:
+# - news alerts
+# - BSE alerts
+#
+# Prevents repeated spam every cron cycle.
+#
+# -----------------------------------------------------------------------------
+#
+# FIX 8:
+# ------
+# Disabled threaded yfinance calls.
+#
+# threads=False improves stability on Railway.
+#
 # =============================================================================
 
 import os
+import json
 import logging
 import traceback
 import requests
+import feedparser
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -16,7 +110,8 @@ try:
     from tradingview_ta import TA_Handler, Interval
 except ImportError:
     raise SystemExit(
-        "Install tradingview-ta using: pip install tradingview_ta"
+        "Install tradingview-ta first:\n"
+        "pip install tradingview_ta"
     )
 
 # =============================================================================
@@ -44,6 +139,14 @@ YF_INTERVAL = "1d"
 
 STRONG_SCORE = 6
 
+PRICE_CHANGE_MIN = 2
+VOLUME_RATIO_MIN = 2
+
+RSI_MOMENTUM = 60
+RSI_OVERBOUGHT = 80
+
+BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
+
 WATCHLIST = [
     "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA",
     "ANANTRAJ", "ASIANPAINT", "ATGL", "BAJAJFINSV", "BEL",
@@ -59,11 +162,22 @@ WATCHLIST = [
 ]
 
 # =============================================================================
+# DEDUP STORAGE
+# =============================================================================
+
+seen_news = set()
+seen_bse = set()
+
+# =============================================================================
 # HELPERS
 # =============================================================================
 
 def ist_now():
     return datetime.now(IST)
+
+# =============================================================================
+# SAFE FLOAT
+# =============================================================================
 
 def safe_float(value, default=0.0):
 
@@ -104,7 +218,7 @@ def send_telegram(msg):
         traceback.print_exc()
 
 # =============================================================================
-# NORMALIZE YFINANCE DATAFRAME
+# FIXED YFINANCE NORMALIZER
 # =============================================================================
 
 def normalize_yf_df(df):
@@ -234,6 +348,98 @@ def fetch_tv_live(symbol):
         return None
 
 # =============================================================================
+# GOOGLE NEWS
+# =============================================================================
+
+def check_news(symbol):
+
+    try:
+
+        url = (
+            f"https://news.google.com/rss/search?"
+            f"q={symbol}%20NSE"
+        )
+
+        feed = feedparser.parse(url)
+
+        if not feed.entries:
+            return
+
+        entry = feed.entries[0]
+
+        title = entry.title
+        link = entry.link
+
+        key = f"{symbol}_{title}"
+
+        if key in seen_news:
+            return
+
+        seen_news.add(key)
+
+        msg = (
+            f"NEWS ALERT\n\n"
+            f"{symbol}\n\n"
+            f"{title}\n\n"
+            f"{link}"
+        )
+
+        send_telegram(msg)
+
+    except Exception:
+        traceback.print_exc()
+
+# =============================================================================
+# BSE ANNOUNCEMENTS
+# =============================================================================
+
+def check_bse_announcements():
+
+    try:
+
+        feed = feedparser.parse(BSE_RSS)
+
+        if not feed.entries:
+            return
+
+        for entry in feed.entries[:10]:
+
+            title = entry.title
+            link = entry.link
+
+            matched = False
+
+            for symbol in WATCHLIST:
+
+                if symbol in title.upper():
+
+                    matched = True
+
+                    key = f"{symbol}_{title}"
+
+                    if key in seen_bse:
+                        break
+
+                    seen_bse.add(key)
+
+                    msg = (
+                        f"BSE ANNOUNCEMENT\n\n"
+                        f"{symbol}\n\n"
+                        f"{title}\n\n"
+                        f"{link}"
+                    )
+
+                    send_telegram(msg)
+
+                    break
+
+            if matched:
+                continue
+
+    except Exception:
+        traceback.print_exc()
+
+# =============================================================================
 # SCORE ENGINE
 # =============================================================================
 
@@ -241,10 +447,10 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
 
     score = 0
 
-    if abs(change_pct) >= 2:
+    if abs(change_pct) >= PRICE_CHANGE_MIN:
         score += 2
 
-    if vol_ratio >= 2:
+    if vol_ratio >= VOLUME_RATIO_MIN:
         score += 2
 
     if above_vwap:
@@ -253,10 +459,10 @@ def compute_score(change_pct, vol_ratio, rsi, above_vwap, breakout):
     if breakout:
         score += 2
 
-    if rsi >= 60:
+    if rsi >= RSI_MOMENTUM:
         score += 1
 
-    if rsi > 80:
+    if rsi > RSI_OVERBOUGHT:
         score -= 1
 
     return score
@@ -341,6 +547,9 @@ def run():
                 breakout,
             )
 
+            # NEWS CHECK
+            check_news(symbol)
+
             if score >= STRONG_SCORE:
 
                 msg = (
@@ -363,6 +572,9 @@ def run():
 
         except Exception:
             traceback.print_exc()
+
+    # BSE ALERTS
+    check_bse_announcements()
 
     log.info("Cycle completed")
 
