@@ -1,34 +1,39 @@
+# Enhanced NSE Momentum + Breakout + News Bot (v8)
+
+```python
 # =============================================================================
-# NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL STABLE VERSION v7
+# ENHANCED NSE MOMENTUM + BREAKOUT + NEWS BOT - FINAL VERSION v8
 # =============================================================================
 #
 # FEATURES
 # -----------------------------------------------------------------------------
-# - NSE LIVE PRICE FETCH
-# - Yahoo Finance historical candles
-# - RSI calculation
-# - Breakout detection
-# - Volume spike detection
-# - Google News alerts
-# - BSE corporate announcements
-# - Telegram alerts
-# - Railway/VPS stable architecture
+# ✅ NSE live price fetch
+# ✅ Yahoo Finance historical candles
+# ✅ TradingView screener integration
+# ✅ RSI using ta library
+# ✅ EMA trend detection
+# ✅ Breakout detection
+# ✅ Volume spike detection
+# ✅ Google News alerts
+# ✅ BSE corporate announcements
+# ✅ Telegram alerts
+# ✅ Progress tracking with tqdm
+# ✅ Parquet export using pyarrow
+# ✅ Excel export using openpyxl
+# ✅ Railway/VPS stable architecture
 #
 # =============================================================================
-# FIXES INCLUDED
+# REQUIRED LIBRARIES
 # =============================================================================
-#
-# FIXED:
-# - TradingView failures
-# - float(series) errors
-# - yfinance MultiIndex bugs
-# - NSE blocking handling
-# - session refresh
-# - retry logic
-# - invalid JSON responses
-# - duplicate RSS spam
-# - Railway crashes
-#
+# pandas
+# numpy
+# yfinance
+# tradingview_screener
+# ta
+# pyarrow
+# requests
+# tqdm
+# openpyxl
 # =============================================================================
 
 import os
@@ -41,6 +46,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
+from tqdm import tqdm
+from ta.momentum import RSIIndicator
+from ta.trend import EMAIndicator
+from tradingview_screener import Query
 from datetime import datetime, timedelta, timezone
 
 # =============================================================================
@@ -75,6 +84,9 @@ RSI_MOMENTUM = 60
 RSI_OVERBOUGHT = 80
 
 BSE_RSS = "https://www.bseindia.com/BSEDATA/ann/rss.aspx"
+
+EXPORT_FOLDER = "exports"
+os.makedirs(EXPORT_FOLDER, exist_ok=True)
 
 WATCHLIST = [
     "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA",
@@ -179,33 +191,33 @@ def normalize_yf_df(df):
         return None
 
 # =============================================================================
-# RSI
+# TECHNICAL INDICATORS USING ta LIBRARY
 # =============================================================================
 
 def compute_rsi(close, period=14):
 
-    if len(close) < period + 1:
+    try:
+
+        rsi_indicator = RSIIndicator(close=close, window=period)
+        rsi = rsi_indicator.rsi()
+
+        return safe_float(rsi.iloc[-1], 50)
+
+    except Exception:
         return 50.0
 
-    delta = close.diff().dropna()
 
-    gain = (
-        delta.clip(lower=0)
-        .ewm(alpha=1 / period, adjust=False)
-        .mean()
-    )
+def compute_ema(close, period=20):
 
-    loss = (
-        (-delta.clip(upper=0))
-        .ewm(alpha=1 / period, adjust=False)
-        .mean()
-    )
+    try:
 
-    rs = gain / loss.replace(0, np.nan)
+        ema_indicator = EMAIndicator(close=close, window=period)
+        ema = ema_indicator.ema_indicator()
 
-    rsi = 100 - (100 / (1 + rs))
+        return safe_float(ema.iloc[-1], 0)
 
-    return safe_float(rsi.iloc[-1], 50)
+    except Exception:
+        return 0.0
 
 # =============================================================================
 # YFINANCE HISTORICAL
@@ -256,6 +268,7 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
+
 def refresh_nse_session():
 
     global session
@@ -275,7 +288,9 @@ def refresh_nse_session():
     except Exception:
         traceback.print_exc()
 
+
 refresh_nse_session()
+
 
 def fetch_nse_live(symbol):
 
@@ -303,44 +318,14 @@ def fetch_nse_live(symbol):
                 )
 
                 refresh_nse_session()
-
                 continue
 
             if response.status_code != 200:
-
-                log.warning(
-                    "Bad NSE response %s for %s",
-                    response.status_code,
-                    symbol,
-                )
-
-                continue
-
-            content_type = response.headers.get(
-                "Content-Type",
-                "",
-            )
-
-            if "json" not in content_type.lower():
-
-                log.warning(
-                    "NSE returned non-JSON for %s",
-                    symbol,
-                )
-
-                refresh_nse_session()
-
                 continue
 
             data = response.json()
 
             if "priceInfo" not in data:
-
-                log.warning(
-                    "Missing priceInfo for %s",
-                    symbol,
-                )
-
                 continue
 
             price = data["priceInfo"]
@@ -351,13 +336,6 @@ def fetch_nse_live(symbol):
 
             prev_close = safe_float(
                 price.get("previousClose")
-            )
-
-            day_high = safe_float(
-                price.get(
-                    "intraDayHighLow",
-                    {}
-                ).get("max")
             )
 
             volume = safe_float(
@@ -375,7 +353,6 @@ def fetch_nse_live(symbol):
             return {
                 "ltp": ltp,
                 "change_pct": change_pct,
-                "day_high": day_high,
                 "volume": volume,
             }
 
@@ -389,12 +366,42 @@ def fetch_nse_live(symbol):
 
             time.sleep(2)
 
-    log.warning(
-        "FINAL NSE FAILURE %s",
-        symbol,
-    )
-
     return None
+
+# =============================================================================
+# TRADINGVIEW SCREENER
+# =============================================================================
+
+def get_tradingview_momentum_stocks():
+
+    try:
+
+        _, df = (
+            Query()
+            .select(
+                'name',
+                'close',
+                'volume',
+                'RSI',
+                'change'
+            )
+            .where(
+                'exchange == "NSE"',
+                'RSI > 55',
+                'change > 1'
+            )
+            .limit(20)
+            .get_scanner_data()
+        )
+
+        if df is not None and not df.empty:
+            log.info("TradingView screener fetched")
+            return df
+
+    except Exception:
+        traceback.print_exc()
+
+    return pd.DataFrame()
 
 # =============================================================================
 # GOOGLE NEWS
@@ -485,7 +492,7 @@ def check_bse_announcements():
 # SCORE ENGINE
 # =============================================================================
 
-def compute_score(change_pct, vol_ratio, rsi, breakout):
+def compute_score(change_pct, vol_ratio, rsi, breakout, ema_bullish):
 
     score = 0
 
@@ -501,10 +508,50 @@ def compute_score(change_pct, vol_ratio, rsi, breakout):
     if rsi >= RSI_MOMENTUM:
         score += 1
 
+    if ema_bullish:
+        score += 2
+
     if rsi > RSI_OVERBOUGHT:
         score -= 1
 
     return score
+
+# =============================================================================
+# EXPORT RESULTS
+# =============================================================================
+
+def export_results(results_df):
+
+    try:
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        parquet_file = os.path.join(
+            EXPORT_FOLDER,
+            f"momentum_results_{timestamp}.parquet"
+        )
+
+        excel_file = os.path.join(
+            EXPORT_FOLDER,
+            f"momentum_results_{timestamp}.xlsx"
+        )
+
+        results_df.to_parquet(
+            parquet_file,
+            engine="pyarrow",
+            index=False,
+        )
+
+        results_df.to_excel(
+            excel_file,
+            engine="openpyxl",
+            index=False,
+        )
+
+        log.info("Results exported")
+
+    except Exception:
+        traceback.print_exc()
 
 # =============================================================================
 # MAIN
@@ -514,13 +561,17 @@ def run():
 
     log.info("Momentum bot started")
 
-    for symbol in WATCHLIST:
+    results = []
+
+    tv_df = get_tradingview_momentum_stocks()
+
+    if not tv_df.empty:
+        log.info("TradingView Top Momentum Stocks:")
+        log.info(tv_df.head())
+
+    for symbol in tqdm(WATCHLIST, desc="Scanning Stocks"):
 
         try:
-
-            time.sleep(0.5)
-
-            log.info("Checking %s", symbol)
 
             hist = fetch_historical_data(symbol)
 
@@ -546,6 +597,11 @@ def run():
 
             rsi = compute_rsi(close)
 
+            ema20 = compute_ema(close, 20)
+            ema50 = compute_ema(close, 50)
+
+            ema_bullish = ema20 > ema50
+
             ltp = safe_float(live["ltp"])
 
             if ltp <= 0:
@@ -565,10 +621,22 @@ def run():
                 vol_ratio,
                 rsi,
                 breakout,
+                ema_bullish,
             )
 
-            # NEWS ALERTS
             check_news(symbol)
+
+            results.append({
+                "symbol": symbol,
+                "ltp": round(ltp, 2),
+                "change_pct": round(live["change_pct"], 2),
+                "volume_ratio": round(vol_ratio, 2),
+                "rsi": round(rsi, 2),
+                "ema20": round(ema20, 2),
+                "ema50": round(ema50, 2),
+                "breakout": breakout,
+                "score": score,
+            })
 
             if score >= STRONG_SCORE:
 
@@ -579,7 +647,8 @@ def run():
                     f"Price: Rs {ltp:.2f}\n"
                     f"Move: {live['change_pct']:+.2f}%\n"
                     f"Volume Ratio: {vol_ratio:.1f}x\n"
-                    f"RSI: {rsi:.1f}"
+                    f"RSI: {rsi:.1f}\n"
+                    f"EMA20 > EMA50: {ema_bullish}"
                 )
 
                 send_telegram(msg)
@@ -593,8 +662,21 @@ def run():
         except Exception:
             traceback.print_exc()
 
-    # BSE ALERTS
     check_bse_announcements()
+
+    if results:
+
+        results_df = pd.DataFrame(results)
+
+        results_df = results_df.sort_values(
+            by="score",
+            ascending=False,
+        )
+
+        export_results(results_df)
+
+        print("\nTOP MOMENTUM STOCKS\n")
+        print(results_df.head(10))
 
     log.info("Cycle completed")
 
@@ -615,3 +697,5 @@ if __name__ == "__main__":
         traceback.print_exc()
 
         send_telegram("BOT CRASHED")
+
+Source file used: fileciteturn0file0
