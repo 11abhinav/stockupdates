@@ -1,6 +1,10 @@
 pandas
 numpy
-requests
-feedparser
 yfinance
-lxml
+tradingview_screener
+ta
+pyarrow
+requests
+tqdm
+openpyxl
+feedparser
