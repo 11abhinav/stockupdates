@@ -84,15 +84,25 @@
 #           - 70 stocks × 3 retries = ~4 min wasted per run
 #           - process_nse_news() now returns immediately
 #           - seen_nse_news.json kept intact for future use
-#           - Corporate notices (corp-info) still active and
+#           - Corporate notices (BSE API) still active and
 #             cover all actionable events instead
 #
-# [KEPT]    All v5 features unchanged:
+# [SWITCHED] Corporate notices source: NSE → BSE API:
+#           - NSE api/corp-info returns 404 for all symbols
+#           - Now uses BSE AnnSubCategoryGetData public API
+#           - No cookies/session needed — works reliably
+#           - BSE scrip code map added for all 70 watchlist
+#             symbols (BSE_SCRIP_MAP dict)
+#           - Same NOTICE_KEYWORDS classification unchanged
+#           - Same Telegram card format, header now says BSE
+#           - Filing links point to bseindia.com attachments
+#           - seen_nse_notices.json reused (same dedup file)
+#
+# [KEPT]    Core alert features unchanged:
 #           - 🚨 Price move alerts (3% first, +0.5% steps)
 #           - 🔥 Day high breakout (re-fires on new highs)
 #           - 🔲 Consolidation breakout on 5m and 15m
-#           - 📰 NSE news headlines per symbol
-#           - 📋 NSE corporate announcements / notices
+#           - 📋 Corporate notices (now via BSE API)
 #           - Partial candle drop logic (< 300s guard)
 #           - ThreadPoolExecutor fetch with MAX_WORKERS=2
 #           - Full deduplication across all alert types
@@ -534,8 +544,112 @@ def process_nse_news():
 
 
 # =========================================================
-# NSE CORPORATE NOTICES  [IMPROVED v6 — uses nse_get()]
+# CORPORATE NOTICES  [v6 — switched to BSE API]
 # =========================================================
+#
+# WHY BSE INSTEAD OF NSE
+# ───────────────────────
+# NSE api/corp-info returns 404 for all symbols — NSE has
+# blocked programmatic API access entirely (WAF + auth).
+#
+# BSE's public announcements API works without cookies or
+# sessions. It returns the same corporate filings since
+# all listed companies must file with both exchanges.
+#
+# BSE API used:
+#   GET https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w
+#       ?strCat=-1&strPrevDate={from_date}&strScrip={bse_code}
+#       &strSearch=P&strToDate={to_date}&strType=C&subcategory=-1
+#
+# BSE SCRIP CODE LOOKUP
+# ──────────────────────
+# BSE uses numeric scrip codes, not NSE symbols. We maintain
+# a hardcoded map for the watchlist. Any symbol without a
+# mapping is skipped silently — add to BSE_SCRIP_MAP below.
+#
+# NOTICE KEYWORDS
+# ────────────────
+# Same keyword→emoji→label map as before. Applied to the
+# BSE announcement headline field.
+
+# ── BSE scrip code map for watchlist ─────────────────────
+# Source: BSE website search → company info → scrip code
+BSE_SCRIP_MAP = {
+    "ADANIENT":    "512599",
+    "ADANIGREEN":  "542066",
+    "ADANIPORTS":  "532921",
+    "AKZOINDIA":   "500710",
+    "AFCONS":      "544110",
+    "ANANTRAJ":    "515055",
+    "ANTHEM":      "543950",
+    "ARIHANTCAP":  "511605",
+    "ASIANPAINT":  "500820",
+    "ATGL":        "543529",
+    "ATL":         "539337",
+    "BAJAJFINSV":  "532978",
+    "BEL":         "500049",
+    "BLS":         "540073",
+    "BLUEDART":    "526612",
+    "CASTROLIND":  "500870",
+    "CCAVENUE":    "543280",
+    "CGPOWER":     "500093",
+    "CLEAN":       "544133",
+    "DBL":         "532941",
+    "EIDPARRY":    "500145",
+    "FILATEX":     "526227",
+    "FORTIS":      "532843",
+    "GILLETTE":    "507815",
+    "GLOBUSSPR":   "500158",
+    "GSFC":        "500690",
+    "HDFCBANK":    "500180",
+    "HINDCOPPER":  "513599",
+    "HINDUNILVR":  "500696",
+    "HYUNDAI":     "544257",
+    "ICICIAMC":    "543317",
+    "ICICIBANK":   "532174",
+    "IDBI":        "500116",
+    "IFCI":        "500106",
+    "INDUSTOWER":  "534816",
+    "INFY":        "500209",
+    "IRB":         "532947",
+    "IRCTC":       "542830",
+    "ITBEES":      "590106",
+    "JIOFIN":      "543940",
+    "JPASSOCIAT":  "500227",
+    "JSWENERGY":   "533148",
+    "KWIL":        "543273",
+    "LATENTVIEW":  "543609",
+    "LGEINDIA":    "544139",
+    "LLOYDSENGG":  "539871",
+    "LOTUSDEV":    "543495",
+    "LT":          "500510",
+    "MARUTI":      "532500",
+    "MAZDOCK":     "500265",
+    "MENNPIS":     "543278",
+    "MIRZAINT":    "526642",
+    "NATCOPHARM":  "524816",
+    "ONGC":        "500312",
+    "ORIENTCEM":   "502165",
+    "PFC":         "532810",
+    "PIDILITIND":  "500331",
+    "POONAWALLA":  "524000",
+    "PVRINOX":     "532344",
+    "RELIANCE":    "500325",
+    "RELINFRA":    "500390",
+    "RTNPOWER":    "533122",
+    "RVNL":        "542649",
+    "SANGHIIND":   "526521",
+    "SBIN":        "500112",
+    "SRHHYPOLTD":  "543961",
+    "SUPREMEIND":  "509930",
+    "SUVIDHAA":    "543141",
+    "SUZLON":      "532667",
+    "SWIGGY":      "544285",
+    "SYMPHONY":    "517385",
+    "TATATECH":    "544028",
+    "TITAN":       "500114",
+    "TRENT":       "500251",
+}
 
 NOTICE_KEYWORDS = {
     "board meeting":        ("📅", "BOARD MEETING"),
@@ -568,6 +682,18 @@ NOTICE_KEYWORDS = {
     "contract":             ("📜", "CONTRACT / ORDER"),
 }
 
+BSE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept":          "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer":         "https://www.bseindia.com/",
+    "Origin":          "https://www.bseindia.com",
+}
+
 
 def classify_notice(subject: str):
     sl = subject.lower()
@@ -577,33 +703,69 @@ def classify_notice(subject: str):
     return None
 
 
-def fetch_nse_announcements(symbol: str):
-    url  = (
-        f"https://www.nseindia.com/api/corp-info"
-        f"?symbol={symbol}&market=equities"
+def fetch_bse_announcements(symbol: str) -> list:
+    """
+    Fetch last 2 days of corporate announcements from BSE public API.
+    Returns list of dicts with keys: subject, date, url.
+    Returns [] on any failure — never raises.
+    """
+    scrip = BSE_SCRIP_MAP.get(symbol)
+    if not scrip:
+        return []   # symbol not in map — skip silently
+
+    today    = datetime.now(IST)
+    from_dt  = (today - timedelta(days=2)).strftime("%Y%m%d")
+    to_dt    = today.strftime("%Y%m%d")
+
+    url = (
+        f"https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
+        f"?strCat=-1&strPrevDate={from_dt}&strScrip={scrip}"
+        f"&strSearch=P&strToDate={to_dt}&strType=C&subcategory=-1"
     )
-    data = nse_get(url, label=f"CORP:{symbol}")
-    if not data:
+
+    try:
+        r = requests.get(url, headers=BSE_HEADERS, timeout=NSE_TIMEOUT)
+        if r.status_code != 200:
+            log(f"⚠️ [BSE:{symbol}] HTTP {r.status_code}")
+            return []
+        data = r.json()
+        items = []
+        for ann in data.get("Table", []):
+            headline = (ann.get("HEADLINE", "") or "").strip()
+            if not headline:
+                continue
+            items.append({
+                "subject": headline,
+                "date":    ann.get("NEWS_DT", "") or ann.get("DissemDT", ""),
+                "url":     ann.get("ATTACHMENTNAME", ""),
+            })
+        return items
+    except Exception as e:
+        log(f"⚠️ [BSE:{symbol}] fetch error: {e}")
         return []
-    return data.get("corpInfo", {}).get("announcements", [])
 
 
 def process_nse_notices():
+    """
+    [v6 SWITCHED] Fetches corporate announcements from BSE API
+    instead of NSE (NSE corp-info returns 404 for all symbols).
+    Same NOTICE_KEYWORDS classification and Telegram card format.
+    """
     global seen_nse_notices
     new_count = 0
-    log("📋 Checking NSE corporate notices...")
+    log("📋 Checking BSE corporate announcements...")
 
     for symbol in WATCHLIST:
         try:
-            announcements = fetch_nse_announcements(symbol)
-            time.sleep(0.3)
+            announcements = fetch_bse_announcements(symbol)
+            time.sleep(0.2)
 
             for ann in announcements:
-                subject    = ann.get("subject", "") or ann.get("desc", "") or ""
-                ann_date   = ann.get("date", "") or ann.get("bm_date", "")
-                attachment = ann.get("attchmntFile", "")
+                subject    = ann.get("subject", "")
+                ann_date   = ann.get("date", "")
+                attachment = ann.get("url", "")
 
-                notice_key = f"{symbol}|{subject[:80]}|{ann_date}"
+                notice_key = f"{symbol}|{subject[:80]}|{ann_date[:10]}"
                 if notice_key in seen_nse_notices:
                     continue
 
@@ -618,20 +780,19 @@ def process_nse_notices():
                 emoji, label = classified
                 ist_now = datetime.now(IST).strftime("%d %b %Y  %H:%M:%S IST")
 
-                # ── [CHANGED v6] Stock name on line 2, no top gap ──
                 msg_lines = [
                     f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    f"{emoji} <b>NSE NOTICE — {symbol}</b>",
+                    f"{emoji} <b>BSE NOTICE — {symbol}</b>",
                     f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
                     f"🏷️ <b>Category:</b> {label}",
-                    f"📅 <b>Date:</b>     {ann_date or 'N/A'}",
+                    f"📅 <b>Date:</b>     {ann_date[:16] or 'N/A'}",
                     f"",
                     f"📝 <b>Subject:</b>",
                     f"   {subject[:300]}",
                 ]
                 if attachment:
                     doc_url = (
-                        f"https://www.nseindia.com/{attachment}"
+                        f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{attachment}"
                         if not attachment.startswith("http")
                         else attachment
                     )
@@ -647,7 +808,7 @@ def process_nse_notices():
             continue
 
     save_json(list(seen_nse_notices), NSE_NOTICE_FILE)
-    log(f"📋 NSE notices: {new_count} new alerts sent")
+    log(f"📋 BSE notices: {new_count} new alerts sent")
 
 # =========================================================
 # CONSOLIDATION DETECTION
