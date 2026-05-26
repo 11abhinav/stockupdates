@@ -1,30 +1,34 @@
 # =============================================================================
-# PRODUCTION NSE MOMENTUM BOT - FINAL STABLE VERSION
+# FINAL PRODUCTION MOMENTUM BOT - ULTRA STABLE VERSION
 # =============================================================================
 #
 # FEATURES
 # -----------------------------------------------------------------------------
 #
-# ✅ TradingView-first architecture
+# ✅ Uses ONLY yfinance
 # ✅ Uses ONLY your custom watchlist
-# ✅ Railway-safe architecture
 # ✅ NO NSE scraping
-# ✅ Minimal yfinance usage
+# ✅ NO TradingView dependency
+# ✅ Railway-safe architecture
 # ✅ RSI confirmation using ta library
 # ✅ EMA trend confirmation
+# ✅ Golden Cross detection
 # ✅ Breakout detection
 # ✅ Volume spike detection
+# ✅ Duplicate alert prevention
 # ✅ Telegram alerts
 # ✅ Excel export using openpyxl
 # ✅ Parquet export using pyarrow
 # ✅ tqdm progress tracking
 # ✅ Retry-safe structure
 # ✅ Cron-safe execution
+# ✅ Minimal API traffic
 #
 # =============================================================================
 
 import os
 import time
+import json
 import traceback
 import logging
 import requests
@@ -35,7 +39,6 @@ import yfinance as yf
 from tqdm import tqdm
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
-from tradingview_screener import Query
 from datetime import datetime
 
 # =============================================================================
@@ -61,6 +64,7 @@ CHAT_ID = os.environ.get("CHAT_ID", "")
 # =============================================================================
 
 EXPORT_FOLDER = "exports"
+ALERTS_FILE = "alerts_sent.json"
 
 os.makedirs(EXPORT_FOLDER, exist_ok=True)
 
@@ -163,6 +167,51 @@ def send_telegram(message):
         traceback.print_exc()
 
 # =============================================================================
+# ALERT STORAGE
+# =============================================================================
+
+def load_alerts():
+
+    if not os.path.exists(ALERTS_FILE):
+        return {}
+
+    try:
+
+        with open(ALERTS_FILE, "r") as f:
+            return json.load(f)
+
+    except Exception:
+        return {}
+
+def save_alerts(alerts):
+
+    try:
+
+        with open(ALERTS_FILE, "w") as f:
+            json.dump(alerts, f)
+
+    except Exception:
+        traceback.print_exc()
+
+def already_alerted(symbol):
+
+    alerts = load_alerts()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    return alerts.get(symbol) == today
+
+def mark_alert_sent(symbol):
+
+    alerts = load_alerts()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    alerts[symbol] = today
+
+    save_alerts(alerts)
+
+# =============================================================================
 # HELPERS
 # =============================================================================
 
@@ -179,81 +228,44 @@ def safe_float(value, default=0.0):
         return default
 
 # =============================================================================
-# TRADINGVIEW SCREENER
+# YFINANCE DATA
 # =============================================================================
 
-def fetch_tradingview_stocks():
+def fetch_stock_data(symbol):
 
-    try:
+    for attempt in range(3):
 
-        log.info("Fetching TradingView screener data")
+        try:
 
-        query = (
-            Query()
-            .set_markets("india")
-            .select(
-                "name",
-                "close",
-                "volume",
-                "change",
-                "RSI",
+            df = yf.download(
+                f"{symbol}.NS",
+                period="6mo",
+                interval="1d",
+                progress=False,
+                auto_adjust=True,
+                threads=False,
             )
-            .where(
-                "exchange == 'NSE'",
-                "change > 1",
-                "RSI > 55",
-            )
-            .limit(200)
-        )
 
-        _, df = query.get_scanner_data()
+            if df is None or df.empty:
+                continue
 
-        if df is None or df.empty:
-            return pd.DataFrame()
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
-        return df
+            df = df.dropna()
 
-    except Exception:
+            if len(df) < 60:
+                continue
 
-        traceback.print_exc()
+            return df
 
-        return pd.DataFrame()
+        except Exception:
 
-# =============================================================================
-# YFINANCE CONFIRMATION
-# =============================================================================
+            traceback.print_exc()
 
-def fetch_confirmation_data(symbol):
+            time.sleep(3)
 
-    try:
-
-        df = yf.download(
-            f"{symbol}.NS",
-            period="6mo",
-            interval="1d",
-            progress=False,
-            auto_adjust=True,
-            threads=False,
-        )
-
-        if df is None or df.empty:
-            return None
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df = df.dropna()
-
-        if len(df) < 60:
-            return None
-
-        return df
-
-    except Exception:
-
-        traceback.print_exc()
-
-        return None
+    return None
 
 # =============================================================================
 # TECHNICALS
@@ -282,13 +294,10 @@ def calculate_ema(close, period):
             window=period,
         )
 
-        return safe_float(
-            indicator.ema_indicator().iloc[-1],
-            0,
-        )
+        return indicator.ema_indicator()
 
     except Exception:
-        return 0.0
+        return pd.Series(dtype=float)
 
 # =============================================================================
 # SCORE ENGINE
@@ -299,7 +308,7 @@ def compute_score(
     volume_ratio,
     rsi,
     breakout,
-    ema_bullish,
+    golden_cross,
 ):
 
     score = 0
@@ -316,7 +325,7 @@ def compute_score(
     if rsi >= RSI_MIN:
         score += 2
 
-    if ema_bullish:
+    if golden_cross:
         score += 2
 
     return score
@@ -369,48 +378,16 @@ def run():
 
     log.info("Momentum scan started")
 
-    tv_df = fetch_tradingview_stocks()
-
-    if tv_df.empty:
-
-        log.warning("No TradingView data")
-
-        return
-
-    tv_symbols = set(tv_df["name"].tolist())
-
-    filtered_watchlist = [
-        s for s in WATCHLIST
-        if s in tv_symbols
-    ]
-
-    log.info(
-        "Filtered watchlist size: %s",
-        len(filtered_watchlist),
-    )
-
     results = []
 
     for symbol in tqdm(
-        filtered_watchlist,
+        WATCHLIST,
         desc="Scanning",
     ):
 
         try:
 
-            row = tv_df[
-                tv_df["name"] == symbol
-            ].iloc[0]
-
-            change_pct = safe_float(
-                row["change"]
-            )
-
-            tv_volume = safe_float(
-                row["volume"]
-            )
-
-            hist = fetch_confirmation_data(symbol)
+            hist = fetch_stock_data(symbol)
 
             if hist is None:
                 continue
@@ -419,44 +396,81 @@ def run():
             high = hist["High"].astype(float)
             volume = hist["Volume"].astype(float)
 
+            current_price = safe_float(
+                close.iloc[-1]
+            )
+
+            prev_close = safe_float(
+                close.iloc[-2]
+            )
+
+            change_pct = (
+                (
+                    current_price - prev_close
+                )
+                / prev_close
+            ) * 100
+
             avg_volume = safe_float(
                 volume.rolling(20).mean().iloc[-1]
             )
+
+            volume_ratio = (
+                volume.iloc[-1]
+                / avg_volume
+            ) if avg_volume > 0 else 0
 
             high20 = safe_float(
                 high.rolling(20).max().iloc[-1]
             )
 
-            current_price = safe_float(
-                close.iloc[-1]
-            )
+            breakout = current_price >= high20
 
             rsi = calculate_rsi(close)
 
-            ema20 = calculate_ema(
+            ema20_series = calculate_ema(
                 close,
                 EMA_FAST,
             )
 
-            ema50 = calculate_ema(
+            ema50_series = calculate_ema(
                 close,
                 EMA_SLOW,
             )
 
-            ema_bullish = ema20 > ema50
+            if (
+                ema20_series.empty
+                or ema50_series.empty
+            ):
+                continue
 
-            breakout = current_price >= high20
+            ema20 = safe_float(
+                ema20_series.iloc[-1]
+            )
 
-            volume_ratio = (
-                tv_volume / avg_volume
-            ) if avg_volume > 0 else 0
+            ema50 = safe_float(
+                ema50_series.iloc[-1]
+            )
+
+            ema20_prev = safe_float(
+                ema20_series.iloc[-2]
+            )
+
+            ema50_prev = safe_float(
+                ema50_series.iloc[-2]
+            )
+
+            golden_cross = (
+                ema20 > ema50
+                and ema20_prev <= ema50_prev
+            )
 
             score = compute_score(
                 change_pct,
                 volume_ratio,
                 rsi,
                 breakout,
-                ema_bullish,
+                golden_cross,
             )
 
             result = {
@@ -467,13 +481,17 @@ def run():
                 "volume_ratio": round(volume_ratio, 2),
                 "ema20": round(ema20, 2),
                 "ema50": round(ema50, 2),
+                "golden_cross": golden_cross,
                 "breakout": breakout,
                 "score": score,
             }
 
             results.append(result)
 
-            if score >= STRONG_SCORE:
+            if (
+                score >= STRONG_SCORE
+                and not already_alerted(symbol)
+            ):
 
                 msg = (
                     f"🚀 STRONG MOMENTUM\n\n"
@@ -483,11 +501,13 @@ def run():
                     f"Move: {change_pct:+.2f}%\n"
                     f"RSI: {rsi:.1f}\n"
                     f"Volume Ratio: {volume_ratio:.1f}x\n"
-                    f"EMA20 > EMA50: {ema_bullish}\n"
+                    f"Golden Cross: {golden_cross}\n"
                     f"Breakout: {breakout}"
                 )
 
                 send_telegram(msg)
+
+                mark_alert_sent(symbol)
 
                 log.info(
                     "ALERT SENT %s Score=%s",
