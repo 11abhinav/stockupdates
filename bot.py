@@ -3,7 +3,7 @@
 # ADVANCED NSE MOMENTUM TELEGRAM BOT
 # =========================================================
 #
-# FINAL CONSOLIDATED BREAKOUT VERSION
+# FINAL MULTI TF BREAKOUT VERSION
 # ---------------------------------------------------------
 #
 # FEATURES
@@ -27,6 +27,10 @@
 #    • 10m breakout
 #    • 15m breakout
 #    • 30m breakout
+#    • 1 hour breakout
+#
+# ✅ CMP (Current Market Price) added
+#    in breakout alerts
 #
 # ✅ Reduced Telegram spam
 #
@@ -453,6 +457,12 @@ def fetch_stock(symbol):
             )
         )
 
+        breakout_1h = (
+            last_price > float(
+                df["High"].iloc[-13:-1].max()
+            )
+        )
+
         # =============================================
         # RANDOM LIGHT LOGS
         # =============================================
@@ -483,7 +493,9 @@ def fetch_stock(symbol):
 
             "breakout_15m": breakout_15m,
 
-            "breakout_30m": breakout_30m
+            "breakout_30m": breakout_30m,
+
+            "breakout_1h": breakout_1h
         }
 
     except Exception:
@@ -616,6 +628,9 @@ def process_alerts(all_data):
             if stock["breakout_30m"]:
                 timeframes.append("30m")
 
+            if stock["breakout_1h"]:
+                timeframes.append("1h")
+
             if timeframes:
 
                 tf_text = "/".join(timeframes)
@@ -742,6 +757,7 @@ def process_alerts(all_data):
 
             lines.append(
                 f"• <b>{s['symbol']}</b>  |  "
+                f"₹{s['price']:,.2f}  |  "
                 f"{s['timeframes']}  |  "
                 f"{s['move_pct']:+.2f}%"
             )
