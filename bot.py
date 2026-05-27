@@ -31,8 +31,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-from ta.momentum import RSIIndicator, MACDIndicator
-from ta.trend import EMAIndicator
+from ta.momentum import RSIIndicator
+from ta.trend import EMAIndicator, MACD
 from ta.volatility import AverageTrueRange
 from datetime import datetime
 
@@ -352,7 +352,7 @@ def calculate_ema(close, period):
 def calculate_macd_crossover(close):
     """Returns True if MACD line crossed above signal line in last 3 bars."""
     try:
-        macd_obj   = MACDIndicator(close=close, window_slow=26, window_fast=12, window_sign=9)
+        macd_obj   = MACD(close=close, window_slow=26, window_fast=12, window_sign=9)
         macd_line  = macd_obj.macd()
         signal_line= macd_obj.macd_signal()
         # Bullish crossover: macd > signal today AND macd <= signal yesterday (within last 3 bars)
@@ -607,14 +607,61 @@ def run():
     log.info("Scan completed")
 
 # =============================================================================
-# ENTRY
+# ENTRY  — cron-safe, single-run, exits cleanly
+# =============================================================================
+#
+# Suggested crontab (IST = UTC+5:30):
+#
+#   # Run at market open (09:20 IST = 03:50 UTC)
+#   50 3 * * 1-5  /usr/bin/python3 /path/to/momentum_bot.py >> /var/log/momentum_bot.log 2>&1
+#
+#   # Run mid-session (12:00 IST = 06:30 UTC)
+#   30 6 * * 1-5  /usr/bin/python3 /path/to/momentum_bot.py >> /var/log/momentum_bot.log 2>&1
+#
+#   # Run at market close (15:35 IST = 10:05 UTC)
+#   5 10 * * 1-5  /usr/bin/python3 /path/to/momentum_bot.py >> /var/log/momentum_bot.log 2>&1
+#
+#   # BSE announcements only — lighter run, every 30 min during market hours
+#   */30 3-10 * * 1-5  /usr/bin/python3 /path/to/momentum_bot.py --bse-only >> /var/log/momentum_bot.log 2>&1
+#
+# Pass --dry-run to scan without sending any Telegram messages (useful for testing).
+# Pass --bse-only to skip stock scan and only check BSE announcements.
+#
 # =============================================================================
 
 if __name__ == "__main__":
+    import sys
+
+    dry_run  = "--dry-run"  in sys.argv
+    bse_only = "--bse-only" in sys.argv
+
+    # Patch send_telegram to a no-op in dry-run mode
+    if dry_run:
+        log.info("DRY-RUN mode — Telegram suppressed")
+        send_telegram = lambda msg: log.info("[DRY-RUN] %s", msg[:120])  # noqa: E731
+
+    # Log start with IST wall-clock time for easy cron log reading
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    log.info(
+        "Bot invoked | IST=%s | dry_run=%s | bse_only=%s",
+        datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+        dry_run,
+        bse_only,
+    )
+
     try:
-        run()
+        if bse_only:
+            check_bse_announcements()
+        else:
+            run()
     except KeyboardInterrupt:
-        log.info("Stopped")
+        log.info("Stopped by user")
     except Exception:
         traceback.print_exc()
         send_telegram("❌ BOT CRASHED — check logs")
+
+    log.info(
+        "Bot exited | IST=%s",
+        datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
+    )
