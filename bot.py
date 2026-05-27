@@ -63,11 +63,12 @@ ALERTS_FILE     = "alerts_sent.json"
 BSE_ALERTS_FILE = "bse_alerts.json"
 NEWS_ALERTS_FILE= "news_alerts.json"
 
-# BSE RSS — primary + two fallbacks
+# BSE announcement API — primary JSON API + RSS fallbacks
+# The JSON API is the most reliable; RSS URLs are frequently blocked by BSE
+BSE_API_URL  = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C&subcategory=-1"
 BSE_RSS_URLS = [
     "https://www.bseindia.com/BSEDATA/ann/rss.aspx",
     "https://www.bseindia.com/xml/ann.xml",
-    "https://www.bseindia.com/corporates/ann.aspx",
 ]
 
 os.makedirs(EXPORT_FOLDER, exist_ok=True)
@@ -173,6 +174,41 @@ def safe_float(value, default=0.0):
 # NEWS ALERTS
 # =============================================================================
 
+def entry_published_within_hours(entry, hours=12):
+    """
+    Return True only if the feed entry was published within the last N hours.
+    Uses feedparser's pre-parsed published_parsed tuple first (most reliable),
+    then falls back to the raw string.
+    If NO date is found at all → BLOCK (return False), never pass through.
+    """
+    from datetime import timezone
+    import time as _time
+
+    # feedparser always tries to populate published_parsed as a time.struct_time
+    parsed_tuple = entry.get("published_parsed") or entry.get("updated_parsed")
+    if parsed_tuple:
+        try:
+            dt = datetime.fromtimestamp(_time.mktime(parsed_tuple), tz=timezone.utc)
+            age = datetime.now(timezone.utc) - dt
+            return age.total_seconds() <= hours * 3600
+        except Exception:
+            pass
+
+    # Fallback: raw string
+    pub = entry.get("published", "") or entry.get("updated", "")
+    if not pub:
+        return False   # no date at all → block, don't let stale articles through
+
+    try:
+        import email.utils
+        dt = email.utils.parsedate_to_datetime(pub)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - dt
+        return age.total_seconds() <= hours * 3600
+    except Exception:
+        return False   # parse failed → block
+
 def check_news(symbol):
     try:
         alerts = load_json_file(NEWS_ALERTS_FILE)
@@ -182,14 +218,23 @@ def check_news(symbol):
         if not feed.entries:
             return
         entry = feed.entries[0]
+
+        # Skip if article is older than 12 hours
+        if not entry_published_within_hours(entry, hours=12):
+            return
+
         title = entry.title
         link  = entry.link
         key   = f"{symbol}_{title}"
         if alerts.get(key) == today:
             return
+
+        # Include published time in alert so you know how fresh it is
+        pub_str = entry.get("published", "unknown time")
         msg = (
             f"📰 NEWS ALERT\n\n"
-            f"Stock: {symbol}\n\n"
+            f"Stock    : {symbol}\n"
+            f"Published: {pub_str}\n\n"
             f"{title}\n\n"
             f"{link}"
         )
@@ -200,12 +245,8 @@ def check_news(symbol):
         traceback.print_exc()
 
 # =============================================================================
-# BSE ANNOUNCEMENTS  ← FIXED
+# BSE ANNOUNCEMENTS
 # =============================================================================
-
-# FIX 1: Use real browser User-Agent so BSE doesn't block the request.
-# FIX 2: Try multiple URLs — BSE changes endpoints without notice.
-# FIX 3: Update `alerts` dict inside the loop and save once after the loop.
 
 BSE_HEADERS = {
     "User-Agent": (
@@ -213,15 +254,65 @@ BSE_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    "Accept": "application/json, application/rss+xml, application/xml, */*",
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.bseindia.com/",
 }
 
-def fetch_bse_feed():
+def bse_entry_within_hours(published_str, hours=12):
     """
-    Try each BSE RSS URL in turn.  Returns a feedparser feed object with
-    at least one entry, or None if all fail.
+    Parse BSE date strings — handles ISO format (API) and RFC 2822 (RSS).
+    Returns True if within the last N hours.
+    """
+    if not published_str:
+        return True
+    try:
+        import email.utils
+        from datetime import timezone
+        try:
+            dt = datetime.fromisoformat(published_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            dt = email.utils.parsedate_to_datetime(published_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - dt
+        return age.total_seconds() <= hours * 3600
+    except Exception:
+        return True
+
+def fetch_bse_via_api():
+    """
+    Primary: BSE JSON API — structured, reliable, no HTML scraping.
+    Returns list of dicts: {title, link, published}.
+    """
+    try:
+        resp = requests.get(BSE_API_URL, headers=BSE_HEADERS, timeout=15)
+        if resp.status_code != 200:
+            log.warning("BSE API → HTTP %s", resp.status_code)
+            return None
+        rows = resp.json().get("Table", [])
+        if not rows:
+            log.warning("BSE API → empty Table")
+            return None
+        entries = [
+            {
+                "title"    : row.get("HEADLINE", ""),
+                "link"     : row.get("NSURL", ""),
+                "published": row.get("NEWS_DT", ""),
+            }
+            for row in rows
+        ]
+        log.info("BSE API OK — %d entries", len(entries))
+        return entries
+    except Exception as exc:
+        log.warning("BSE API failed: %s", exc)
+        return None
+
+def fetch_bse_via_rss():
+    """
+    Fallback: RSS URLs. Returns same shape as API entries.
     """
     for url in BSE_RSS_URLS:
         try:
@@ -230,12 +321,20 @@ def fetch_bse_feed():
             if resp.status_code != 200:
                 log.warning("BSE RSS %s → HTTP %s", url, resp.status_code)
                 continue
-            # Pass raw content to feedparser (handles encoding correctly)
             feed = feedparser.parse(resp.content)
-            if feed.entries:
-                log.info("BSE RSS OK — %d entries", len(feed.entries))
-                return feed
-            log.warning("BSE RSS %s → 0 entries", url)
+            if not feed.entries:
+                log.warning("BSE RSS %s → 0 entries", url)
+                continue
+            entries = [
+                {
+                    "title"    : e.get("title", ""),
+                    "link"     : e.get("link", ""),
+                    "published": e.get("published", "") or e.get("updated", ""),
+                }
+                for e in feed.entries
+            ]
+            log.info("BSE RSS OK (%s) — %d entries", url, len(entries))
+            return entries
         except Exception as exc:
             log.warning("BSE RSS %s → %s", url, exc)
     return None
@@ -246,40 +345,40 @@ def check_bse_announcements():
         alerts = load_json_file(BSE_ALERTS_FILE)
         today  = datetime.now().strftime("%Y-%m-%d")
 
-        feed = fetch_bse_feed()
-        if feed is None:
-            log.warning("All BSE RSS URLs failed — no announcements fetched")
-            send_telegram(
-                "⚠️ BSE RSS unavailable — announcements not checked.\n"
-                "Check https://www.bseindia.com/corporates/ann.aspx manually."
-            )
+        entries = fetch_bse_via_api() or fetch_bse_via_rss()
+
+        if not entries:
+            # Silent fail — no Telegram spam, cron will retry next run
+            log.warning("All BSE sources failed — will retry on next cron run")
             return
 
         matched = 0
-        for entry in feed.entries[:50]:          # scan more entries
+        for entry in entries[:60]:
             raw_title = entry.get("title", "")
             title_up  = raw_title.upper()
             link      = entry.get("link", "")
+            pub_str   = entry.get("published", "")
+
+            # Only last 12 hours
+            if not bse_entry_within_hours(pub_str, hours=12):
+                continue
 
             for symbol in WATCHLIST:
                 if symbol in title_up:
-                    key = f"{symbol}_{title_up[:120]}"   # cap key length
+                    key = f"{symbol}_{title_up[:120]}"
                     if alerts.get(key) == today:
                         continue
-
                     msg = (
                         f"📢 BSE ANNOUNCEMENT\n\n"
-                        f"Stock : {symbol}\n"
-                        f"Notice: {raw_title}\n\n"
+                        f"Stock    : {symbol}\n"
+                        f"Published: {pub_str}\n"
+                        f"Notice   : {raw_title}\n\n"
                         f"{link}"
                     )
                     send_telegram(msg)
-
-                    # FIX 3: update dict inside the loop
                     alerts[key] = today
                     matched += 1
 
-        # Save once after all entries processed
         save_json_file(BSE_ALERTS_FILE, alerts)
         log.info("BSE check done — %d new alerts sent", matched)
 
