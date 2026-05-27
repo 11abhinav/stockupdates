@@ -98,6 +98,69 @@ WATCHLIST = [
 ]
 
 # =============================================================================
+# BSE CODE → NSE SYMBOL MAP
+# Match on SCRIP_CD from BSE API — never substring-match headline text.
+# This prevents false positives like "LT" hitting "resuLTs" or "RESULTS".
+# =============================================================================
+
+BSE_CODE_TO_NSE = {
+    "500410": "ADANIENT",
+    "541450": "ADANIGREEN",
+    "532921": "ADANIPORTS",
+    "500710": "AKZOINDIA",
+    "541523": "ANANTRAJ",
+    "500820": "ASIANPAINT",
+    "543529": "ATGL",
+    "532978": "BAJAJFINSV",
+    "500049": "BEL",
+    "543579": "BLS",
+    "526612": "BLUEDART",
+    "500870": "CASTROLIND",
+    "541137": "CGPOWER",
+    "590061": "CLEAN",
+    "533278": "COALINDIA",
+    "534816": "DBL",
+    "500116": "EIDPARRY",
+    "526227": "FILATEX",
+    "532779": "FORTIS",
+    "507815": "GILLETTE",
+    "500690": "GSFC",
+    "500180": "HDFCBANK",
+    "513599": "HINDCOPPER",
+    "500696": "HINDUNILVR",
+    "532174": "ICICIBANK",
+    "500116": "IDBI",
+    "500106": "IFCI",
+    "534816": "INDUSTOWER",
+    "500209": "INFY",
+    "532947": "IRB",
+    "542830": "IRCTC",
+    "543940": "JIOFIN",
+    "533148": "JSWENERGY",
+    "540005": "LATENTVIEW",
+    "539275": "LLOYDSENGG",
+    "500510": "LT",
+    "532500": "MARUTI",
+    "543237": "MAZDOCK",
+    "524816": "NATCOPHARM",
+    "500312": "ONGC",
+    "502165": "ORIENTCEM",
+    "532810": "PFC",
+    "500331": "PIDILITIND",
+    "543277": "POONAWALLA",
+    "532344": "PVRINOX",
+    "500325": "RELIANCE",
+    "542649": "RVNL",
+    "500112": "SBIN",
+    "532667": "SUZLON",
+    "543288": "SWIGGY",
+    "517385": "SYMPHONY",
+    "544028": "TATATECH",
+    "500114": "TITAN",
+    "500251": "TRENT",
+}
+
+# =============================================================================
 # TELEGRAM
 # =============================================================================
 
@@ -315,13 +378,16 @@ def fetch_bse_via_api():
 
         entries = [
             {
-                "title"    : row.get("HEADLINE", ""),
-                "link"     : row.get("NSURL", ""),
-                "published": row.get("NEWS_DT", ""),
+                "title"     : row.get("HEADLINE", ""),
+                "link"      : row.get("NSURL", ""),
+                "published" : row.get("NEWS_DT", ""),
+                "scrip_cd"  : str(row.get("SCRIP_CD", "")).strip(),
+                "scrip_name": row.get("SCRIP_NAME", ""),
             }
             for row in rows
         ]
-        log.info("BSE API: OK — %d entries, latest published: %s", len(entries), entries[0].get("published"))
+        log.info("BSE API: OK — %d entries, latest: %s | sample scrip_cd: %s",
+                 len(entries), entries[0].get("published"), entries[0].get("scrip_cd"))
         return entries
 
     except Exception as exc:
@@ -376,39 +442,61 @@ def check_bse_announcements():
             log.error("BSE: all sources failed — no announcements this run")
             return
 
-        matched = skipped_old = skipped_dup = 0
+        matched = skipped_old = skipped_dup = skipped_nomatch = 0
 
         for entry in entries[:60]:
-            raw_title = entry.get("title", "")
-            title_up  = raw_title.upper()
-            link      = entry.get("link", "")
-            pub_str   = entry.get("published", "")
+            raw_title  = entry.get("title", "")
+            link       = entry.get("link", "")
+            pub_str    = entry.get("published", "")
+            scrip_cd   = entry.get("scrip_cd", "")
+            scrip_name = entry.get("scrip_name", "")
 
             if not is_within_hours(pub_str, label=f"BSE/{raw_title[:40]}"):
                 skipped_old += 1
                 continue
 
-            for symbol in WATCHLIST:
-                if symbol in title_up:
-                    key = f"{symbol}_{title_up[:120]}"
-                    if alerts.get(key) == today:
-                        skipped_dup += 1
-                        continue
-                    msg = (
-                        f"📢 BSE ANNOUNCEMENT\n\n"
-                        f"Stock    : {symbol}\n"
-                        f"Published: {pub_str}\n"
-                        f"Notice   : {raw_title}\n\n"
-                        f"{link}"
-                    )
-                    send_telegram(msg)
-                    alerts[key] = today
-                    matched += 1
+            # PRIMARY: match via BSE scrip code — exact, no false positives
+            symbol = BSE_CODE_TO_NSE.get(scrip_cd)
+
+            # FALLBACK (RSS has no scrip_cd): whole-word match on scrip_name or title
+            # Use \b word boundaries to prevent "LT" matching "RESULTS"
+            if symbol is None:
+                import re
+                for s in WATCHLIST:
+                    pattern = rf"\b{re.escape(s)}\b"
+                    if re.search(pattern, scrip_name.upper()) or \
+                       re.search(pattern, raw_title.upper()):
+                        symbol = s
+                        break
+
+            if symbol is None:
+                log.debug("BSE: no watchlist match — scrip_cd=%s scrip_name=%s title=%s",
+                          scrip_cd, scrip_name, raw_title[:60])
+                skipped_nomatch += 1
+                continue
+
+            key = f"{symbol}_{raw_title[:120]}"
+            if alerts.get(key) == today:
+                skipped_dup += 1
+                continue
+
+            msg = (
+                f"📢 BSE ANNOUNCEMENT\n\n"
+                f"Stock    : {symbol}\n"
+                f"Company  : {scrip_name}\n"
+                f"Published: {pub_str}\n"
+                f"Notice   : {raw_title}\n\n"
+                f"{link}"
+            )
+            send_telegram(msg)
+            alerts[key] = today
+            matched += 1
+            log.info("BSE ALERT: %s | %s | scrip_cd=%s", symbol, raw_title[:60], scrip_cd)
 
         save_json_file(BSE_ALERTS_FILE, alerts)
         log.info(
-            "BSE: done — %d sent | %d skipped(old) | %d skipped(dup)",
-            matched, skipped_old, skipped_dup,
+            "BSE: done — %d sent | %d old | %d dup | %d no-match",
+            matched, skipped_old, skipped_dup, skipped_nomatch,
         )
 
     except Exception as exc:
