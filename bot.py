@@ -99,8 +99,6 @@ WATCHLIST = [
 
 # =============================================================================
 # BSE CODE → NSE SYMBOL MAP
-# Match on SCRIP_CD from BSE API — never substring-match headline text.
-# This prevents false positives like "LT" hitting "resuLTs" or "RESULTS".
 # =============================================================================
 
 BSE_CODE_TO_NSE = {
@@ -159,6 +157,54 @@ BSE_CODE_TO_NSE = {
     "500114": "TITAN",
     "500251": "TRENT",
 }
+
+# =============================================================================
+# BSE DIRECT ANNOUNCEMENT LINK BUILDER
+#
+# The BSE API returns two link fields:
+#   NSURL  — links to the stock quote page  ← NOT what we want
+#   ATTACHMENTNAME — the PDF filename of the actual filing
+#
+# Direct PDF URL pattern:
+#   https://www.bseindia.com/xml-data/corpfiling/AttachLive/<ATTACHMENTNAME>
+#
+# Fallback announcement page URL pattern (always works, opens the notice page):
+#   https://www.bseindia.com/corporates/ann.html?scrip=<SCRIP_CD>&qt=P&an=<ANNOUNCEMENT_ID>
+#
+# ANNOUNCEMENT_ID field in the API response is "DT_TM" or "ANNOUNCEMENT_ID"
+# depending on the endpoint version. We try both.
+# =============================================================================
+
+BSE_PDF_BASE  = "https://www.bseindia.com/xml-data/corpfiling/AttachLive/"
+BSE_ANN_BASE  = "https://www.bseindia.com/corporates/ann.html"
+
+def build_bse_direct_link(row):
+    """
+    Returns the most direct link to the actual BSE notice/PDF.
+
+    Priority:
+      1. PDF attachment  — opens the filing PDF directly
+      2. Announcement page  — opens the BSE notice page (not the stock page)
+      3. NSURL fallback  — last resort (stock quote page, avoid if possible)
+    """
+    attachment = str(row.get("attachment", "") or "").strip()
+    scrip_cd   = str(row.get("scrip_cd", "") or "").strip()
+    ann_id     = str(row.get("ann_id", "") or "").strip()
+    nsurl      = str(row.get("nsurl", "") or "").strip()
+
+    # 1. Direct PDF
+    if attachment:
+        return f"{BSE_PDF_BASE}{attachment}"
+
+    # 2. Announcement detail page
+    if scrip_cd and ann_id:
+        return f"{BSE_ANN_BASE}?scrip={scrip_cd}&qt=P&an={ann_id}"
+
+    # 3. NSURL fallback (stock page — not ideal but better than nothing)
+    if nsurl:
+        return nsurl
+
+    return "https://www.bseindia.com/corporates/ann.html"
 
 # =============================================================================
 # TELEGRAM
@@ -233,19 +279,13 @@ def safe_float(value, default=0.0):
         return default
 
 # =============================================================================
-# FRESHNESS CHECK  (news + BSE)
+# FRESHNESS CHECK
 # =============================================================================
 
 def is_within_hours(dt_or_str, hours=FRESH_HOURS, label="entry"):
-    """
-    Returns True if the datetime is within the last N hours.
-    Accepts a datetime object, ISO string, or RFC 2822 string.
-    Returns False (block) if date cannot be determined.
-    """
     import time as _time
     now = datetime.now(timezone.utc)
 
-    # Already a datetime
     if isinstance(dt_or_str, datetime):
         dt = dt_or_str
         if dt.tzinfo is None:
@@ -254,10 +294,9 @@ def is_within_hours(dt_or_str, hours=FRESH_HOURS, label="entry"):
         log.debug("FRESHNESS [%s]: age=%.1fh limit=%sh", label, age/3600, hours)
         return age <= hours * 3600
 
-    # feedparser struct_time tuple
     if isinstance(dt_or_str, tuple):
         try:
-            dt = datetime.fromtimestamp(_time.mktime(dt_or_str), tz=timezone.utc)
+            dt  = datetime.fromtimestamp(_time.mktime(dt_or_str), tz=timezone.utc)
             age = (now - dt).total_seconds()
             log.debug("FRESHNESS [%s]: age=%.1fh limit=%sh", label, age/3600, hours)
             return age <= hours * 3600
@@ -265,13 +304,11 @@ def is_within_hours(dt_or_str, hours=FRESH_HOURS, label="entry"):
             log.warning("FRESHNESS [%s]: struct_time parse failed — %s — BLOCKING", label, exc)
             return False
 
-    # String
     s = str(dt_or_str).strip()
     if not s:
         log.warning("FRESHNESS [%s]: empty date string — BLOCKING", label)
         return False
 
-    # Try ISO format first (BSE API: "2024-05-27T10:30:00")
     try:
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
@@ -282,7 +319,6 @@ def is_within_hours(dt_or_str, hours=FRESH_HOURS, label="entry"):
     except ValueError:
         pass
 
-    # Try RFC 2822 (RSS: "Tue, 27 May 2026 10:30:00 +0530")
     try:
         dt = email.utils.parsedate_to_datetime(s)
         if dt.tzinfo is None:
@@ -295,12 +331,9 @@ def is_within_hours(dt_or_str, hours=FRESH_HOURS, label="entry"):
         return False
 
 def feed_entry_fresh(entry, label="news"):
-    """Extract date from feedparser entry and check freshness."""
-    # feedparser pre-parsed tuple is most reliable
     parsed = entry.get("published_parsed") or entry.get("updated_parsed")
     if parsed:
         return is_within_hours(parsed, label=label)
-    # Fall back to raw string
     raw = entry.get("published", "") or entry.get("updated", "")
     return is_within_hours(raw, label=label)
 
@@ -354,7 +387,7 @@ def check_news(symbol):
 # =============================================================================
 
 def fetch_bse_via_api():
-    """BSE JSON API with session warmup. Returns list of {title,link,published} or None."""
+    """BSE JSON API. Returns list of normalised entry dicts or None."""
     try:
         session = requests.Session()
         session.headers.update(BSE_HEADERS)
@@ -376,16 +409,27 @@ def fetch_bse_via_api():
             log.warning("BSE API: Table is empty. Response keys: %s", list(data.keys()))
             return None
 
-        entries = [
-            {
-                "title"     : row.get("HEADLINE", ""),
-                "link"      : row.get("NSURL", ""),
-                "published" : row.get("NEWS_DT", ""),
-                "scrip_cd"  : str(row.get("SCRIP_CD", "")).strip(),
-                "scrip_name": row.get("SCRIP_NAME", ""),
+        entries = []
+        for row in rows:
+            scrip_cd = str(row.get("SCRIP_CD", "")).strip()
+
+            # Build the most direct link available
+            entry_raw = {
+                "scrip_cd"  : scrip_cd,
+                "attachment": str(row.get("ATTACHMENTNAME", "") or "").strip(),
+                "ann_id"    : str(row.get("ANNOUNCEMENT_ID", "") or row.get("DT_TM", "") or "").strip(),
+                "nsurl"     : str(row.get("NSURL", "") or "").strip(),
             }
-            for row in rows
-        ]
+            direct_link = build_bse_direct_link(entry_raw)
+
+            entries.append({
+                "title"     : row.get("HEADLINE", ""),
+                "link"      : direct_link,
+                "published" : row.get("NEWS_DT", ""),
+                "scrip_cd"  : scrip_cd,
+                "scrip_name": row.get("SCRIP_NAME", ""),
+            })
+
         log.info("BSE API: OK — %d entries, latest: %s | sample scrip_cd: %s",
                  len(entries), entries[0].get("published"), entries[0].get("scrip_cd"))
         return entries
@@ -396,7 +440,7 @@ def fetch_bse_via_api():
         return None
 
 def fetch_bse_via_rss():
-    """RSS fallback. Returns same shape as API, or None."""
+    """RSS fallback. link field in RSS is already the notice page."""
     for url in BSE_RSS_URLS:
         try:
             log.info("BSE RSS: trying %s", url)
@@ -412,14 +456,17 @@ def fetch_bse_via_rss():
                 log.warning("BSE RSS: 0 entries from %s", url)
                 continue
 
-            entries = [
-                {
+            entries = []
+            for e in feed.entries:
+                # RSS <link> already points to the announcement page — use as-is
+                entries.append({
                     "title"    : e.get("title", ""),
                     "link"     : e.get("link", ""),
                     "published": e.get("published", "") or e.get("updated", ""),
-                }
-                for e in feed.entries
-            ]
+                    "scrip_cd" : "",
+                    "scrip_name": "",
+                })
+
             log.info("BSE RSS: OK — %d entries from %s", len(entries), url)
             return entries
 
@@ -455,11 +502,10 @@ def check_bse_announcements():
                 skipped_old += 1
                 continue
 
-            # PRIMARY: match via BSE scrip code — exact, no false positives
+            # PRIMARY: exact BSE code match
             symbol = BSE_CODE_TO_NSE.get(scrip_cd)
 
-            # FALLBACK (RSS has no scrip_cd): whole-word match on scrip_name or title
-            # Use \b word boundaries to prevent "LT" matching "RESULTS"
+            # FALLBACK (RSS): whole-word match
             if symbol is None:
                 import re
                 for s in WATCHLIST:
@@ -486,12 +532,12 @@ def check_bse_announcements():
                 f"Company  : {scrip_name}\n"
                 f"Published: {pub_str}\n"
                 f"Notice   : {raw_title}\n\n"
-                f"{link}"
+                f"🔗 {link}"
             )
             send_telegram(msg)
             alerts[key] = today
             matched += 1
-            log.info("BSE ALERT: %s | %s | scrip_cd=%s", symbol, raw_title[:60], scrip_cd)
+            log.info("BSE ALERT: %s | %s | scrip_cd=%s | link=%s", symbol, raw_title[:60], scrip_cd, link)
 
         save_json_file(BSE_ALERTS_FILE, alerts)
         log.info(
@@ -543,7 +589,6 @@ def fetch_stock_data(symbol):
     return None
 
 def fetch_nifty_returns(period_days=20):
-    """Return Nifty50 % change over last N trading days."""
     for ticker in NIFTY_TICKERS:
         try:
             log.info("NIFTY: downloading %s", ticker)
@@ -602,9 +647,9 @@ def calculate_ema(close, period, symbol="?"):
 
 def calculate_macd_crossover(close, symbol="?"):
     try:
-        m          = MACD(close=close, window_slow=26, window_fast=12, window_sign=9)
-        macd_line  = m.macd()
-        signal_line= m.macd_signal()
+        m           = MACD(close=close, window_slow=26, window_fast=12, window_sign=9)
+        macd_line   = m.macd()
+        signal_line = m.macd_signal()
         for i in range(-1, -4, -1):
             if macd_line.iloc[i] > signal_line.iloc[i] and macd_line.iloc[i-1] <= signal_line.iloc[i-1]:
                 return True
@@ -689,10 +734,10 @@ def run():
     log.info("SCAN START")
     log.info("=" * 60)
 
-    nifty_20d    = fetch_nifty_returns(20)
-    results      = []
-    total        = len(WATCHLIST)
-    skipped      = 0
+    nifty_20d = fetch_nifty_returns(20)
+    results   = []
+    total     = len(WATCHLIST)
+    skipped   = 0
 
     for index, symbol in enumerate(WATCHLIST, start=1):
         try:
@@ -743,10 +788,10 @@ def run():
             golden_cross = ema20 > ema50 and ema20_prev <= ema50_prev
             above_200    = current_price > ema200 if ema200 > 0 else True
 
-            macd_x   = calculate_macd_crossover(close, symbol)
-            consol_x = is_consolidation_breakout(high, close, symbol)
+            macd_x    = calculate_macd_crossover(close, symbol)
+            consol_x  = is_consolidation_breakout(high, close, symbol)
             cstrength = candle_strength(open_, close, high, low, symbol)
-            ath_pct  = ath_proximity_pct(high, symbol)
+            ath_pct   = ath_proximity_pct(high, symbol)
 
             close_20d    = safe_float(close.iloc[-20])
             stock_20d    = ((current_price - close_20d) / close_20d * 100) if close_20d > 0 else 0
@@ -774,23 +819,23 @@ def run():
             )
 
             results.append({
-                "symbol"        : symbol,
-                "price"         : round(current_price, 2),
-                "change_pct"    : round(change_pct, 2),
-                "rsi"           : round(rsi, 2),
-                "volume_ratio"  : round(volume_ratio, 2),
-                "ema20"         : round(ema20, 2),
-                "ema50"         : round(ema50, 2),
-                "ema200"        : round(ema200, 2),
-                "golden_cross"  : golden_cross,
-                "macd_crossover": macd_x,
-                "breakout_20d"  : breakout_20d,
+                "symbol"         : symbol,
+                "price"          : round(current_price, 2),
+                "change_pct"     : round(change_pct, 2),
+                "rsi"            : round(rsi, 2),
+                "volume_ratio"   : round(volume_ratio, 2),
+                "ema20"          : round(ema20, 2),
+                "ema50"          : round(ema50, 2),
+                "ema200"         : round(ema200, 2),
+                "golden_cross"   : golden_cross,
+                "macd_crossover" : macd_x,
+                "breakout_20d"   : breakout_20d,
                 "consol_breakout": consol_x,
-                "candle_str"    : round(cstrength, 2),
-                "ath_prox_pct"  : round(ath_pct, 2),
-                "rel_str_nifty" : round(rel_strength, 2),
-                "above_200ema"  : above_200,
-                "score"         : score,
+                "candle_str"     : round(cstrength, 2),
+                "ath_prox_pct"   : round(ath_pct, 2),
+                "rel_str_nifty"  : round(rel_strength, 2),
+                "above_200ema"   : above_200,
+                "score"          : score,
             })
 
             check_news(symbol)
