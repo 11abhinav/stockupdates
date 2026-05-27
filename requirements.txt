@@ -1,8 +1,8 @@
 yfinance
-pandas
 ta
+pandas
+numpy
 requests
-beautifulsoup4
 feedparser
-pyarrow
 openpyxl
+pyarrow
