@@ -367,12 +367,24 @@ def check_news(symbol):
             log.debug("NEWS [%s]: already alerted today", symbol)
             return
 
-        msg = (
-            f"📰 NEWS ALERT\n\n"
-            f"Stock    : {symbol}\n"
-            f"Published: {pub}\n\n"
-            f"{title}\n\n{link}"
-        )
+        _TOP = "= = = = = = = = = = = = = = = = ="
+        _DIV = "- " * 16
+
+        msg = "\n".join([
+            _TOP,
+            "📰 NEWS ALERT",
+            _TOP,
+            "",
+            _DIV,
+            f"Stock: {symbol}",
+            "",
+            "Headline:",
+            title,
+            "",
+            f"Published: {pub}",
+            "",
+            f"🔗 {link}",
+        ])
         send_telegram(msg)
         alerts[key] = today
         save_json_file(NEWS_ALERTS_FILE, alerts)
@@ -526,14 +538,25 @@ def check_bse_announcements():
                 skipped_dup += 1
                 continue
 
-            msg = (
-                f"📢 BSE ANNOUNCEMENT\n\n"
-                f"Stock    : {symbol}\n"
-                f"Company  : {scrip_name}\n"
-                f"Published: {pub_str}\n"
-                f"Notice   : {raw_title}\n\n"
-                f"🔗 {link}"
-            )
+            _TOP = "= = = = = = = = = = = = = = = = ="
+            _DIV = "- " * 16
+
+            msg = "\n".join([
+                _TOP,
+                "📢 BSE ANNOUNCEMENT",
+                _TOP,
+                "",
+                _DIV,
+                f"Stock:   {symbol}",
+                f"Company: {scrip_name}",
+                "",
+                "Notice:",
+                raw_title,
+                "",
+                f"Published: {pub_str}",
+                "",
+                f"🔗 {link}",
+            ])
             send_telegram(msg)
             alerts[key] = today
             matched += 1
@@ -845,24 +868,69 @@ def run():
                 if change_pct   >= PRICE_CHANGE_MIN: fired.append(f"📈 Price +{change_pct:.1f}%")
                 if volume_ratio >= VOLUME_RATIO_MIN:  fired.append(f"🔊 Volume {volume_ratio:.1f}x avg")
                 if rsi          >= RSI_MIN:           fired.append(f"⚡ RSI {rsi:.0f}")
-                if breakout_20d:                      fired.append("🚀 20-day Breakout")
+                if breakout_20d:                      fired.append("🚀 20-Day Breakout")
                 if consol_x:                          fired.append("📦 Consolidation Breakout")
-                if golden_cross:                      fired.append("✨ Golden Cross")
+                if golden_cross:                      fired.append("✨ Golden Cross (EMA20 > EMA50)")
                 if macd_x:                            fired.append("🔁 MACD Crossover")
                 if cstrength > 0.6:                   fired.append(f"🕯 Strong Candle ({cstrength:.0%})")
                 if ath_pct   < 5:                     fired.append(f"🏔 Near ATH ({ath_pct:.1f}% away)")
                 if above_200:                         fired.append("📊 Above 200 EMA")
                 if rel_strength > 3:                  fired.append(f"💪 RS vs Nifty +{rel_strength:.1f}%")
 
-                msg = (
-                    f"🚀 STRONG BREAKOUT SETUP\n"
-                    f"{'─'*28}\n"
-                    f"Stock : {symbol}\n"
-                    f"Score : {score}/14\n"
-                    f"Price : ₹{current_price:.2f}\n\n"
-                    f"Signals fired:\n"
-                    + "\n".join(f"  {s}" for s in fired)
-                )
+                # Score cosmetics
+                score_max  = 14
+                score_pct  = round(score / score_max * 100)
+                filled     = round(score_pct / 10)
+                score_bar  = "🟢" * filled + "⚫" * (10 - filled)
+                if score_pct >= 95:   tier = "ELITE ★★★"
+                elif score_pct >= 80: tier = "STRONG ★★"
+                elif score_pct >= 65: tier = "SOLID ★"
+                else:                 tier = "WATCH"
+
+                scan_time  = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d %H:%M:%S")
+                open_price = round(float(open_.iloc[-1]), 2)
+                day_high   = round(float(high.iloc[-1]), 2)
+                day_low    = round(float(low.iloc[-1]), 2)
+
+                _TOP = "= = = = = = = = = = = = = = = = ="
+                _DIV = "- " * 16
+
+                msg = "\n".join([
+                    _TOP,
+                    "🚀 MOMENTUM BREAKOUT ALERT",
+                    _TOP,
+                    "",
+                    _DIV,
+                    f"Stock: {symbol}",
+                    "",
+                    "Signals Fired:",
+                    "\n".join(f"  {s}" for s in fired),
+                    "",
+                    f"Price:    ₹{current_price:.2f}",
+                    f"Open:     ₹{open_price}",
+                    f"Day High: ₹{day_high}",
+                    f"Day Low:  ₹{day_low}",
+                    "",
+                    f"RSI:              {round(rsi, 1)}",
+                    f"Volume Expansion: {round(volume_ratio, 2)}x",
+                    f"Candle:           🟢 Bullish | Body {round(cstrength * 100)}%",
+                    "",
+                    "Trend Structure:",
+                    f"{'✅' if current_price > ema20 else '❌'} Above EMA20",
+                    f"{'✅' if current_price > ema50 else '❌'} Above EMA50",
+                    f"{'✅' if current_price > ema200 else '❌'} Above EMA200",
+                    f"{'✅' if golden_cross else '❌'} Golden Cross (EMA20 > EMA50)",
+                    "",
+                    "Breakout Score:",
+                    f"{score}/{score_max}  ({score_pct}/100)  {tier}",
+                    score_bar,
+                    "",
+                    f"RS vs Nifty: {rel_strength:+.1f}%",
+                    f"ATH Proximity: {ath_pct:.1f}% away",
+                    "",
+                    f"⏰ {scan_time}",
+                ])
+
                 send_telegram(msg)
                 mark_alert_sent(symbol)
                 log.info("ALERT [%s]: sent score=%d/14", symbol, score)
