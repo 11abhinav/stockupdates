@@ -254,18 +254,31 @@ BSE_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json, application/rss+xml, application/xml, */*",
+    "Accept"         : "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.bseindia.com/",
+    "Origin"         : "https://www.bseindia.com",
+    "Referer"        : "https://www.bseindia.com/",
 }
+
+# BSE announcement API — primary JSON API + RSS fallback
+BSE_API_URL  = (
+    "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
+    "?strCat=-1&strPrevDate=&strScrip=&strSearch=P"
+    "&strToDate=&strType=C&subcategory=-1"
+)
+BSE_RSS_URLS = [
+    "https://www.bseindia.com/BSEDATA/ann/20/rss.aspx",
+    "https://www.bseindia.com/BSEDATA/ann/rss20.aspx",
+]
 
 def bse_entry_within_hours(published_str, hours=12):
     """
     Parse BSE date strings — handles ISO format (API) and RFC 2822 (RSS).
-    Returns True if within the last N hours.
+    Returns True only if within the last N hours.
+    Missing or unparseable date → block (return False).
     """
     if not published_str:
-        return True
+        return False
     try:
         import email.utils
         from datetime import timezone
@@ -280,22 +293,37 @@ def bse_entry_within_hours(published_str, hours=12):
         age = datetime.now(timezone.utc) - dt
         return age.total_seconds() <= hours * 3600
     except Exception:
-        return True
+        return False
 
 def fetch_bse_via_api():
     """
-    Primary: BSE JSON API — structured, reliable, no HTML scraping.
-    Returns list of dicts: {title, link, published}.
+    Primary: BSE JSON API.
+    BSE blocks plain requests — we warm up a session by hitting the homepage
+    first so cookies are set, then call the API with the same session.
+    Returns list of dicts: {title, link, published}, or None on failure.
     """
     try:
-        resp = requests.get(BSE_API_URL, headers=BSE_HEADERS, timeout=15)
+        session = requests.Session()
+        session.headers.update(BSE_HEADERS)
+
+        # Step 1: warm up session / get cookies
+        warmup = session.get("https://www.bseindia.com", timeout=10)
+        log.info("BSE warmup → HTTP %s", warmup.status_code)
+
+        # Step 2: call the API
+        resp = session.get(BSE_API_URL, timeout=15)
+        log.info("BSE API → HTTP %s | size=%d bytes", resp.status_code, len(resp.content))
+
         if resp.status_code != 200:
-            log.warning("BSE API → HTTP %s", resp.status_code)
+            log.warning("BSE API failed: HTTP %s\n%s", resp.status_code, resp.text[:300])
             return None
-        rows = resp.json().get("Table", [])
+
+        data = resp.json()
+        rows = data.get("Table", [])
         if not rows:
-            log.warning("BSE API → empty Table")
+            log.warning("BSE API returned empty Table. Keys: %s", list(data.keys()))
             return None
+
         entries = [
             {
                 "title"    : row.get("HEADLINE", ""),
@@ -304,10 +332,12 @@ def fetch_bse_via_api():
             }
             for row in rows
         ]
-        log.info("BSE API OK — %d entries", len(entries))
+        log.info("BSE API OK — %d entries, latest: %s", len(entries), entries[0].get("published"))
         return entries
+
     except Exception as exc:
-        log.warning("BSE API failed: %s", exc)
+        log.warning("BSE API exception: %s", exc)
+        traceback.print_exc()
         return None
 
 def fetch_bse_via_rss():
