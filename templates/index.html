@@ -172,21 +172,21 @@
 
     <div class="dashboard-grid">
         {% for stock in prices %}
-        {% set stock_alerts = alerts.get(stock.symbol, []) %}
+        {% set stock_alerts = alerts.get(stock['symbol'], []) %}
         <div class="stock-card {% if stock_alerts %}has-alert{% endif %}">
             <div class="card-header">
-                <div class="symbol">{{ stock.symbol }}</div>
+                <div class="symbol">{{ stock['symbol'] }}</div>
                 <div class="price">
-                    {% if stock.latest_price %}
-                        ₹{{ stock.latest_price }}
+                    {% if stock['latest_price'] %}
+                        ₹{{ stock['latest_price'] }}
                     {% else %}
                         -
                     {% endif %}
                 </div>
             </div>
             <div class="last-fetched">
-                {% if stock.last_fetched %}
-                    <span class="pulse"></span> Fetched: {{ stock.last_fetched.strftime('%Y-%m-%d %H:%M:%S') }}
+                {% if stock['last_fetched'] %}
+                    <span class="pulse"></span> Fetched: {{ stock['last_fetched'].strftime('%Y-%m-%d %H:%M:%S') }}
                 {% else %}
                     <span class="pulse" style="background:var(--text-muted); box-shadow:none;"></span> Awaiting initial scan
                 {% endif %}
