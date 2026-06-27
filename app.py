@@ -31,20 +31,24 @@ scheduler.start()
 
 @app.route('/')
 def index():
-    prices = db.get_all_prices()
-    recent_alerts = db.get_recent_alerts(100)
-    
-    alerts_by_symbol = {}
-    for a in recent_alerts:
-        sym = a['symbol']
-        if sym not in alerts_by_symbol:
-            alerts_by_symbol[sym] = []
-        alerts_by_symbol[sym].append(a)
-    
-    # Sort prices: those with alerts first, then alphabetically
-    prices.sort(key=lambda x: (x['symbol'] not in alerts_by_symbol, x['symbol']))
-    
-    return render_template('index.html', prices=prices, alerts=alerts_by_symbol)
+    try:
+        prices = db.get_all_prices()
+        recent_alerts = db.get_recent_alerts(100)
+        
+        alerts_by_symbol = {}
+        for a in recent_alerts:
+            sym = a['symbol']
+            if sym not in alerts_by_symbol:
+                alerts_by_symbol[sym] = []
+            alerts_by_symbol[sym].append(a)
+        
+        # Sort prices: those with alerts first, then alphabetically
+        prices.sort(key=lambda x: (x['symbol'] not in alerts_by_symbol, x['symbol']))
+        
+        return render_template('index.html', prices=prices, alerts=alerts_by_symbol)
+    except Exception as e:
+        import traceback
+        return f"<h1>Error Occurred</h1><pre>{traceback.format_exc()}</pre>", 200
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
