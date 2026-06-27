@@ -196,9 +196,9 @@
             <div class="alerts-container">
                 <div class="alerts-title">Recent Alerts</div>
                 {% for alert in stock_alerts[:3] %}
-                <div class="alert-item alert-type-{{ alert.alert_type }}">
-                    <strong>{{ alert.alert_type }}</strong> &middot; <span style="opacity:0.7">{{ alert.created_at.strftime('%H:%M') }}</span><br>
-                    {{ alert.message[:100] }}{% if alert.message|length > 100 %}...{% endif %}
+                <div class="alert-item alert-type-{{ alert['alert_type'] }}">
+                    <strong>{{ alert['alert_type'] }}</strong> &middot; <span style="opacity:0.7">{{ alert['created_at'].strftime('%H:%M') }}</span><br>
+                    {{ alert['message'][:100] }}{% if alert['message']|length > 100 %}...{% endif %}
                 </div>
                 {% endfor %}
             </div>
