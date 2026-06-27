@@ -282,8 +282,8 @@ def api_clean_dummy_alerts():
         with db.get_db_connection() as conn:
             if not conn: return jsonify({'error': 'No DB connection'})
             with conn.cursor() as cur:
-                # Delete any alerts that were injected with DUMMY or TEST symbols
-                cur.execute("DELETE FROM stockupdates.alerts WHERE symbol LIKE 'DUMMY%' OR symbol = 'TEST' OR message LIKE '%Mock%';")
+                # Forcefully wipe ALL alerts to guarantee no mock data is left behind
+                cur.execute("TRUNCATE TABLE stockupdates.alerts RESTART IDENTITY;")
                 conn.commit()
         
         # Clear the memory cache as well so the UI updates instantly
@@ -292,7 +292,7 @@ def api_clean_dummy_alerts():
             _alerts_cache["data"] = []
             _alerts_cache["timestamp"] = 0
         
-        return jsonify({'success': True, 'message': 'All dummy/mock alerts have been wiped from the database!'})
+        return jsonify({'success': True, 'message': 'ALL alerts have been completely wiped. Dashboard is fresh!'})
     except Exception as e:
         return jsonify({'error': str(e)})
 
