@@ -1,30 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-    /* Super Premium Dark Palette */
-    --bg-base: #030305;
-    --bg-surface: rgba(18, 18, 24, 0.65);
-    --bg-surface-hover: rgba(28, 28, 36, 0.85);
+    /* Super Premium Dynamic Palette */
+    --bg-base: #060814;
+    --bg-surface: rgba(18, 20, 30, 0.7);
+    --bg-surface-hover: rgba(28, 30, 45, 0.9);
     
-    --glass-border: rgba(255, 255, 255, 0.06);
-    --glass-highlight: rgba(255, 255, 255, 0.12);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-highlight: rgba(255, 255, 255, 0.25);
     
-    --text-main: #f8fafc;
-    --text-muted: #8b95a5;
+    --text-main: #ffffff;
+    --text-muted: #94a3b8;
     
-    --accent: #4f46e5;
-    --accent-hover: #6366f1;
-    --accent-glow: rgba(79, 70, 229, 0.4);
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-glow: rgba(99, 102, 241, 0.6);
     
     --success: #10b981;
-    --success-glow: rgba(16, 185, 129, 0.2);
+    --success-glow: rgba(16, 185, 129, 0.3);
     
     --warning: #f43f5e;
-    --warning-glow: rgba(244, 63, 94, 0.2);
+    --warning-glow: rgba(244, 63, 94, 0.3);
 
-    --gradient-primary: linear-gradient(135deg, #4f46e5 0%, #a855f7 100%);
-    --gradient-text: linear-gradient(to right, #60a5fa, #a855f7);
-    --gradient-header: linear-gradient(to right, #ffffff, #93c5fd);
+    --gradient-primary: linear-gradient(135deg, #6366f1 0%, #d946ef 100%);
+    --gradient-text: linear-gradient(to right, #60a5fa, #d946ef);
+    --gradient-header: linear-gradient(to right, #ffffff, #c4b5fd);
     
     --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -52,26 +52,26 @@ body {
 body::before, body::after {
     content: '';
     position: fixed;
-    width: 60vw;
-    height: 60vw;
+    width: 70vw;
+    height: 70vw;
     border-radius: 50%;
-    filter: blur(120px);
-    opacity: 0.15;
+    filter: blur(140px);
+    opacity: 0.45;
     z-index: -1;
     animation: float 20s infinite ease-in-out alternate;
     pointer-events: none;
 }
 
 body::before {
-    top: -20%;
+    top: -30%;
     left: -10%;
-    background: radial-gradient(circle, #4f46e5 0%, transparent 70%);
+    background: radial-gradient(circle, #6366f1 0%, transparent 60%);
 }
 
 body::after {
-    bottom: -20%;
+    bottom: -30%;
     right: -10%;
-    background: radial-gradient(circle, #a855f7 0%, transparent 70%);
+    background: radial-gradient(circle, #d946ef 0%, transparent 60%);
     animation-delay: -10s;
 }
 
@@ -256,17 +256,17 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 .watchlist-item:hover {
     background: var(--bg-surface-hover);
-    border-color: var(--glass-highlight);
-    transform: translateY(-3px) scale(1.01);
-    box-shadow: 0 12px 24px rgba(0,0,0,0.3);
+    border-color: rgba(168, 85, 247, 0.5);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 12px 30px rgba(168, 85, 247, 0.15);
 }
 
 .watchlist-item:hover::before { opacity: 1; }
 
 .watchlist-item.active {
-    background: rgba(79, 70, 229, 0.1);
-    border-color: rgba(79, 70, 229, 0.4);
-    box-shadow: 0 0 20px rgba(79, 70, 229, 0.15);
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.8);
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.25);
 }
 
 .item-symbol {
@@ -460,12 +460,13 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .fundamental-card {
-    background: rgba(20, 20, 26, 0.4);
+    background: linear-gradient(145deg, rgba(28, 30, 45, 0.6) 0%, rgba(18, 20, 30, 0.6) 100%);
     border: 1px solid var(--glass-border);
-    padding: 20px;
-    border-radius: 16px;
-    backdrop-filter: blur(12px);
-    transition: all 0.3s ease;
+    padding: 24px;
+    border-radius: 20px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .fundamental-card:hover {
@@ -499,12 +500,13 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .alert-card {
-    background: var(--bg-surface);
+    background: linear-gradient(145deg, rgba(24, 26, 40, 0.8) 0%, rgba(14, 16, 24, 0.8) 100%);
     border: 1px solid var(--glass-border);
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 24px 28px;
-    backdrop-filter: blur(16px);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     text-decoration: none;
     color: inherit;
     position: relative;
@@ -512,9 +514,9 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .alert-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
-    background: var(--bg-surface-hover);
+    transform: translateY(-6px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.1);
+    background: linear-gradient(145deg, rgba(34, 36, 50, 0.9) 0%, rgba(24, 26, 34, 0.9) 100%);
 }
 
 /* Alert Type Colors */
