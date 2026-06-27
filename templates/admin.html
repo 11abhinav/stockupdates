@@ -429,38 +429,29 @@
 
             debounceTimer = setTimeout(async () => {
                 try {
-                    // Fetch from Yahoo Finance public API
-                    const res = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${query}&quotesCount=10&newsCount=0`);
-                    const data = await res.json();
+                    // Fetch from our internal backend API
+                    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                    const indianStocks = await res.json();
                     
-                    if (data && data.quotes && data.quotes.length > 0) {
-                        // Filter for Indian stocks
-                        const indianStocks = data.quotes.filter(q => q.exchange === 'NSI' || q.exchange === 'BSE');
-                        
-                        if (indianStocks.length > 0) {
-                            suggBox.innerHTML = '';
-                            indianStocks.forEach(stock => {
-                                // Strip .NS or .BO for our DB
-                                const cleanSymbol = stock.symbol.replace('.NS', '').replace('.BO', '');
-                                
-                                const div = document.createElement('div');
-                                div.className = 'suggestion-item';
-                                div.innerHTML = `
-                                    <span class="sugg-symbol">${cleanSymbol}</span>
-                                    <span class="sugg-name">${stock.shortname || stock.longname || stock.exchange}</span>
-                                `;
-                                
-                                div.addEventListener('click', () => {
-                                    symbolInput.value = cleanSymbol;
-                                    suggBox.style.display = 'none';
-                                });
-                                
-                                suggBox.appendChild(div);
+                    if (indianStocks && indianStocks.length > 0) {
+                        suggBox.innerHTML = '';
+                        indianStocks.forEach(stock => {
+                            const cleanSymbol = stock.symbol;
+                            const div = document.createElement('div');
+                            div.className = 'suggestion-item';
+                            div.innerHTML = `
+                                <span class="sugg-symbol">${cleanSymbol}</span>
+                                <span class="sugg-name">${stock.name || stock.exchange}</span>
+                            `;
+                            
+                            div.addEventListener('click', () => {
+                                symbolInput.value = cleanSymbol;
+                                suggBox.style.display = 'none';
                             });
-                            suggBox.style.display = 'block';
-                        } else {
-                            suggBox.style.display = 'none';
-                        }
+                            
+                            suggBox.appendChild(div);
+                        });
+                        suggBox.style.display = 'block';
                     } else {
                         suggBox.style.display = 'none';
                     }
