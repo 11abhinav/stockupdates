@@ -6,9 +6,11 @@ from apscheduler.triggers.cron import CronTrigger
 import atexit
 from zoneinfo import ZoneInfo
 import time
+import threading
 import db
 
 _alerts_cache = {"data": [], "timestamp": 0}
+_cache_lock = threading.Lock()
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -27,27 +29,52 @@ import scanners.momentum
 import scanners.news
 import scanners.tracker
 
-# Start Background Scheduler
+# Setup APScheduler
 scheduler = BackgroundScheduler()
 ist_tz = ZoneInfo("Asia/Kolkata")
 
+# MF Breakout Scanner (Every 30 min during market hours)
 scheduler.add_job(
-    scanners.mf.run, 
-    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/30', timezone=ist_tz)
+    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='9', minute='15,45', timezone=ist_tz),
+    id='mf_9', replace_existing=True
 )
 scheduler.add_job(
-    scanners.momentum.run, 
-    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/5', timezone=ist_tz)
+    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='10-14', minute='15,45', timezone=ist_tz),
+    id='mf_10_14', replace_existing=True
 )
 scheduler.add_job(
-    scanners.news.run_bse_scan, 
-    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='15,45', timezone=ist_tz)
+    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='15', minute='15', timezone=ist_tz),
+    id='mf_15', replace_existing=True
+)
+
+# Momentum Scanner (Every 5 min during market hours)
+scheduler.add_job(
+    scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='9', minute='15,20,25,30,35,40,45,50,55', timezone=ist_tz),
+    id='momentum_9', replace_existing=True
 )
 scheduler.add_job(
-    scanners.tracker.resolve_open_alerts, 
-    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/5', timezone=ist_tz)
+    scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='10-14', minute='*/5', timezone=ist_tz),
+    id='momentum_10_14', replace_existing=True
 )
-scheduler.start()
+scheduler.add_job(
+    scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='15', minute='0,5,10,15,20,25,30', timezone=ist_tz),
+    id='momentum_15', replace_existing=True
+)
+
+# News/BSE Scanner
+scheduler.add_job(
+    scanners.news.run_bse_scan, CronTrigger(day_of_week='mon-fri', hour='9-15', minute='15,45', timezone=ist_tz),
+    id='news_9_15', replace_existing=True
+)
+
+# Tracker Scanner (Let it run until 15:55 to catch post-market closures)
+scheduler.add_job(
+    scanners.tracker.resolve_open_alerts, CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/5', timezone=ist_tz),
+    id='tracker_9_15', replace_existing=True
+)
+
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+    scheduler.start()
 atexit.register(lambda: scheduler.shutdown(wait=False))
 
 @app.route('/')
@@ -55,13 +82,14 @@ def index():
     try:
         prices = db.get_all_prices()
         
-        now = time.time()
-        if now - _alerts_cache["timestamp"] < 30 and _alerts_cache["data"]:
-            recent_alerts = _alerts_cache["data"]
-        else:
-            recent_alerts = db.get_recent_alerts(200)
-            _alerts_cache["data"] = recent_alerts
-            _alerts_cache["timestamp"] = now
+        with _cache_lock:
+            now = time.time()
+            if now - _alerts_cache["timestamp"] < 30 and _alerts_cache["data"]:
+                recent_alerts = _alerts_cache["data"]
+            else:
+                recent_alerts = db.get_recent_alerts(200)
+                _alerts_cache["data"] = recent_alerts
+                _alerts_cache["timestamp"] = now
             
         alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
         
@@ -260,8 +288,9 @@ def api_clean_dummy_alerts():
         
         # Clear the memory cache as well so the UI updates instantly
         global _alerts_cache
-        _alerts_cache["data"] = []
-        _alerts_cache["timestamp"] = 0
+        with _cache_lock:
+            _alerts_cache["data"] = []
+            _alerts_cache["timestamp"] = 0
         
         return jsonify({'success': True, 'message': 'All dummy/mock alerts have been wiped from the database!'})
     except Exception as e:
