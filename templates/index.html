@@ -127,6 +127,18 @@
         .item-symbol {
             font-weight: 600;
             font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .alert-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--warning);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 6px var(--warning);
         }
 
         .item-price {
@@ -304,12 +316,18 @@
             <div class="sort-controls">
                 <button class="sort-btn active" onclick="sortWatchlist('name')">Sort Name</button>
                 <button class="sort-btn" onclick="sortWatchlist('price')">Sort Price</button>
+                <button class="sort-btn" onclick="sortWatchlist('alerts')">Alerts First</button>
             </div>
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for stock in prices %}
-            <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
-                <div class="item-symbol">{{ stock['symbol'] }}</div>
+            <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
+                <div class="item-symbol">
+                    {{ stock['symbol'] }}
+                    {% if stock['has_alert'] %}
+                        <span class="alert-dot" title="Recent Alert"></span>
+                    {% endif %}
+                </div>
                 <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
                     {% if stock['latest_price'] %}
                         ₹{{ stock['latest_price'] }}
@@ -371,6 +389,11 @@
                     return a.dataset.symbol.localeCompare(b.dataset.symbol);
                 } else if (criteria === 'price') {
                     return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
+                } else if (criteria === 'alerts') {
+                    const aAlert = a.dataset.hasAlert === "True" ? 1 : 0;
+                    const bAlert = b.dataset.hasAlert === "True" ? 1 : 0;
+                    if (aAlert !== bAlert) return bAlert - aAlert;
+                    return a.dataset.symbol.localeCompare(b.dataset.symbol);
                 }
             });
 

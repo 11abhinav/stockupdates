@@ -33,8 +33,15 @@ scheduler.start()
 def index():
     try:
         prices = db.get_all_prices()
-        # Sort prices alphabetically by default
-        prices.sort(key=lambda x: x['symbol'])
+        recent_alerts = db.get_recent_alerts(200)
+        
+        alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
+        for p in prices:
+            p['has_alert'] = p['symbol'] in alerts_by_symbol
+            
+        # Sort prices: those with alerts first, then alphabetically
+        prices.sort(key=lambda x: (not x.get('has_alert', False), x['symbol']))
+        
         return render_template('index.html', prices=prices)
     except Exception as e:
         import traceback
@@ -69,6 +76,11 @@ def admin():
             return redirect(url_for('admin', success=success))
             
     watchlist = db.get_watchlist()
+    recent_alerts = db.get_recent_alerts(200)
+    alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
+    for w in watchlist:
+        w['has_alert'] = w['symbol'] in alerts_by_symbol
+        
     return render_template('admin.html', watchlist=watchlist)
 
 if __name__ == "__main__":

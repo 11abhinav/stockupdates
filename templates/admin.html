@@ -95,6 +95,18 @@
         .item-symbol {
             font-weight: 600;
             font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .alert-dot {
+            width: 8px;
+            height: 8px;
+            background: #f59e0b; /* warning color */
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 6px #f59e0b;
         }
 
         .item-bse {
@@ -268,7 +280,12 @@
         <div class="watchlist">
             {% for item in watchlist %}
             <div class="watchlist-item">
-                <div class="item-symbol">{{ item.symbol }}</div>
+                <div class="item-symbol">
+                    {{ item.symbol }}
+                    {% if item['has_alert'] %}
+                        <span class="alert-dot" title="Recent Alert"></span>
+                    {% endif %}
+                </div>
                 <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
             </div>
             {% endfor %}
