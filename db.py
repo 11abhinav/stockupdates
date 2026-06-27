@@ -73,6 +73,13 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS fundamental_score INTEGER;
                 """)
                 
+                # Add quality_score and value_score columns if they don't exist
+                cur.execute("""
+                    ALTER TABLE stockupdates.prices 
+                    ADD COLUMN IF NOT EXISTS quality_score NUMERIC(4, 1),
+                    ADD COLUMN IF NOT EXISTS value_score NUMERIC(4, 1);
+                """)
+                
                 # Create alerts table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS stockupdates.alerts (
@@ -213,7 +220,7 @@ def get_all_prices():
             if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched, p.fundamental_score
+                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched, p.fundamental_score, p.quality_score, p.value_score
                     FROM stockupdates.watchlist w
                     LEFT JOIN stockupdates.prices p ON w.symbol = p.symbol
                     ORDER BY w.symbol;
@@ -240,6 +247,25 @@ def update_fundamental_score(symbol, score):
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating fundamental score for {symbol}: {e}")
+
+def update_fundamental_scores(symbol, quality_score, value_score):
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stockupdates.prices (symbol, quality_score, value_score, last_fetched)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (symbol) DO UPDATE 
+                    SET quality_score = EXCLUDED.quality_score,
+                        value_score = EXCLUDED.value_score,
+                        last_fetched = CURRENT_TIMESTAMP;
+                """, (symbol.upper(), quality_score, value_score))
+                conn.commit()
+    except Exception as e:
+        log.error(f"Error updating fundamental scores for {symbol}: {e}")
 
 def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, 
                confidence=None, trigger_type=None, tags=None,

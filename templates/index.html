@@ -20,8 +20,8 @@
             </div>
             <div class="filter-controls">
                 <button class="filter-btn active" onclick="filterWatchlist('ALL', this)">All</button>
-                <button class="filter-btn" onclick="filterWatchlist('STRONG', this)">Strong</button>
-                <button class="filter-btn" onclick="filterWatchlist('NEUTRAL', this)">Neutral</button>
+                <button class="filter-btn" onclick="filterWatchlist('STRONG', this)">Strong Quality</button>
+                <button class="filter-btn" onclick="filterWatchlist('VALUE', this)">Value Buy</button>
                 <button class="filter-btn" onclick="filterWatchlist('CAUTION', this)">Caution</button>
             </div>
             <div class="sort-controls" style="margin-top: 1rem;">
@@ -35,7 +35,7 @@
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for stock in prices %}
-            <div class="watchlist-item {% if stock['fundamental_score'] != None %}{% if stock['fundamental_score'] >= 7 %}fscore-high{% elif stock['fundamental_score'] >= 4 %}fscore-med{% else %}fscore-low{% endif %}{% endif %}" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-fscore="{{ stock['fundamental_score'] if stock['fundamental_score'] != None else -1 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
+            <div class="watchlist-item {% if stock['quality_score'] != None %}{% if stock['quality_score'] <= 3 or stock['value_score'] <= 3 %}fscore-low{% elif stock['quality_score'] >= 7 %}fscore-high{% else %}fscore-med{% endif %}{% endif %}" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-qscore="{{ stock['quality_score'] if stock['quality_score'] != None else -1 }}" data-vscore="{{ stock['value_score'] if stock['value_score'] != None else -1 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
                 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
                     <div class="item-symbol">
                         <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ stock['symbol'] }}', event)">×</button>
@@ -44,15 +44,9 @@
                             <span class="alert-dot" title="Recent Alert"></span>
                         {% endif %}
                     </div>
-                    <div class="score-badge {% if stock['fundamental_score'] != None %}{% if stock['fundamental_score'] >= 7 %}score-high{% elif stock['fundamental_score'] >= 4 %}score-med{% else %}score-low{% endif %}{% endif %}">
-                        {% if stock['fundamental_score'] != None %}
-                            {% if stock['fundamental_score'] >= 7 %}
-                                Strong ({{ stock['fundamental_score'] }})
-                            {% elif stock['fundamental_score'] >= 4 %}
-                                Neutral ({{ stock['fundamental_score'] }})
-                            {% else %}
-                                Caution ({{ stock['fundamental_score'] }})
-                            {% endif %}
+                    <div class="score-badge {% if stock['quality_score'] != None %}{% if stock['quality_score'] <= 3 or stock['value_score'] <= 3 %}score-low{% elif stock['quality_score'] >= 7 %}score-high{% else %}score-med{% endif %}{% endif %}">
+                        {% if stock['quality_score'] != None and stock['value_score'] != None %}
+                            Q: {{ stock['quality_score'] }} | V: {{ stock['value_score'] }}
                         {% else %}
                             Pending
                         {% endif %}
@@ -176,7 +170,8 @@
                 <div>
                     <h2 class="stock-name-large" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <span id="detail-symbol">RELIANCE</span>
-                        <span id="detail-fscore" class="score-badge" style="font-size: 0.85rem; padding: 4px 10px; border-radius: 8px;">F-Score: -/10</span>
+                        <span id="detail-qscore" class="score-badge" style="font-size: 0.85rem; padding: 4px 10px; border-radius: 8px;">Q-Score: -</span>
+                        <span id="detail-vscore" class="score-badge" style="font-size: 0.85rem; padding: 4px 10px; border-radius: 8px;">V-Score: -</span>
                     </h2>
                     <div class="stock-price-large-container" id="detail-price-container">
                         <span class="stock-price-large" id="detail-price">₹0.00</span>
@@ -321,23 +316,49 @@
                 // Update Header
                 document.getElementById('detail-symbol').textContent = data.symbol;
                 
-                const detailFscore = document.getElementById('detail-fscore');
-                if (detailFscore && data.fundamental_score !== undefined && data.fundamental_score !== null) {
-                    let catText = 'Caution';
-                    detailFscore.className = 'score-badge';
-                    if (data.fundamental_score >= 7) {
-                        catText = 'Strong';
-                        detailFscore.classList.add('score-high');
-                    } else if (data.fundamental_score >= 4) {
-                        catText = 'Neutral';
-                        detailFscore.classList.add('score-med');
+                const detailQscore = document.getElementById('detail-qscore');
+                const detailVscore = document.getElementById('detail-vscore');
+                
+                if (detailQscore && data.quality_score !== undefined && data.quality_score !== null) {
+                    let catText = 'Weak Business';
+                    detailQscore.className = 'score-badge';
+                    if (data.quality_score >= 8.0) {
+                        catText = 'Excellent Business';
+                        detailQscore.classList.add('score-high');
+                    } else if (data.quality_score >= 6.0) {
+                        catText = 'Good Business';
+                        detailQscore.classList.add('score-high');
+                    } else if (data.quality_score >= 4.0) {
+                        catText = 'Mixed Fundamentals';
+                        detailQscore.classList.add('score-med');
                     } else {
-                        detailFscore.classList.add('score-low');
+                        detailQscore.classList.add('score-low');
                     }
-                    detailFscore.textContent = `${catText} (${data.fundamental_score})`;
-                    detailFscore.style.display = 'inline-block';
-                } else if (detailFscore) {
-                    detailFscore.style.display = 'none';
+                    detailQscore.textContent = `Quality: ${data.quality_score} (${catText})`;
+                    detailQscore.style.display = 'inline-block';
+                } else if (detailQscore) {
+                    detailQscore.style.display = 'none';
+                }
+
+                if (detailVscore && data.value_score !== undefined && data.value_score !== null) {
+                    let catText = 'Avoid';
+                    detailVscore.className = 'score-badge';
+                    if (data.value_score >= 8.0) {
+                        catText = 'Attractive Buy';
+                        detailVscore.classList.add('score-high');
+                    } else if (data.value_score >= 6.0) {
+                        catText = 'Fairly Priced';
+                        detailVscore.classList.add('score-med');
+                    } else if (data.value_score >= 4.0) {
+                        catText = 'Expensive';
+                        detailVscore.classList.add('score-low');
+                    } else {
+                        detailVscore.classList.add('score-low');
+                    }
+                    detailVscore.textContent = `Valuation: ${data.value_score} (${catText})`;
+                    detailVscore.style.display = 'inline-block';
+                } else if (detailVscore) {
+                    detailVscore.style.display = 'none';
                 }
                 
                 document.getElementById('detail-price').textContent = data.price ? `₹${data.price}` : 'No Data';
@@ -522,31 +543,29 @@
                     }
                     
                     const scoreDiv = element.querySelector('.score-badge');
-                    if (scoreDiv && data.fundamental_score !== undefined && data.fundamental_score !== null) {
-                        let catText = 'Caution';
+                    if (scoreDiv && data.quality_score !== undefined && data.quality_score !== null && data.value_score !== undefined && data.value_score !== null) {
                         scoreDiv.className = 'score-badge';
-                        if (data.fundamental_score >= 7) {
-                            catText = 'Strong';
-                            scoreDiv.classList.add('score-high');
-                        } else if (data.fundamental_score >= 4) {
-                            catText = 'Neutral';
-                            scoreDiv.classList.add('score-med');
-                        } else {
+                        if (data.quality_score <= 3 || data.value_score <= 3) {
                             scoreDiv.classList.add('score-low');
+                        } else if (data.quality_score >= 7) {
+                            scoreDiv.classList.add('score-high');
+                        } else {
+                            scoreDiv.classList.add('score-med');
                         }
-                        scoreDiv.textContent = `${catText} (${data.fundamental_score})`;
-                        element.dataset.fscore = data.fundamental_score;
+                        scoreDiv.textContent = `Q: ${data.quality_score} | V: ${data.value_score}`;
+                        element.dataset.qscore = data.quality_score;
+                        element.dataset.vscore = data.value_score;
                     }
 
                     // Update whole card background class
                     element.classList.remove('fscore-high', 'fscore-med', 'fscore-low');
-                    if (data.fundamental_score !== undefined && data.fundamental_score !== null) {
-                        if (data.fundamental_score >= 7) {
-                            element.classList.add('fscore-high');
-                        } else if (data.fundamental_score >= 4) {
-                            element.classList.add('fscore-med');
-                        } else {
+                    if (data.quality_score !== undefined && data.quality_score !== null) {
+                        if (data.quality_score <= 3 || data.value_score <= 3) {
                             element.classList.add('fscore-low');
+                        } else if (data.quality_score >= 7) {
+                            element.classList.add('fscore-high');
+                        } else {
+                            element.classList.add('fscore-med');
                         }
                     }
                 }
@@ -617,23 +636,24 @@
             watchlistFilter = category;
             const items = document.querySelectorAll('.watchlist-item');
             items.forEach(item => {
-                const score = parseInt(item.dataset.fscore);
+                const qscore = parseFloat(item.dataset.qscore);
+                const vscore = parseFloat(item.dataset.vscore);
                 if (category === 'ALL') {
                     item.style.display = 'flex';
                 } else if (category === 'STRONG') {
-                    if (score >= 7) {
+                    if (qscore >= 6.0) {
                         item.style.display = 'flex';
                     } else {
                         item.style.display = 'none';
                     }
-                } else if (category === 'NEUTRAL') {
-                    if (score >= 4 && score <= 6) {
+                } else if (category === 'VALUE') {
+                    if (vscore >= 6.0) {
                         item.style.display = 'flex';
                     } else {
                         item.style.display = 'none';
                     }
                 } else if (category === 'CAUTION') {
-                    if (score >= 0 && score <= 3) {
+                    if (qscore <= 3.0 || vscore <= 3.0 || qscore === -1) {
                         item.style.display = 'flex';
                     } else {
                         item.style.display = 'none';

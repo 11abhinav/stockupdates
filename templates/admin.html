@@ -22,8 +22,8 @@
             </div>
             <div class="filter-controls" style="margin-top: 1rem;">
                 <button class="filter-btn active" onclick="filterWatchlist('ALL', this)">All</button>
-                <button class="filter-btn" onclick="filterWatchlist('STRONG', this)">Strong</button>
-                <button class="filter-btn" onclick="filterWatchlist('NEUTRAL', this)">Neutral</button>
+                <button class="filter-btn" onclick="filterWatchlist('STRONG', this)">Strong Quality</button>
+                <button class="filter-btn" onclick="filterWatchlist('VALUE', this)">Value Buy</button>
                 <button class="filter-btn" onclick="filterWatchlist('CAUTION', this)">Caution</button>
             </div>
             <div class="sort-controls" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
@@ -37,7 +37,7 @@
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for item in watchlist %}
-            <div class="watchlist-item {% if item['fundamental_score'] != None %}{% if item['fundamental_score'] >= 7 %}fscore-high{% elif item['fundamental_score'] >= 4 %}fscore-med{% else %}fscore-low{% endif %}{% endif %}" style="cursor: pointer;" onclick="if(!event.target.classList.contains('delete-btn')) window.location.href='/?stock={{ item.symbol }}';" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}" data-fscore="{{ item['fundamental_score'] if item['fundamental_score'] != None else -1 }}">
+            <div class="watchlist-item {% if item['quality_score'] != None %}{% if item['quality_score'] <= 3 or item['value_score'] <= 3 %}fscore-low{% elif item['quality_score'] >= 7 %}fscore-high{% else %}fscore-med{% endif %}{% endif %}" style="cursor: pointer;" onclick="if(!event.target.classList.contains('delete-btn')) window.location.href='/?stock={{ item.symbol }}';" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}" data-qscore="{{ item['quality_score'] if item['quality_score'] != None else -1 }}" data-vscore="{{ item['value_score'] if item['value_score'] != None else -1 }}">
                 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
                     <div class="item-symbol">
                         <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ item.symbol }}', event)">×</button>
@@ -47,15 +47,9 @@
                         {% endif %}
                     </div>
                     <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
-                    <div class="score-badge {% if item['fundamental_score'] != None %}{% if item['fundamental_score'] >= 7 %}score-high{% elif item['fundamental_score'] >= 4 %}score-med{% else %}score-low{% endif %}{% endif %}" style="align-self: flex-start;">
-                        {% if item['fundamental_score'] != None %}
-                            {% if item['fundamental_score'] >= 7 %}
-                                Strong ({{ item['fundamental_score'] }})
-                            {% elif item['fundamental_score'] >= 4 %}
-                                Neutral ({{ item['fundamental_score'] }})
-                            {% else %}
-                                Caution ({{ item['fundamental_score'] }})
-                            {% endif %}
+                    <div class="score-badge {% if item['quality_score'] != None %}{% if item['quality_score'] <= 3 or item['value_score'] <= 3 %}score-low{% elif item['quality_score'] >= 7 %}score-high{% else %}score-med{% endif %}{% endif %}" style="align-self: flex-start;">
+                        {% if item['quality_score'] != None and item['value_score'] != None %}
+                            Q: {{ item['quality_score'] }} | V: {{ item['value_score'] }}
                         {% else %}
                             Pending
                         {% endif %}
@@ -269,23 +263,24 @@
             watchlistFilter = category;
             const items = document.querySelectorAll('.watchlist-item');
             items.forEach(item => {
-                const score = parseInt(item.dataset.fscore);
+                const qscore = parseFloat(item.dataset.qscore);
+                const vscore = parseFloat(item.dataset.vscore);
                 if (category === 'ALL') {
                     item.style.display = 'flex';
                 } else if (category === 'STRONG') {
-                    if (score >= 7) {
+                    if (qscore >= 6.0) {
                         item.style.display = 'flex';
                     } else {
                         item.style.display = 'none';
                     }
-                } else if (category === 'NEUTRAL') {
-                    if (score >= 4 && score <= 6) {
+                } else if (category === 'VALUE') {
+                    if (vscore >= 6.0) {
                         item.style.display = 'flex';
                     } else {
                         item.style.display = 'none';
                     }
                 } else if (category === 'CAUTION') {
-                    if (score >= 0 && score <= 3) {
+                    if (qscore <= 3.0 || vscore <= 3.0 || qscore === -1) {
                         item.style.display = 'flex';
                     } else {
                         item.style.display = 'none';

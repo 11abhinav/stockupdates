@@ -22,55 +22,47 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
 # Initialize DB on startup
 db.init_db()
 
-def calculate_fundamental_score(info, financials):
+def calculate_quality_score(info, financials):
     """
-    Calculate a score out of 10 points based on key fundamental metrics:
-    - Market Cap >= 5,000 Cr (50 Billion INR): +1
-    - ROCE/ROE >= 15%: +1
-    - Debt/Equity <= 0.5 (or debtToEquity <= 50 in yfinance): +1
-    - 3Y Sales CAGR >= 10% (fallback to revenueGrowth >= 10%): +1
-    - 3Y Profit CAGR >= 10% (fallback to earningsGrowth >= 10%): +1
-    - Latest year operating cash flow > 0: +1
-    - Operating Margin >= 15%: +1
-    - PE Ratio between 0 and 40 (Quality-Growth valuation check): +1
-    - PB Ratio between 0 and 5.0: +1
-    - Dividend Yield >= 0.5%: +1
+    Calculate a Company Quality Score (CQS) out of 10 points:
+    - ROE/ROCE (Weight: 2): >=15% (2 pts), 10-15% (1 pt), <10% (0 pts)
+    - Debt/Equity (Weight: 2): <=0.5 (2 pts), 0.5-1.0 (1 pt), >1.0 (0 pts)
+    - 3Y Sales CAGR (Weight: 2): >=10% (2 pts), 5-10% (1 pt), <5% (0 pts)
+    - 3Y Profit CAGR (Weight: 2): >=10% (2 pts), 5-10% (1 pt), <5% (0 pts)
+    - Operating Cash Flow (Weight: 1): Positive (1 pt), otherwise (0 pts)
+    - Operating Margin (Weight: 1): >=15% (1 pt), 8-15% (0.5 pt), <8% (0 pts)
     """
     if not info:
-        return 0
-    score = 0
+        return 0.0
+    score = 0.0
     
-    # 1. Market Cap >= 5,000 Cr (50 Billion INR)
-    mcap = info.get('marketCap')
-    if mcap is not None:
-        try:
-            if float(mcap) >= 50000000000:
-                score += 1
-        except:
-            pass
-            
-    # 2. ROCE/ROE >= 15%
+    # 1. ROE / ROCE Proxy (Weight: 2)
     roe = info.get('returnOnEquity')
     if roe is not None:
         try:
-            if float(roe) >= 0.15:
-                score += 1
+            roe_val = float(roe)
+            if roe_val >= 0.15:
+                score += 2.0
+            elif roe_val >= 0.10:
+                score += 1.0
         except:
             pass
             
-    # 3. Debt/Equity <= 0.5 (debtToEquity is in percentage in yfinance, so <= 50)
+    # 2. Debt/Equity (Weight: 2)
     de = info.get('debtToEquity')
     if de is not None:
         try:
-            if float(de) <= 50.0:
-                score += 1
+            de_val = float(de)
+            if de_val <= 50.0:
+                score += 2.0
+            elif de_val <= 100.0:
+                score += 1.0
         except:
             pass
     else:
-        # None usually means no debt
-        score += 1
+        score += 2.0 # No debt is strong
 
-    # 3Y Sales CAGR & 3Y Profit CAGR calculations
+    # 3Y Sales CAGR & Profit CAGR Calculations
     sales_cagr = 0.0
     profit_cagr = 0.0
     has_financials = False
@@ -92,83 +84,154 @@ def calculate_fundamental_score(info, financials):
         except:
             pass
 
-    # 4. 3Y Sales CAGR >= 10% (Fallback to latest revenue growth)
+    # 3. 3Y Sales CAGR (Weight: 2)
     if has_financials:
         if sales_cagr >= 0.10:
-            score += 1
+            score += 2.0
+        elif sales_cagr >= 0.05:
+            score += 1.0
     else:
         rev_growth = info.get('revenueGrowth')
         if rev_growth is not None:
             try:
-                if float(rev_growth) >= 0.10:
-                    score += 1
+                rg_val = float(rev_growth)
+                if rg_val >= 0.10:
+                    score += 2.0
+                elif rg_val >= 0.05:
+                    score += 1.0
             except:
                 pass
 
-    # 5. 3Y Profit CAGR >= 10% (Fallback to latest earnings growth)
+    # 4. 3Y Profit CAGR (Weight: 2)
     if has_financials:
         if profit_cagr >= 0.10:
-            score += 1
+            score += 2.0
+        elif profit_cagr >= 0.05:
+            score += 1.0
     else:
         earn_growth = info.get('earningsGrowth')
         if earn_growth is not None:
             try:
-                if float(earn_growth) >= 0.10:
-                    score += 1
+                eg_val = float(earn_growth)
+                if eg_val >= 0.10:
+                    score += 2.0
+                elif eg_val >= 0.05:
+                    score += 1.0
             except:
                 pass
 
-    # 6. Operating Cash Flow > 0
+    # 5. Operating Cash Flow (Weight: 1)
     ocf = info.get('operatingCashflow')
     if ocf is not None:
         try:
             if float(ocf) > 0:
-                score += 1
+                score += 1.0
         except:
             pass
 
-    # 7. Operating Margin >= 15%
+    # 6. Operating Margin (Weight: 1)
     op_margin = info.get('operatingMargins')
     if op_margin is not None:
         try:
-            if float(op_margin) >= 0.15:
-                score += 1
+            opm_val = float(op_margin)
+            if opm_val >= 0.15:
+                score += 1.0
+            elif opm_val >= 0.08:
+                score += 0.5
         except:
             pass
 
-    # 8. PE Ratio between 0 and 40
+    return round(score, 1)
+
+def calculate_value_score(info):
+    """
+    Calculate a Price Attractiveness Score (PAS) out of 10 points:
+    - Trailing P/E (Weight: 3): <20 (3 pts), 20-35 (1.5 pts), >35 (0 pts)
+    - P/B (Weight: 2): <3 (2 pts), 3-5 (1 pt), >5 (0 pts)
+    - EV/EBITDA (Weight: 2): <10 (2 pts), 10-18 (1 pt), >18 (0 pts)
+    - EV/Revenue or P/S (Weight: 1): <3 (1 pt), 3-6 (0.5 pt), >6 (0 pts)
+    - Dividend Yield (Weight: 1): >=2% (1 pt), 0.5-2% (0.5 pt), <0.5% (0 pts)
+    - Margin of Safety (Weight: 1): Price is >=20% below 52W High (1 pt), otherwise (0 pts)
+    """
+    if not info:
+        return 0.0
+    score = 0.0
+    
+    # 1. Trailing P/E (Weight: 3)
     pe = info.get('trailingPE') or info.get('peRatio')
     if pe is not None:
         try:
-            if 0 < float(pe) < 40.0:
-                score += 1
+            pe_val = float(pe)
+            if 0 < pe_val < 20.0:
+                score += 3.0
+            elif 0 < pe_val <= 35.0:
+                score += 1.5
         except:
             pass
-
-    # 9. PB Ratio between 0 and 5.0
+            
+    # 2. P/B (Weight: 2)
     pb = info.get('priceToBook') or info.get('pbRatio')
     if pb is not None:
         try:
-            if 0 < float(pb) < 5.0:
-                score += 1
+            pb_val = float(pb)
+            if 0 < pb_val < 3.0:
+                score += 2.0
+            elif 0 < pb_val <= 5.0:
+                score += 1.0
         except:
             pass
-
-    # 10. Dividend Yield >= 0.5% (Yield >= 0.005)
+            
+    # 3. EV / EBITDA (Weight: 2)
+    ev_ebitda = info.get('enterpriseToEbitda')
+    if ev_ebitda is not None:
+        try:
+            eve_val = float(ev_ebitda)
+            if 0 < eve_val < 10.0:
+                score += 2.0
+            elif 0 < eve_val <= 18.0:
+                score += 1.0
+        except:
+            pass
+            
+    # 4. EV / Revenue or P/S (Weight: 1)
+    ev_rev = info.get('enterpriseToRevenue')
+    ps = info.get('priceToSalesTrailing12Months')
+    val_mult = ev_rev if ev_rev is not None else ps
+    if val_mult is not None:
+        try:
+            mult_val = float(val_mult)
+            if 0 < mult_val < 3.0:
+                score += 1.0
+            elif 0 < mult_val <= 6.0:
+                score += 0.5
+        except:
+            pass
+            
+    # 5. Dividend Yield (Weight: 1)
     div = info.get('dividendYield') or info.get('divYield')
     if div is not None:
         try:
             div_val = float(div)
             if div_val < 1.0:
                 div_val = div_val * 100
-            if div_val >= 0.5:
-                score += 1
-            elif float(div) >= 0.005: # backup if not scaled to 100
-                score += 1
+            if div_val >= 2.0:
+                score += 1.0
+            elif div_val >= 0.5:
+                score += 0.5
         except:
             pass
 
-    return score
+    # 6. Margin of Safety flag (Weight: 1)
+    high_52 = info.get('fiftyTwoWeekHigh')
+    current = info.get('currentPrice') or info.get('regularMarketPrice')
+    if high_52 is not None and current is not None:
+        try:
+            if float(current) < float(high_52) * 0.80:
+                score += 1.0
+        except:
+            pass
+            
+    return round(score, 1)
 
 def fetch_and_save_fundamentals(symbol, ticker=None):
     try:
@@ -177,12 +240,18 @@ def fetch_and_save_fundamentals(symbol, ticker=None):
             ticker = yf.Ticker(f"{symbol}.NS")
         info = ticker.info
         financials = ticker.financials
-        score = calculate_fundamental_score(info, financials)
-        db.update_fundamental_score(symbol, score)
-        return score, info
+        q_score = calculate_quality_score(info, financials)
+        v_score = calculate_value_score(info)
+        db.update_fundamental_scores(symbol, q_score, v_score)
+        
+        # Calculate legacy score for backward compatibility
+        legacy_score = int((q_score + v_score) / 2)
+        db.update_fundamental_score(symbol, legacy_score)
+        
+        return q_score, v_score, info
     except Exception as e:
         log.warning(f"Failed to fetch/save fundamentals for {symbol}: {e}")
-        return None, None
+        return None, None, None
 
 def backfill_missing_fundamental_scores():
     # Wait a brief moment to let the server start up
@@ -192,7 +261,7 @@ def backfill_missing_fundamental_scores():
         prices = db.get_all_prices()
         for p in prices:
             symbol = p['symbol']
-            if p.get('fundamental_score') is None:
+            if p.get('quality_score') is None or p.get('value_score') is None:
                 log.info(f"Backfilling fundamental score for {symbol}...")
                 fetch_and_save_fundamentals(symbol)
                 # Rate limit protection (2s between requests)
@@ -354,8 +423,13 @@ def api_stock(symbol):
         except Exception as e:
             log.warning(f"Failed to fetch Google News for {symbol}: {e}")
             
+        quality_score = stock_data.get('quality_score')
+        value_score = stock_data.get('value_score')
         try:
-            info = ticker.info
+            q_score, v_score, info = fetch_and_save_fundamentals(symbol, ticker)
+            if q_score is not None:
+                quality_score = q_score
+                value_score = v_score
             if info:
                 fundamentals = {
                     'marketCap': info.get('marketCap'),
@@ -367,8 +441,6 @@ def api_stock(symbol):
                     'sector': info.get('sector'),
                     'industry': info.get('industry')
                 }
-                fundamental_score = calculate_fundamental_score(info)
-                db.update_fundamental_score(symbol, fundamental_score)
         except Exception as e:
             log.warning(f"Failed to fetch news/fundamentals for {symbol}: {e}")
 
@@ -380,7 +452,8 @@ def api_stock(symbol):
             'alerts': alerts,
             'news': news,
             'fundamentals': fundamentals,
-            'fundamental_score': fundamental_score
+            'quality_score': quality_score,
+            'value_score': value_score
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
