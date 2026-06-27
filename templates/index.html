@@ -4,17 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StockUpdates Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --glass-bg: rgba(30, 41, 59, 0.7);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            /* Zinc 950 base */
+            --bg-dark: #09090b;
+            --glass-bg: rgba(24, 24, 27, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #fafafa;
+            --text-muted: #a1a1aa;
             --accent: #3b82f6;
             --success: #10b981;
-            --warning: #f59e0b;
+            --warning: #ef4444; /* Changed to a vibrant red/orange for warnings */
             --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
         
@@ -25,25 +26,30 @@
         body {
             font-family: 'Inter', sans-serif;
             background: var(--bg-dark);
-            background-image: radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
-                              radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+            /* Subtle glowing ambient lights in the background */
+            background-image: 
+                radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.08), transparent 40%),
+                radial-gradient(circle at 85% 100%, rgba(16, 185, 129, 0.08), transparent 40%);
+            background-attachment: fixed;
             color: var(--text-main);
             margin: 0;
             padding: 0;
             height: 100vh;
             display: flex;
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* Sidebar Styling */
         .sidebar {
-            width: 350px;
-            min-width: 350px;
+            width: 380px;
+            min-width: 380px;
             border-right: 1px solid var(--glass-border);
             display: flex;
             flex-direction: column;
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(10px);
+            background: rgba(9, 9, 11, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             z-index: 10;
         }
 
@@ -67,21 +73,23 @@
         }
 
         .sort-btn {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255,255,255,0.03);
             border: 1px solid var(--glass-border);
             color: var(--text-muted);
-            padding: 0.5rem 0.75rem;
-            border-radius: 6px;
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
+            font-weight: 500;
             flex: 1;
-            transition: all 0.2s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .sort-btn.active, .sort-btn:hover {
-            background: rgba(59, 130, 246, 0.2);
+            background: rgba(255, 255, 255, 0.1);
             color: #fff;
-            border-color: var(--accent);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
         }
 
         .watchlist {
@@ -93,35 +101,46 @@
             gap: 0.5rem;
         }
 
-        /* Custom Scrollbar for watchlist */
-        .watchlist::-webkit-scrollbar {
-            width: 6px;
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
         }
-        .watchlist::-webkit-scrollbar-thumb {
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
             background: rgba(255,255,255,0.1);
-            border-radius: 3px;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.2);
         }
 
         .watchlist-item {
             background: var(--glass-bg);
-            border: 1px solid transparent;
-            padding: 1rem;
+            border: 1px solid var(--glass-border);
+            padding: 1rem 1.2rem;
             border-radius: 12px;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: all 0.2s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
         }
 
         .watchlist-item:hover {
-            background: rgba(255,255,255,0.05);
-            border-color: rgba(255,255,255,0.1);
+            background: rgba(39, 39, 42, 0.8);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            border-color: rgba(255,255,255,0.15);
         }
 
         .watchlist-item.active {
-            background: rgba(59, 130, 246, 0.15);
-            border-color: var(--accent);
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.4);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
         }
 
         .item-symbol {
@@ -151,12 +170,11 @@
             font-size: 0.9rem;
         }
 
-        /* Main Content Area */
         .main-content {
             flex: 1;
             display: flex;
             flex-direction: column;
-            padding: 2rem;
+            padding: 3rem;
             overflow-y: auto;
             position: relative;
         }
@@ -164,24 +182,30 @@
         .top-nav {
             position: absolute;
             top: 2rem;
-            right: 2rem;
+            right: 3rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
 
         .nav-btn {
-            background: var(--glass-bg);
+            background: rgba(24, 24, 27, 0.8);
             color: var(--text-main);
             text-decoration: none;
-            padding: 0.75rem 1.5rem;
+            padding: 0.6rem 1.2rem;
             border-radius: 8px;
             border: 1px solid var(--glass-border);
-            font-weight: 600;
+            font-weight: 500;
+            font-size: 0.9rem;
             transition: all 0.3s ease;
             backdrop-filter: blur(10px);
+            cursor: pointer;
         }
         
         .nav-btn:hover {
-            background: rgba(59, 130, 246, 0.2);
-            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
         }
 
         .empty-state {
@@ -193,22 +217,21 @@
             font-size: 1.2rem;
         }
 
-        .stock-details {
-            display: none;
-            max-width: 900px;
+        .stock-details, .global-alerts {
+            max-width: 1000px;
             margin: 0 auto;
             width: 100%;
-            animation: fadeIn 0.3s ease-in-out;
+            animation: fadeSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
         .stock-header {
-            margin-bottom: 2rem;
-            padding-bottom: 2rem;
+            margin-bottom: 2.5rem;
+            padding-bottom: 2.5rem;
             border-bottom: 1px solid var(--glass-border);
             display: flex;
             justify-content: space-between;
@@ -216,17 +239,24 @@
         }
 
         .stock-name-large {
-            font-size: 3rem;
+            font-size: 3.5rem;
             font-weight: 700;
             margin: 0;
-            line-height: 1.1;
+            letter-spacing: -0.02em;
+            line-height: 1;
+            background: linear-gradient(to right, #fff, #a1a1aa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         .stock-price-large {
-            font-size: 2rem;
-            color: var(--success);
+            font-size: 2.5rem;
+            color: var(--text-main);
             font-weight: 600;
-            margin-top: 0.5rem;
+            margin-top: 1rem;
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
         }
 
         .stock-meta {
@@ -236,20 +266,26 @@
         }
 
         .tv-btn {
-            background: #2962FF;
-            color: white;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
             text-decoration: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
+            padding: 0.8rem 1.5rem;
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.95rem;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            transition: background 0.3s;
+            gap: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
 
         .tv-btn:hover {
-            background: #1E4ED8;
+            background: #2962FF;
+            border-color: #2962FF;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(41, 98, 255, 0.4);
         }
 
         .section-title {
@@ -266,22 +302,30 @@
         }
 
         .alert-card {
-            background: var(--glass-bg);
+            background: rgba(24, 24, 27, 0.4);
             border: 1px solid var(--glass-border);
             padding: 1.5rem;
             border-radius: 12px;
             border-left: 4px solid var(--accent);
+            transition: transform 0.2s;
+        }
+        
+        .alert-card:hover {
+            transform: translateX(4px);
+            background: rgba(24, 24, 27, 0.8);
         }
 
         .alert-type-MOMENTUM { border-left-color: #ec4899; }
         .alert-type-BSE { border-left-color: #3b82f6; }
-        .alert-type-NEWS { border-left-color: #8b5cf6; }
+        .alert-type-NEWS { border-left-color: #10b981; }
 
         .alert-header {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
+            margin-bottom: 0.8rem;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
         
         .alert-type {
@@ -353,7 +397,7 @@
 
     <div class="main-content">
         <div class="top-nav">
-            <button class="nav-btn" style="margin-right:1rem;" onclick="showGlobalAlerts()">Global Alerts</button>
+            <button class="nav-btn" onclick="showGlobalAlerts()">Global Alerts</button>
             <a href="/admin" class="nav-btn">Admin Panel</a>
         </div>
 
@@ -391,11 +435,14 @@
             Loading data...
         </div>
 
-        <div class="stock-details" id="stock-details">
+        <div class="stock-details" id="stock-details" style="display: none;">
             <div class="stock-header">
                 <div>
                     <h2 class="stock-name-large" id="detail-symbol">RELIANCE</h2>
-                    <div class="stock-price-large" id="detail-price">₹0.00</div>
+                    <div class="stock-price-large" id="detail-price-container">
+                        <span id="detail-price">₹0.00</span>
+                        <span id="detail-moved" style="font-size: 1.25rem; font-weight: 500;"></span>
+                    </div>
                     <div class="stock-meta" id="detail-meta">Last Fetched: -</div>
                 </div>
                 <div>
@@ -490,6 +537,16 @@
                 // Update Header
                 document.getElementById('detail-symbol').textContent = data.symbol;
                 document.getElementById('detail-price').textContent = data.price ? `₹${data.price}` : 'No Data';
+                
+                const detailMoved = document.getElementById('detail-moved');
+                if (data.change_pct !== undefined && data.change_pct !== null) {
+                    const color = data.change_pct > 0 ? 'var(--success)' : data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)';
+                    const prefix = data.change_pct > 0 ? '+' : '';
+                    detailMoved.textContent = `${prefix}${data.change_pct.toFixed(2)}%`;
+                    detailMoved.style.color = color;
+                } else {
+                    detailMoved.textContent = '';
+                }
                 
                 let metaText = 'Awaiting initial scan';
                 if (data.last_fetched) {

@@ -4,16 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - StockUpdates</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --glass-bg: rgba(30, 41, 59, 0.7);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            /* Zinc 950 base */
+            --bg-dark: #09090b;
+            --glass-bg: rgba(24, 24, 27, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #fafafa;
+            --text-muted: #a1a1aa;
             --accent: #3b82f6;
             --success: #10b981;
+            --warning: #ef4444; /* Changed to a vibrant red/orange for warnings */
             --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
         
@@ -24,25 +26,30 @@
         body {
             font-family: 'Inter', sans-serif;
             background: var(--bg-dark);
-            background-image: radial-gradient(circle at 85% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
-                              radial-gradient(circle at 15% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+            /* Subtle glowing ambient lights in the background */
+            background-image: 
+                radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.08), transparent 40%),
+                radial-gradient(circle at 85% 100%, rgba(16, 185, 129, 0.08), transparent 40%);
+            background-attachment: fixed;
             color: var(--text-main);
             margin: 0;
             padding: 0;
             height: 100vh;
             display: flex;
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* Sidebar Styling */
         .sidebar {
-            width: 350px;
-            min-width: 350px;
+            width: 380px;
+            min-width: 380px;
             border-right: 1px solid var(--glass-border);
             display: flex;
             flex-direction: column;
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(10px);
+            background: rgba(9, 9, 11, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             z-index: 10;
         }
 
@@ -74,22 +81,39 @@
             gap: 0.5rem;
         }
 
-        .watchlist::-webkit-scrollbar {
-            width: 6px;
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
         }
-        .watchlist::-webkit-scrollbar-thumb {
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
             background: rgba(255,255,255,0.1);
-            border-radius: 3px;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.2);
         }
 
         .watchlist-item {
             background: var(--glass-bg);
-            border: 1px solid transparent;
-            padding: 1rem;
+            border: 1px solid var(--glass-border);
+            padding: 1rem 1.2rem;
             border-radius: 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .watchlist-item:hover {
+            background: rgba(39, 39, 42, 0.8);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            border-color: rgba(255,255,255,0.15);
         }
 
         .item-symbol {
@@ -119,7 +143,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            padding: 2rem;
+            padding: 3rem;
             overflow-y: auto;
             position: relative;
         }
@@ -127,24 +151,30 @@
         .top-nav {
             position: absolute;
             top: 2rem;
-            right: 2rem;
+            right: 3rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
 
         .nav-btn {
-            background: var(--glass-bg);
+            background: rgba(24, 24, 27, 0.8);
             color: var(--text-main);
             text-decoration: none;
-            padding: 0.75rem 1.5rem;
+            padding: 0.6rem 1.2rem;
             border-radius: 8px;
             border: 1px solid var(--glass-border);
-            font-weight: 600;
+            font-weight: 500;
+            font-size: 0.9rem;
             transition: all 0.3s ease;
             backdrop-filter: blur(10px);
+            cursor: pointer;
         }
         
         .nav-btn:hover {
-            background: rgba(59, 130, 246, 0.2);
-            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
         }
 
         .admin-form-container {
