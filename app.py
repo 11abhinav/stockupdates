@@ -29,9 +29,6 @@ scheduler.add_job(scanners.news.run_bse_scan, 'interval', minutes=30)
 scheduler.add_job(scanners.tracker.resolve_open_alerts, 'interval', minutes=5)
 scheduler.start()
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)), debug=False)
-
 @app.route('/')
 def index():
     try:
