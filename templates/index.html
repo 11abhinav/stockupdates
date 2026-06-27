@@ -358,9 +358,9 @@
         <div class="sidebar-header">
             <h1 class="sidebar-title">StockUpdates</h1>
             <div class="sort-controls">
-                <button class="sort-btn active" onclick="sortWatchlist('name')">Sort Name</button>
-                <button class="sort-btn" onclick="sortWatchlist('price')">Sort Price</button>
-                <button class="sort-btn" onclick="sortWatchlist('moved')">Sort % Move</button>
+                <button class="sort-btn active" onclick="sortWatchlist('name', this)">Name</button>
+                <button class="sort-btn" onclick="sortWatchlist('price', this)">Price</button>
+                <button class="sort-btn" onclick="sortWatchlist('moved', this)">% Move</button>
             </div>
             <button class="nav-btn" style="width: 100%; margin-top: 1rem; font-size: 0.9rem;" onclick="refreshWatchlist(this)">
                 ↻ Refresh All Prices
@@ -461,22 +461,46 @@
     </div>
 
     <script>
-        function sortWatchlist(criteria) {
+        let currentSort = { criteria: null, asc: true };
+
+        function sortWatchlist(criteria, btn) {
+            if (!btn) btn = event.currentTarget || event.target;
+            
+            // Toggle direction if clicking the same criteria
+            if (currentSort.criteria === criteria) {
+                currentSort.asc = !currentSort.asc;
+            } else {
+                currentSort.criteria = criteria;
+                // Default to descending for numbers, ascending for strings
+                currentSort.asc = (criteria === 'name') ? true : false;
+            }
+
             // Update active button (specifically inside the sidebar)
             const sidebarHeader = document.querySelector('.sidebar-header');
-            sidebarHeader.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            sidebarHeader.querySelectorAll('.sort-btn').forEach(b => {
+                b.classList.remove('active');
+                b.innerHTML = b.innerHTML.replace(' ↑', '').replace(' ↓', '');
+            });
+            btn.classList.add('active');
+            btn.innerHTML += currentSort.asc ? ' ↑' : ' ↓';
 
             const container = document.getElementById('watchlist-container');
             const items = Array.from(container.children);
 
             items.sort((a, b) => {
+                let valA, valB;
                 if (criteria === 'name') {
-                    return a.dataset.symbol.localeCompare(b.dataset.symbol);
+                    valA = a.dataset.symbol;
+                    valB = b.dataset.symbol;
+                    return currentSort.asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
                 } else if (criteria === 'price') {
-                    return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
+                    valA = parseFloat(a.dataset.price);
+                    valB = parseFloat(b.dataset.price);
+                    return currentSort.asc ? valA - valB : valB - valA;
                 } else if (criteria === 'moved') {
-                    return parseFloat(b.dataset.moved) - parseFloat(a.dataset.moved);
+                    valA = parseFloat(a.dataset.moved);
+                    valB = parseFloat(b.dataset.moved);
+                    return currentSort.asc ? valA - valB : valB - valA;
                 }
             });
 
