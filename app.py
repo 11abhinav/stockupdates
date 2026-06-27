@@ -149,6 +149,23 @@ def fetch_and_save_fundamentals(symbol, ticker=None):
         log.warning(f"Failed to fetch/save fundamentals for {symbol}: {e}")
         return None, None
 
+def backfill_missing_fundamental_scores():
+    # Wait a brief moment to let the server start up
+    time.sleep(5)
+    log.info("Starting background backfill of missing fundamental scores...")
+    try:
+        prices = db.get_all_prices()
+        for p in prices:
+            symbol = p['symbol']
+            if p.get('fundamental_score') is None:
+                log.info(f"Backfilling fundamental score for {symbol}...")
+                fetch_and_save_fundamentals(symbol)
+                # Rate limit protection (2s between requests)
+                time.sleep(2)
+        log.info("Background fundamental score backfill complete.")
+    except Exception as e:
+        log.error(f"Error in backfill_missing_fundamental_scores background thread: {e}")
+
 # Setup APScheduler
 # Register Dual Scanners (IST Native)
 import scanners.mf
@@ -206,6 +223,9 @@ scheduler.add_job(
 
 if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
     scheduler.start()
+    
+    # Spawn background thread to backfill missing scores for existing stocks
+    threading.Thread(target=backfill_missing_fundamental_scores, daemon=True).start()
 atexit.register(lambda: scheduler.shutdown(wait=False))
 
 @app.route('/')
