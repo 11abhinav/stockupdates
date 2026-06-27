@@ -157,6 +157,21 @@ def get_watchlist():
         log.error(f"Error fetching watchlist: {e}")
         return []
 
+def get_fundamental_scores(symbol):
+    if not DATABASE_URL:
+        return None, None
+    try:
+        with get_db_connection() as conn:
+            if not conn: return None, None
+            with conn.cursor() as cur:
+                cur.execute("SELECT quality_score, value_score FROM stockupdates.prices WHERE symbol = %s;", (symbol.upper(),))
+                row = cur.fetchone()
+                if row:
+                    return row[0], row[1]
+    except Exception as e:
+        log.error(f"Error fetching fundamental scores for {symbol}: {e}")
+    return None, None
+
 def add_stock(symbol, bse_code=None):
     if not DATABASE_URL:
         return False

@@ -71,24 +71,91 @@ def send_telegram(message):
 
 def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, confidence=None, tags=None, risk_amount=10000):
     """
-    Standardized payload emitter for both scanners.
+    Standardized payload emitter for both scanners with Company Quality (CQS)
+    and Price Attractiveness (PAS) fundamental overlays.
     """
     if trade_plan and trade_plan.invalid:
         log.info(f"[{scanner_name}] REJECTED {symbol}: {trade_plan.reason}")
         return
 
-    log.info(f"[{scanner_name}] ALERT for {symbol}: {message}")
+    # Fetch dynamic CQS / PAS from DB
+    from db import get_fundamental_scores
+    q_score, v_score = get_fundamental_scores(symbol)
+    
+    # Calculate bonuses/penalties
+    q_bonus = 0.0
+    v_bonus = 0.0
+    q_label = "F-Score Pending"
+    v_label = "F-Score Pending"
+    rating_label = "Technical Setup (F-Score Pending)"
+    
+    if q_score is not None:
+        q_score = float(q_score)
+        if q_score >= 8.0:
+            q_bonus = 2.0
+            q_label = "Excellent Business"
+        elif q_score >= 6.0:
+            q_bonus = 1.0
+            q_label = "Good Business"
+        elif q_score >= 4.0:
+            q_label = "Mixed Fundamentals"
+        else:
+            q_label = "Weak Business"
+            
+    if v_score is not None:
+        v_score = float(v_score)
+        if v_score >= 8.0:
+            v_bonus = 1.0
+            v_label = "Attractive Buy Zone"
+        elif v_score >= 6.0:
+            v_label = "Fairly Priced"
+        elif v_score >= 4.0:
+            v_bonus = -1.0
+            v_label = "Expensive / Limited Margin of Safety"
+        else:
+            v_bonus = -1.0
+            v_label = "Avoid at current price"
+
+    # Overlay math onto technical score (technical score defaults to passed-in confidence)
+    tech_score = float(confidence) if confidence is not None else 7.5
+    final_score = round(tech_score + q_bonus + v_bonus, 1)
+    
+    # Construct final overall classification label
+    if q_score is not None and v_score is not None:
+        if q_score >= 8.0 and v_score >= 6.0:
+            rating_label = "🔥 High Quality Breakout"
+        elif q_score >= 6.0 and v_score <= 4.0:
+            rating_label = "⚠️ Strong Business but Expensive"
+        elif q_score <= 4.0 and v_score >= 6.0:
+            rating_label = "💎 Cheap but Weak Fundamentals"
+        elif q_score <= 3.0 or v_score <= 3.0:
+            rating_label = "🚨 Speculative / Avoid at current price"
+        else:
+            rating_label = "📈 Balanced Momentum Setup"
+
+    # Decorate original alert message with clear Quality and Valuation notes
+    overlay_details = []
+    if q_score is not None:
+        overlay_details.append(f"Quality: {q_score}/10 ({q_label})")
+    if v_score is not None:
+        overlay_details.append(f"Valuation: {v_score}/10 ({v_label})")
+        
+    full_message = f"[{rating_label}]\n{message}"
+    if overlay_details:
+        full_message += "\n" + " | ".join(overlay_details)
+
+    log.info(f"[{scanner_name}] ALERT for {symbol}: {full_message}")
     
     pos_size = calculate_position_size(trade_plan.entry, trade_plan.stop_loss, risk_amount) if trade_plan else None
     
     save_alert(
         symbol=symbol,
         alert_type=scanner_name.upper(),
-        message=message,
+        message=full_message,
         entry_price=trade_plan.entry if trade_plan else None,
         target_price=trade_plan.target2 if trade_plan else None,  # Using T2 as primary DB target for legacy
         stop_loss=trade_plan.stop_loss if trade_plan else None,
-        confidence=confidence,
+        confidence=final_score,
         trigger_type=scanner_name,
         tags=tags,
         t1_price=trade_plan.target1 if trade_plan else None,
@@ -105,18 +172,34 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
         reason=trade_plan.reason if trade_plan else "Legacy alert"
     )
     
-    # Send Telegram
-    msg = f"🚨 <b>{scanner_name.upper()} | {symbol}</b>\n\n{message}\n"
-    if trade_plan:
-        msg += f"<b>Entry:</b> {trade_plan.entry}\n"
-        msg += f"<b>SL:</b> {trade_plan.stop_loss} <i>(Risk: {trade_plan.risk_per_share})</i>\n"
-        msg += f"<b>T1 (1.0R+):</b> {trade_plan.target1}\n"
-        msg += f"<b>T2 (2.0R+):</b> {trade_plan.target2}\n"
-        msg += f"<b>T3/Trail:</b> {trade_plan.target3}\n"
-        if pos_size:
-            msg += f"<b>Qty (₹10k Risk):</b> {pos_size} shares\n"
-        msg += f"<b>Trail:</b> {trade_plan.trail_mode}\n"
+    # Send Telegram message
+    msg = f"🚨 <b>{scanner_name.upper()} | {symbol}</b>\n"
+    msg += f"<b>Rating:</b> {rating_label}\n\n"
+    msg += f"{message}\n\n"
+    
+    msg += f"<b>Fundamentals:</b>\n"
+    if q_score is not None:
+        msg += f"• Company Quality: <b>{q_score}/10</b> ({q_label})\n"
+    else:
+        msg += f"• Company Quality: <i>Pending calculation</i>\n"
         
-    if confidence: msg += f"\nConf: {confidence}/10"
+    if v_score is not None:
+        msg += f"• Price Valuation: <b>{v_score}/10</b> ({v_label})\n"
+    else:
+        msg += f"• Price Valuation: <i>Pending calculation</i>\n"
+        
+    if trade_plan:
+        msg += f"\n<b>Trade Parameters:</b>\n"
+        msg += f"• Entry: {trade_plan.entry}\n"
+        msg += f"• Stop Loss: {trade_plan.stop_loss} <i>(Risk: {trade_plan.risk_per_share})</i>\n"
+        msg += f"• Target 1 (1.0R): {trade_plan.target1}\n"
+        msg += f"• Target 2 (2.0R): {trade_plan.target2}\n"
+        msg += f"• Target 3 (Trail): {trade_plan.target3}\n"
+        if pos_size:
+            msg += f"• Quantity (₹10k Risk): {pos_size} shares\n"
+        msg += f"• Trail Strategy: {trade_plan.trail_mode}\n"
+        
+    msg += f"\n<b>Final Alert Score: {final_score}/10</b>\n"
+    msg += f"<i>Math: Tech {tech_score} + Quality Bonus {q_bonus:+} + Value Bonus {v_bonus:+}</i>"
     
     send_telegram(msg)
