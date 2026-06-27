@@ -295,31 +295,6 @@ def admin():
         
     return render_template('admin.html', watchlist=prices)
 
-@app.route('/api/inject_dummy')
-def inject_dummy():
-    # MF Ladder
-    db.save_alert('DUMMY', 'MF_QUALIFYING', 'Dummy Stock has qualified for the MF Ladder strategy after showing consistent multi-timeframe strength.', 
-                  entry_price=1500.0, stop_loss=1450.0, t1_price=1550.0, t2_price=1600.0, t3_price=1650.0, 
-                  risk_per_share=50.0, position_size_hint=200, trail_mode='Trail SL to Entry after T1', rr_to_t1=1.0, rr_to_t2=2.0)
-    
-    # BSE Only
-    db.save_alert('DUMMY', 'BSE', 'New Corporate Announcement on BSE: Board approves stock split 1:5 and special dividend.')
-    
-    # News Only
-    db.save_alert('DUMMY', 'NEWS', 'Dummy Corp announces massive strategic partnership with OpenAI to integrate AI into their core product suite.')
-    
-    # Momentum Only
-    db.save_alert('DUMMY', 'MOMENTUM', 'Strong momentum breakout detected on high relative volume (3.5x average). RSI crossing 70.', 
-                  entry_price=210.5, stop_loss=200.0, t1_price=220.0, t2_price=230.0, t3_price=240.0, 
-                  risk_per_share=10.5, position_size_hint=950, trail_mode='Strict bar-by-bar trailing', rr_to_t1=0.9, rr_to_t2=1.85)
-    
-    # MF Breakouts
-    db.save_alert('DUMMY', 'MF', 'Multi-factor Breakout: Stock is breaking out of a 5-month Darvas box with institutional buying.', 
-                  entry_price=3450.0, stop_loss=3350.0, t1_price=3550.0, t2_price=3650.0, t3_price=3800.0, 
-                  risk_per_share=100.0, position_size_hint=100, trail_mode=None, rr_to_t1=1.0, rr_to_t2=2.0)
-    
-    return redirect('/')
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)

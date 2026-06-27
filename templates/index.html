@@ -99,20 +99,41 @@
                     </div>
                     <div class="alert-body">{{ alert.message }}</div>
                     {% if alert.entry_price or alert.stop_loss %}
-                    <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; font-size: 0.9rem; background: rgba(0,0,0,0.25); padding: 1rem; border-radius: 8px; border: 1px solid var(--glass-border);">
-                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                            {% if alert.entry_price %}<div><span style="color:var(--text-muted)">Entry:</span> <strong style="color:var(--text-main)">₹{{ "%.2f"|format(alert.entry_price) }}</strong></div>{% endif %}
-                            {% if alert.stop_loss %}<div><span style="color:var(--text-muted)">SL:</span> <strong style="color:var(--warning)">₹{{ "%.2f"|format(alert.stop_loss) }}</strong> {% if alert.risk_per_share %}<span style="font-size:0.75rem; color:var(--warning)">(Risk: ₹{{ "%.2f"|format(alert.risk_per_share) }})</span>{% endif %}</div>{% endif %}
+                    <div style="margin-top: 1.5rem; background: var(--bg-surface-hover); border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm);">
+                        <div style="padding: 12px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Execution Plan</span>
+                            {% if alert.position_size_hint %}<span style="font-size: 0.75rem; background: rgba(37,99,235,0.1); color: var(--accent); padding: 4px 8px; border-radius: 6px; font-weight: 600;">Qty for ₹10k Risk: {{ alert.position_size_hint }}</span>{% endif %}
                         </div>
-                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                            {% if alert.t1_price %}<div><span style="color:var(--text-muted)">T1 ({{ alert.rr_to_t1 }}R):</span> <strong style="color:var(--success)">₹{{ "%.2f"|format(alert.t1_price) }}</strong></div>{% endif %}
-                            {% if alert.t2_price %}<div><span style="color:var(--text-muted)">T2 ({{ alert.rr_to_t2 }}R):</span> <strong style="color:var(--success)">₹{{ "%.2f"|format(alert.t2_price) }}</strong></div>{% endif %}
-                            {% if alert.t3_price %}<div><span style="color:var(--text-muted)">T3:</span> <strong style="color:var(--success)">₹{{ "%.2f"|format(alert.t3_price) }}</strong></div>{% endif %}
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; background: var(--glass-border);">
+                            {% if alert.entry_price %}
+                            <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Entry Zone</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); font-family: 'Outfit', sans-serif;">₹{{ "%.2f"|format(alert.entry_price) }}</div>
+                            </div>
+                            {% endif %}
+                            {% if alert.stop_loss %}
+                            <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Stop Loss</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: var(--warning); font-family: 'Outfit', sans-serif;">₹{{ "%.2f"|format(alert.stop_loss) }}</div>
+                                {% if alert.risk_per_share %}<div style="font-size: 0.7rem; color: var(--warning); margin-top: 2px; opacity: 0.8;">Risk: ₹{{ "%.2f"|format(alert.risk_per_share) }}</div>{% endif %}
+                            </div>
+                            {% endif %}
+                            {% if alert.t1_price %}
+                            <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Target 1 {% if alert.rr_to_t1 %}({{ alert.rr_to_t1 }}R){% endif %}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: var(--success); font-family: 'Outfit', sans-serif;">₹{{ "%.2f"|format(alert.t1_price) }}</div>
+                            </div>
+                            {% endif %}
+                            {% if alert.t2_price %}
+                            <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Target 2 {% if alert.rr_to_t2 %}({{ alert.rr_to_t2 }}R){% endif %}</div>
+                                <div style="font-size: 1.1rem; font-weight: 700; color: var(--success); font-family: 'Outfit', sans-serif;">₹{{ "%.2f"|format(alert.t2_price) }}</div>
+                            </div>
+                            {% endif %}
                         </div>
-                        {% if alert.trail_mode or alert.position_size_hint %}
-                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.5rem; margin-top: 0.2rem;">
-                            {% if alert.position_size_hint %}<div><span style="color:var(--text-muted)">Qty (₹10k risk):</span> <strong style="color:var(--accent-hover)">{{ alert.position_size_hint }}</strong></div>{% endif %}
-                            {% if alert.trail_mode %}<div style="flex:1;"><span style="color:var(--text-muted)">Trail:</span> {{ alert.trail_mode }}</div>{% endif %}
+                        {% if alert.trail_mode %}
+                        <div style="padding: 12px 16px; background: var(--bg-surface); border-top: 1px solid var(--glass-border); font-size: 0.85rem; color: var(--text-main);">
+                            <strong style="color: var(--text-muted);">Trade Management:</strong> {{ alert.trail_mode }}
                         </div>
                         {% endif %}
                     </div>
@@ -363,20 +384,37 @@
                         
                         let planHtml = '';
                         if (alert.entry_price || alert.stop_loss) {
-                            planHtml = `<div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; font-size: 0.9rem; background: rgba(0,0,0,0.25); padding: 1rem; border-radius: 8px; border: 1px solid var(--glass-border);">
-                                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                                    ${alert.entry_price ? `<div><span style="color:var(--text-muted)">Entry:</span> <strong style="color:var(--text-main)">₹${parseFloat(alert.entry_price).toFixed(2)}</strong></div>` : ''}
-                                    ${alert.stop_loss ? `<div><span style="color:var(--text-muted)">SL:</span> <strong style="color:var(--warning)">₹${parseFloat(alert.stop_loss).toFixed(2)}</strong> ${alert.risk_per_share ? `<span style="font-size:0.75rem; color:var(--warning)">(Risk: ₹${parseFloat(alert.risk_per_share).toFixed(2)})</span>` : ''}</div>` : ''}
+                            planHtml = `<div style="margin-top: 1.5rem; background: var(--bg-surface-hover); border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm);">
+                                <div style="padding: 12px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Execution Plan</span>
+                                    ${alert.position_size_hint ? `<span style="font-size: 0.75rem; background: rgba(37,99,235,0.1); color: var(--accent); padding: 4px 8px; border-radius: 6px; font-weight: 600;">Qty for ₹10k Risk: ${alert.position_size_hint}</span>` : ''}
                                 </div>
-                                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
-                                    ${alert.t1_price ? `<div><span style="color:var(--text-muted)">T1 (${alert.rr_to_t1 || 1.0}R):</span> <strong style="color:var(--success)">₹${parseFloat(alert.t1_price).toFixed(2)}</strong></div>` : ''}
-                                    ${alert.t2_price ? `<div><span style="color:var(--text-muted)">T2 (${alert.rr_to_t2 || 2.0}R):</span> <strong style="color:var(--success)">₹${parseFloat(alert.t2_price).toFixed(2)}</strong></div>` : ''}
-                                    ${alert.t3_price ? `<div><span style="color:var(--text-muted)">T3:</span> <strong style="color:var(--success)">₹${parseFloat(alert.t3_price).toFixed(2)}</strong></div>` : ''}
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; background: var(--glass-border);">
+                                    ${alert.entry_price ? `
+                                    <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Entry Zone</div>
+                                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-main); font-family: 'Outfit', sans-serif;">₹${parseFloat(alert.entry_price).toFixed(2)}</div>
+                                    </div>` : ''}
+                                    ${alert.stop_loss ? `
+                                    <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Stop Loss</div>
+                                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--warning); font-family: 'Outfit', sans-serif;">₹${parseFloat(alert.stop_loss).toFixed(2)}</div>
+                                        ${alert.risk_per_share ? `<div style="font-size: 0.7rem; color: var(--warning); margin-top: 2px; opacity: 0.8;">Risk: ₹${parseFloat(alert.risk_per_share).toFixed(2)}</div>` : ''}
+                                    </div>` : ''}
+                                    ${alert.t1_price ? `
+                                    <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Target 1 ${alert.rr_to_t1 ? `(${alert.rr_to_t1}R)` : ''}</div>
+                                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--success); font-family: 'Outfit', sans-serif;">₹${parseFloat(alert.t1_price).toFixed(2)}</div>
+                                    </div>` : ''}
+                                    ${alert.t2_price ? `
+                                    <div style="background: var(--bg-surface); padding: 12px 16px;">
+                                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; text-transform: uppercase;">Target 2 ${alert.rr_to_t2 ? `(${alert.rr_to_t2}R)` : ''}</div>
+                                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--success); font-family: 'Outfit', sans-serif;">₹${parseFloat(alert.t2_price).toFixed(2)}</div>
+                                    </div>` : ''}
                                 </div>
-                                ${(alert.trail_mode || alert.position_size_hint) ? `
-                                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.5rem; margin-top: 0.2rem;">
-                                    ${alert.position_size_hint ? `<div><span style="color:var(--text-muted)">Qty (₹10k risk):</span> <strong style="color:var(--accent-hover)">${alert.position_size_hint}</strong></div>` : ''}
-                                    ${alert.trail_mode ? `<div style="flex:1;"><span style="color:var(--text-muted)">Trail:</span> ${alert.trail_mode}</div>` : ''}
+                                ${alert.trail_mode ? `
+                                <div style="padding: 12px 16px; background: var(--bg-surface); border-top: 1px solid var(--glass-border); font-size: 0.85rem; color: var(--text-main);">
+                                    <strong style="color: var(--text-muted);">Trade Management:</strong> ${alert.trail_mode}
                                 </div>` : ''}
                             </div>`;
                         }
