@@ -4,378 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StockUpdates Intelligence</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            /* Zinc 950 base */
-            --bg-dark: #09090b;
-            --glass-bg: rgba(24, 24, 27, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --text-main: #fafafa;
-            --text-muted: #a1a1aa;
-            --accent: #3b82f6;
-            --success: #10b981;
-            --warning: #ef4444; /* Changed to a vibrant red/orange for warnings */
-            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
-        
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--bg-dark);
-            /* Subtle glowing ambient lights in the background */
-            background-image: 
-                radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.08), transparent 40%),
-                radial-gradient(circle at 85% 100%, rgba(16, 185, 129, 0.08), transparent 40%);
-            background-attachment: fixed;
-            color: var(--text-main);
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* Sidebar Styling */
-        .sidebar {
-            width: 380px;
-            min-width: 380px;
-            border-right: 1px solid var(--glass-border);
-            display: flex;
-            flex-direction: column;
-            background: rgba(9, 9, 11, 0.7);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            z-index: 10;
-        }
-
-        .sidebar-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--glass-border);
-        }
-
-        .sidebar-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(to right, #60a5fa, #34d399);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin: 0 0 1rem 0;
-        }
-
-        .sort-controls {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .sort-btn {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid var(--glass-border);
-            color: var(--text-muted);
-            padding: 0.6rem 0.75rem;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.75rem;
-            font-weight: 500;
-            flex: 1;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .sort-btn.active, .sort-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
-        }
-
-        .watchlist {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 4px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.2);
-        }
-
-        .watchlist-item {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            padding: 1rem 1.2rem;
-            border-radius: 12px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            flex-shrink: 0; /* Prevents item from squishing when list is long */
-        }
-
-        .watchlist-item:hover {
-            background: rgba(39, 39, 42, 0.8);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            border-color: rgba(255,255,255,0.15);
-        }
-
-        .watchlist-item.active {
-            background: rgba(59, 130, 246, 0.1);
-            border-color: rgba(59, 130, 246, 0.4);
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
-        }
-
-        .item-symbol {
-            font-weight: 600;
-            font-size: 1.1rem;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .alert-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--warning);
-            border-radius: 50%;
-            display: inline-block;
-            box-shadow: 0 0 6px var(--warning);
-        }
-
-        .item-price {
-            color: var(--success);
-            font-weight: 600;
-        }
-
-        .item-price.no-price {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        .delete-btn {
-            background: transparent;
-            color: var(--text-muted);
-            border: none;
-            cursor: pointer;
-            padding: 4px;
-            margin-right: 6px;
-            font-size: 1.1rem;
-            line-height: 1;
-            transition: color 0.2s;
-            border-radius: 4px;
-            display: none; /* Hidden by default */
-        }
-        .delete-btn:hover {
-            color: var(--warning);
-            background: rgba(239, 68, 68, 0.1);
-        }
-        
-        /* When watchlist container has edit-mode class, show the delete buttons */
-        .watchlist.edit-mode .delete-btn {
-            display: inline-block;
-        }
-
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 3rem;
-            overflow-y: auto;
-            position: relative;
-        }
-
-        .top-nav {
-            position: absolute;
-            top: 2rem;
-            right: 3rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            z-index: 50;
-        }
-
-        .nav-btn {
-            background: rgba(24, 24, 27, 0.8);
-            color: var(--text-main);
-            text-decoration: none;
-            padding: 0.6rem 1.2rem;
-            border-radius: 8px;
-            border: 1px solid var(--glass-border);
-            font-weight: 500;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-            cursor: pointer;
-        }
-        
-        .nav-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.2);
-            transform: translateY(-1px);
-        }
-
-        .empty-state {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--text-muted);
-            font-size: 1.2rem;
-        }
-
-        .stock-details, .global-alerts {
-            max-width: 1000px;
-            margin: 0 auto;
-            width: 100%;
-            animation: fadeSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes fadeSlideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .stock-header {
-            margin-bottom: 2.5rem;
-            padding-bottom: 2.5rem;
-            border-bottom: 1px solid var(--glass-border);
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-        }
-
-        .stock-name-large {
-            font-size: 3.5rem;
-            font-weight: 700;
-            margin: 0;
-            letter-spacing: -0.02em;
-            line-height: 1;
-            background: linear-gradient(to right, #fff, #a1a1aa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .stock-price-large {
-            font-size: 2.5rem;
-            color: var(--text-main);
-            font-weight: 600;
-            margin-top: 1rem;
-            display: flex;
-            align-items: baseline;
-            gap: 1rem;
-        }
-
-        .stock-meta {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-        }
-
-        .tv-btn {
-            background: rgba(255, 255, 255, 0.05);
-            color: #fff;
-            text-decoration: none;
-            padding: 0.8rem 1.5rem;
-            border-radius: 10px;
-            font-weight: 500;
-            font-size: 0.95rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-
-        .tv-btn:hover {
-            background: #2962FF;
-            border-color: #2962FF;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(41, 98, 255, 0.4);
-        }
-
-        .section-title {
-            font-size: 1.25rem;
-            margin-bottom: 1rem;
-            color: #cbd5e1;
-            font-weight: 600;
-        }
-
-        .alerts-feed {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .alert-card {
-            background: rgba(24, 24, 27, 0.4);
-            border: 1px solid var(--glass-border);
-            padding: 1.5rem;
-            border-radius: 12px;
-            border-left: 4px solid var(--accent);
-            transition: transform 0.2s;
-        }
-        
-        .alert-card:hover {
-            transform: translateX(4px);
-            background: rgba(24, 24, 27, 0.8);
-        }
-
-        .alert-type-MOMENTUM { border-left-color: #ec4899; }
-        .alert-type-BSE { border-left-color: #3b82f6; }
-        .alert-type-NEWS { border-left-color: #10b981; }
-
-        .alert-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.8rem;
-            font-size: 0.85rem;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-        }
-        
-        .alert-type {
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .alert-time {
-            color: var(--text-muted);
-        }
-
-        .alert-body {
-            color: #cbd5e1;
-            line-height: 1.5;
-            white-space: pre-wrap;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 2rem;
-            color: var(--text-muted);
-            display: none;
-        }
-
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
 </head>
 <body>
 
@@ -410,11 +39,11 @@
                     {% if stock['latest_price'] %}
                         <div class="price-val">₹{{ stock['latest_price'] }}</div>
                         {% if stock['change_pct'] != None %}
-                            <div style="font-size: 0.8rem; margin-top: 2px; color: {{ 'var(--success)' if stock['change_pct'] > 0 else 'var(--warning)' if stock['change_pct'] < 0 else 'var(--text-muted)' }}">
+                            <div class="price-change" style="color: {{ 'var(--success)' if stock['change_pct'] > 0 else 'var(--warning)' if stock['change_pct'] < 0 else 'var(--text-muted)' }}">
                                 {{ '+' if stock['change_pct'] > 0 else '' }}{{ "%.2f"|format(stock['change_pct']) }}%
                             </div>
                         {% endif %}
-                        <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                        <div class="price-time">
                             {{ stock['last_fetched'].strftime('%m-%d %H:%M') if stock['last_fetched'] else '' }}
                         </div>
                     {% else %}
@@ -502,9 +131,9 @@
             <div class="stock-header">
                 <div>
                     <h2 class="stock-name-large" id="detail-symbol">RELIANCE</h2>
-                    <div class="stock-price-large" id="detail-price-container">
-                        <span id="detail-price">₹0.00</span>
-                        <span id="detail-moved" style="font-size: 1.25rem; font-weight: 500;"></span>
+                    <div class="stock-price-large-container" id="detail-price-container">
+                        <span class="stock-price-large" id="detail-price">₹0.00</span>
+                        <span class="stock-moved-large" id="detail-moved"></span>
                     </div>
                     <div class="stock-meta" id="detail-meta">Last Fetched: -</div>
                 </div>
@@ -691,14 +320,14 @@
                     
                     items.forEach(item => {
                         fundGrid.innerHTML += `
-                            <div style="background: rgba(24, 24, 27, 0.4); border: 1px solid var(--glass-border); padding: 1rem; border-radius: 8px;">
-                                <div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">${item.label}</div>
-                                <div style="font-size: 1.1rem; font-weight: 600; color: var(--text-main);">${item.value}</div>
+                            <div class="fundamental-card">
+                                <div class="fundamental-label">${item.label}</div>
+                                <div class="fundamental-value">${item.value}</div>
                             </div>
                         `;
                     });
                 } else {
-                    fundGrid.innerHTML = '<div style="color:var(--text-muted); grid-column: 1/-1;">No fundamental data available.</div>';
+                    fundGrid.innerHTML = '<div class="empty-state" style="grid-column: 1/-1;">No fundamental data available.</div>';
                 }
 
                 // Update News
@@ -708,19 +337,17 @@
                     data.news.forEach(item => {
                         const date = item.time ? new Date(item.time * 1000).toLocaleString() : '';
                         newsFeed.innerHTML += `
-                            <a href="${item.link}" target="_blank" style="text-decoration: none; color: inherit;">
-                                <div class="alert-card" style="border-left: 4px solid #3b82f6; display: flex; flex-direction: column; gap: 0.5rem;">
-                                    <div style="font-weight: 600; font-size: 1rem; color: #fff;">${item.title}</div>
-                                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
-                                        <span>${item.publisher || 'News'}</span>
-                                        <span>${date}</span>
-                                    </div>
+                            <a href="${item.link}" target="_blank" class="alert-card" data-type="NEWS" style="display: flex; flex-direction: column; gap: 0.5rem; text-decoration: none;">
+                                <div class="news-title">${item.title}</div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+                                    <span style="font-weight: 600; color: #a855f7;">${item.publisher || 'News'}</span>
+                                    <span>${date}</span>
                                 </div>
                             </a>
                         `;
                     });
                 } else {
-                    newsFeed.innerHTML = '<div style="color:var(--text-muted)">No recent news found for this stock.</div>';
+                    newsFeed.innerHTML = '<div class="empty-state">No recent news found for this stock.</div>';
                 }
 
                 // Update Alerts
@@ -792,13 +419,13 @@
                                 const changePct = parseFloat(data.change_pct);
                                 const movedColor = changePct > 0 ? 'var(--success)' : changePct < 0 ? 'var(--warning)' : 'var(--text-muted)';
                                 const prefix = changePct > 0 ? '+' : '';
-                                movedHtml = `<div style="font-size: 0.8rem; margin-top: 2px; color: ${movedColor}">${prefix}${changePct.toFixed(2)}%</div>`;
+                                movedHtml = `<div class="price-change" style="color: ${movedColor}">${prefix}${changePct.toFixed(2)}%</div>`;
                             }
                             
                             priceDiv.innerHTML = `
                                 <div class="price-val">₹${data.price}</div>
                                 ${movedHtml}
-                                <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">${timeStr}</div>
+                                <div class="price-time">${timeStr}</div>
                             `;
                             priceDiv.classList.remove('no-price');
                             element.dataset.price = data.price; // Update dataset for sorting

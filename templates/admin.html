@@ -5,134 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - StockUpdates</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            /* Zinc 950 base */
-            --bg-dark: #09090b;
-            --glass-bg: rgba(24, 24, 27, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --text-main: #fafafa;
-            --text-muted: #a1a1aa;
-            --accent: #3b82f6;
-            --success: #10b981;
-            --warning: #ef4444; /* Changed to a vibrant red/orange for warnings */
-            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
-        
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--bg-dark);
-            /* Subtle glowing ambient lights in the background */
-            background-image: 
-                radial-gradient(circle at 15% 0%, rgba(59, 130, 246, 0.08), transparent 40%),
-                radial-gradient(circle at 85% 100%, rgba(16, 185, 129, 0.08), transparent 40%);
-            background-attachment: fixed;
-            color: var(--text-main);
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            display: flex;
-            overflow: hidden;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* Sidebar Styling */
-        .sidebar {
-            width: 380px;
-            min-width: 380px;
-            border-right: 1px solid var(--glass-border);
-            display: flex;
-            flex-direction: column;
-            background: rgba(9, 9, 11, 0.7);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            z-index: 10;
-        }
-
-        .sidebar-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--glass-border);
-        }
-
-        .sidebar-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(to right, #60a5fa, #34d399);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin: 0 0 0.5rem 0;
-        }
-        
-        .sidebar-subtitle {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        .watchlist {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 4px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255,255,255,0.2);
-        }
-
-        .watchlist-item {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            padding: 1rem 1.2rem;
-            border-radius: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-            flex-shrink: 0;
-        }
-        
-        .watchlist-item:hover {
-            background: rgba(39, 39, 42, 0.8);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            border-color: rgba(255,255,255,0.15);
-        }
-
-        .item-symbol {
-            font-weight: 600;
-            font-size: 1.1rem;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .alert-dot {
-            width: 8px;
-            height: 8px;
-            background-color: var(--success);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--success);
-        }
-    </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
 </head>
 <body>
@@ -172,11 +44,11 @@
                     {% if item.latest_price %}
                         <div class="price-val">₹{{ item.latest_price }}</div>
                         {% if item.change_pct != None %}
-                            <div style="font-size: 0.8rem; margin-top: 2px; color: {{ 'var(--success)' if item.change_pct > 0 else 'var(--warning)' if item.change_pct < 0 else 'var(--text-muted)' }}">
+                            <div class="price-change" style="color: {{ 'var(--success)' if item.change_pct > 0 else 'var(--warning)' if item.change_pct < 0 else 'var(--text-muted)' }}">
                                 {{ '+' if item.change_pct > 0 else '' }}{{ "%.2f"|format(item.change_pct) }}%
                             </div>
                         {% endif %}
-                        <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                        <div class="price-time">
                             {{ item.last_fetched.strftime('%m-%d %H:%M') if item.last_fetched else '' }}
                         </div>
                     {% else %}
