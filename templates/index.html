@@ -540,9 +540,10 @@
                 
                 const detailMoved = document.getElementById('detail-moved');
                 if (data.change_pct !== undefined && data.change_pct !== null) {
-                    const color = data.change_pct > 0 ? 'var(--success)' : data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)';
-                    const prefix = data.change_pct > 0 ? '+' : '';
-                    detailMoved.textContent = `${prefix}${data.change_pct.toFixed(2)}%`;
+                    const changePct = parseFloat(data.change_pct);
+                    const color = changePct > 0 ? 'var(--success)' : changePct < 0 ? 'var(--warning)' : 'var(--text-muted)';
+                    const prefix = changePct > 0 ? '+' : '';
+                    detailMoved.textContent = `${prefix}${changePct.toFixed(2)}%`;
                     detailMoved.style.color = color;
                 } else {
                     detailMoved.textContent = '';
@@ -591,9 +592,10 @@
                             
                             let movedHtml = '';
                             if (data.change_pct !== undefined && data.change_pct !== null) {
-                                const movedColor = data.change_pct > 0 ? 'var(--success)' : data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)';
-                                const prefix = data.change_pct > 0 ? '+' : '';
-                                movedHtml = `<div style="font-size: 0.8rem; margin-top: 2px; color: ${movedColor}">${prefix}${data.change_pct.toFixed(2)}%</div>`;
+                                const changePct = parseFloat(data.change_pct);
+                                const movedColor = changePct > 0 ? 'var(--success)' : changePct < 0 ? 'var(--warning)' : 'var(--text-muted)';
+                                const prefix = changePct > 0 ? '+' : '';
+                                movedHtml = `<div style="font-size: 0.8rem; margin-top: 2px; color: ${movedColor}">${prefix}${changePct.toFixed(2)}%</div>`;
                             }
                             
                             priceDiv.innerHTML = `
