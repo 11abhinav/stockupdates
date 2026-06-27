@@ -4,14 +4,32 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
+from psycopg2 import pool as pg_pool
+from contextlib import contextmanager
+
 log = logging.getLogger("momentum_bot.db")
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def get_connection():
-    if not DATABASE_URL:
-        raise ValueError("DATABASE_URL environment variable is not set.")
-    return psycopg2.connect(DATABASE_URL)
+_pool = None
+
+def get_pool():
+    global _pool
+    if _pool is None and DATABASE_URL:
+        _pool = pg_pool.ThreadedConnectionPool(1, 15, DATABASE_URL)
+    return _pool
+
+@contextmanager
+def get_db_connection():
+    pool = get_pool()
+    if not pool:
+        yield None
+        return
+    conn = pool.getconn()
+    try:
+        yield conn
+    finally:
+        pool.putconn(conn)
 
 def init_db():
     if not DATABASE_URL:
@@ -19,7 +37,8 @@ def init_db():
         return
 
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return
             with conn.cursor() as cur:
                 # Create schema
                 cur.execute("CREATE SCHEMA IF NOT EXISTS stockupdates;")
@@ -91,6 +110,22 @@ def init_db():
                 ]
                 for query in alter_queries:
                     cur.execute(query)
+                
+                # Add index
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_alerts_symbol_status ON stockupdates.alerts(symbol, status);")
+                
+                # Add check constraint for highest_hit safely
+                cur.execute("""
+                    DO $$ 
+                    BEGIN 
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint WHERE conname = 'chk_highest_hit'
+                        ) THEN 
+                            ALTER TABLE stockupdates.alerts ADD CONSTRAINT chk_highest_hit CHECK (highest_hit IN ('T1', 'T2', 'T3', 'SL', NULL));
+                        END IF;
+                    END $$;
+                """)
+                
                 conn.commit()
                 log.info("Database initialized successfully.")
     except Exception as e:
@@ -100,7 +135,8 @@ def get_watchlist():
     if not DATABASE_URL:
         return []
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT symbol, bse_code FROM stockupdates.watchlist ORDER BY symbol;")
                 return cur.fetchall()
@@ -112,7 +148,8 @@ def add_stock(symbol, bse_code=None):
     if not DATABASE_URL:
         return False
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return False
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.watchlist (symbol, bse_code)
@@ -129,7 +166,8 @@ def remove_stock(symbol):
     if not DATABASE_URL:
         return False
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return False
             with conn.cursor() as cur:
                 # We also might want to remove it from prices table just in case,
                 # but removing from watchlist is the primary goal.
@@ -146,7 +184,8 @@ def update_price(symbol, price, change_pct=None):
     if not DATABASE_URL:
         return
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.prices (symbol, latest_price, change_pct, last_fetched)
@@ -164,7 +203,8 @@ def get_all_prices():
     if not DATABASE_URL:
         return []
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched 
@@ -186,7 +226,8 @@ def save_alert(symbol, alert_type, message, entry_price=None, target_price=None,
         return
     import json
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.alerts (
@@ -199,7 +240,7 @@ def save_alert(symbol, alert_type, message, entry_price=None, target_price=None,
                     json.dumps(tags) if tags else None,
                     t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, rr_to_t3, trail_mode,
                     position_size_hint, setup_expiry_minutes, invalid, reason, 
-                    'OPEN' if entry_price else None
+                    'OPEN' if entry_price else 'INFO'
                 ))
                 conn.commit()
     except Exception as e:
@@ -210,7 +251,8 @@ def get_open_alerts():
     if not DATABASE_URL:
         return []
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return []
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT id, symbol, alert_type, message, created_at, 
@@ -229,13 +271,15 @@ def update_alert_status(alert_id, new_status, highest_hit=None):
     if not DATABASE_URL:
         return
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE stockupdates.alerts
-                    SET status = %s, highest_hit = COALESCE(%s, highest_hit), resolved_at = CURRENT_TIMESTAMP
+                    SET status = %s, highest_hit = COALESCE(%s, highest_hit), 
+                        resolved_at = CASE WHEN %s IN ('SL_HIT', 'T3_HIT', 'CLOSED_WIN', 'CLOSED_LOSS', 'EXPIRED') THEN CURRENT_TIMESTAMP ELSE resolved_at END
                     WHERE id = %s
-                """, (new_status, highest_hit, alert_id))
+                """, (new_status, highest_hit, new_status, alert_id))
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating alert {alert_id}: {e}")
@@ -244,7 +288,8 @@ def get_recent_alerts(limit=50):
     if not DATABASE_URL:
         return []
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT id, symbol, alert_type, message, created_at,
@@ -264,7 +309,8 @@ def get_stock_alerts(symbol, limit=50):
     if not DATABASE_URL:
         return []
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT id, symbol, alert_type, message, created_at,

@@ -2,7 +2,13 @@ import os
 import logging
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import atexit
+from zoneinfo import ZoneInfo
+import time
 import db
+
+_alerts_cache = {"data": [], "timestamp": 0}
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -23,21 +29,42 @@ import scanners.tracker
 
 # Start Background Scheduler
 scheduler = BackgroundScheduler()
-scheduler.add_job(scanners.mf.run, 'interval', minutes=30)
-scheduler.add_job(scanners.momentum.run, 'interval', minutes=5)
-scheduler.add_job(scanners.news.run_bse_scan, 'interval', minutes=30)
-scheduler.add_job(scanners.tracker.resolve_open_alerts, 'interval', minutes=5)
+ist_tz = ZoneInfo("Asia/Kolkata")
+
+scheduler.add_job(
+    scanners.mf.run, 
+    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/30', timezone=ist_tz)
+)
+scheduler.add_job(
+    scanners.momentum.run, 
+    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/5', timezone=ist_tz)
+)
+scheduler.add_job(
+    scanners.news.run_bse_scan, 
+    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='15,45', timezone=ist_tz)
+)
+scheduler.add_job(
+    scanners.tracker.resolve_open_alerts, 
+    CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*/5', timezone=ist_tz)
+)
 scheduler.start()
+atexit.register(lambda: scheduler.shutdown(wait=False))
 
 @app.route('/')
 def index():
     try:
         prices = db.get_all_prices()
-        recent_alerts = db.get_recent_alerts(200)
         
+        now = time.time()
+        if now - _alerts_cache["timestamp"] < 30 and _alerts_cache["data"]:
+            recent_alerts = _alerts_cache["data"]
+        else:
+            recent_alerts = db.get_recent_alerts(200)
+            _alerts_cache["data"] = recent_alerts
+            _alerts_cache["timestamp"] = now
+            
         alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
         
-        from zoneinfo import ZoneInfo
         ist = ZoneInfo("Asia/Kolkata")
         utc = ZoneInfo("UTC")
         
@@ -278,7 +305,6 @@ def admin():
     recent_alerts = db.get_recent_alerts(200)
     alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
     
-    from zoneinfo import ZoneInfo
     ist = ZoneInfo("Asia/Kolkata")
     utc = ZoneInfo("UTC")
     
