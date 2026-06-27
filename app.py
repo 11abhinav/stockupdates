@@ -52,7 +52,7 @@ def api_stock(symbol):
         alerts = db.get_stock_alerts(symbol, limit=50)
         return jsonify({
             'symbol': symbol,
-            'price': stock_data['price'],
+            'price': stock_data['latest_price'],
             'last_fetched': stock_data['last_fetched'].isoformat() if stock_data.get('last_fetched') else None,
             'alerts': alerts
         })
