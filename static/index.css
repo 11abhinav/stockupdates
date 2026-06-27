@@ -547,21 +547,30 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 .alert-card:hover {
     transform: translateY(-4px) scale(1.01);
-    box-shadow: 0 16px 32px rgba(0,0,0,0.06);
     background: var(--bg-surface-hover);
-    border-color: rgba(0,0,0,0.12);
+    border-color: rgba(255,255,255,0.15);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
 }
 
 .alert-card:hover::after {
     left: 200%;
 }
 
-/* Alert Type Colors */
+/* Alert Type Colors & Hover Glow Effects */
 .alert-card[data-type="NEWS"] { border-left: 4px solid #a855f7; }
+.alert-card[data-type="NEWS"]:hover { box-shadow: 0 16px 32px rgba(168, 85, 247, 0.15); }
+
 .alert-card[data-type="MF"] { border-left: 4px solid #3b82f6; }
+.alert-card[data-type="MF"]:hover { box-shadow: 0 16px 32px rgba(59, 130, 246, 0.15); }
+
 .alert-card[data-type="MOMENTUM"] { border-left: 4px solid #f43f5e; }
+.alert-card[data-type="MOMENTUM"]:hover { box-shadow: 0 16px 32px rgba(244, 63, 94, 0.15); }
+
 .alert-card[data-type="BSE"] { border-left: 4px solid #10b981; }
+.alert-card[data-type="BSE"]:hover { box-shadow: 0 16px 32px rgba(16, 185, 129, 0.15); }
+
 .alert-card[data-type="MF_QUALIFYING"] { border-left: 4px solid #f59e0b; }
+.alert-card[data-type="MF_QUALIFYING"]:hover { box-shadow: 0 16px 32px rgba(245, 158, 11, 0.15); }
 
 .alert-header {
     display: flex;
@@ -816,17 +825,29 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     border-left: 4px solid #10b981 !important;
     border-color: rgba(16, 185, 129, 0.15);
 }
+.watchlist-item.fscore-high:hover {
+    box-shadow: 0 10px 24px rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.3) !important;
+}
 
 .watchlist-item.fscore-med {
     background: linear-gradient(90deg, rgba(245, 158, 11, 0.03) 0%, var(--bg-surface) 100%);
     border-left: 4px solid #f59e0b !important;
     border-color: rgba(245, 158, 11, 0.15);
 }
+.watchlist-item.fscore-med:hover {
+    box-shadow: 0 10px 24px rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.3) !important;
+}
 
 .watchlist-item.fscore-low {
     background: linear-gradient(90deg, rgba(239, 68, 68, 0.03) 0%, var(--bg-surface) 100%);
     border-left: 4px solid #ef4444 !important;
     border-color: rgba(239, 68, 68, 0.15);
+}
+.watchlist-item.fscore-low:hover {
+    box-shadow: 0 10px 24px rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.3) !important;
 }
 
 /* Ensure padding adjustments when left border is active */
