@@ -2,7 +2,7 @@ import logging
 import feedparser
 import requests
 import traceback
-from db import get_connection
+from db import get_db_connection
 from scanners.core import is_market_open, emit_alert, get_ist_now
 
 log = logging.getLogger("scanners.news")
@@ -30,7 +30,8 @@ def is_recent(published_str, max_hours=6):
 def get_active_symbols():
     """Returns symbols that had an alert in the last 3 days"""
     try:
-        with get_connection() as conn:
+        with get_db_connection() as conn:
+            if not conn: return []
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT DISTINCT symbol FROM stockupdates.watchlist
