@@ -22,6 +22,133 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
 # Initialize DB on startup
 db.init_db()
 
+def calculate_fundamental_score(info, financials):
+    """
+    Calculate a score out of 7 points based on key fundamental metrics:
+    - Market Cap >= 5,000 Cr (50 Billion INR): +1
+    - ROCE/ROE >= 15%: +1
+    - Debt/Equity <= 0.5 (or debtToEquity <= 50 in yfinance): +1
+    - 3Y Sales CAGR >= 10% (fallback to revenueGrowth >= 10%): +1
+    - 3Y Profit CAGR >= 10% (fallback to earningsGrowth >= 10%): +1
+    - Latest year operating cash flow > 0: +1
+    - Operating Margin >= 15% (substitute for promoter pledge): +1
+    """
+    if not info:
+        return 0
+    score = 0
+    
+    # 1. Market Cap >= 5,000 Cr (50 Billion INR)
+    mcap = info.get('marketCap')
+    if mcap is not None:
+        try:
+            if float(mcap) >= 50000000000:
+                score += 1
+        except:
+            pass
+            
+    # 2. ROCE/ROE >= 15%
+    roe = info.get('returnOnEquity')
+    if roe is not None:
+        try:
+            if float(roe) >= 0.15:
+                score += 1
+        except:
+            pass
+            
+    # 3. Debt/Equity <= 0.5 (debtToEquity is in percentage in yfinance, so <= 50)
+    de = info.get('debtToEquity')
+    if de is not None:
+        try:
+            if float(de) <= 50.0:
+                score += 1
+        except:
+            pass
+    else:
+        # None usually means no debt
+        score += 1
+
+    # 3Y Sales CAGR & 3Y Profit CAGR calculations
+    sales_cagr = 0.0
+    profit_cagr = 0.0
+    has_financials = False
+    
+    if financials is not None and not financials.empty:
+        try:
+            if 'Total Revenue' in financials.index and len(financials.columns) >= 4:
+                rev_latest = financials.loc['Total Revenue'].iloc[0]
+                rev_3y = financials.loc['Total Revenue'].iloc[3]
+                if rev_3y > 0:
+                    sales_cagr = ((rev_latest / rev_3y) ** (1/3)) - 1
+                    has_financials = True
+            if 'Net Income' in financials.index and len(financials.columns) >= 4:
+                prof_latest = financials.loc['Net Income'].iloc[0]
+                prof_3y = financials.loc['Net Income'].iloc[3]
+                if prof_3y > 0:
+                    profit_cagr = ((prof_latest / prof_3y) ** (1/3)) - 1
+                    has_financials = True
+        except:
+            pass
+
+    # 4. 3Y Sales CAGR >= 10% (Fallback to latest revenue growth)
+    if has_financials:
+        if sales_cagr >= 0.10:
+            score += 1
+    else:
+        rev_growth = info.get('revenueGrowth')
+        if rev_growth is not None:
+            try:
+                if float(rev_growth) >= 0.10:
+                    score += 1
+            except:
+                pass
+
+    # 5. 3Y Profit CAGR >= 10% (Fallback to latest earnings growth)
+    if has_financials:
+        if profit_cagr >= 0.10:
+            score += 1
+    else:
+        earn_growth = info.get('earningsGrowth')
+        if earn_growth is not None:
+            try:
+                if float(earn_growth) >= 0.10:
+                    score += 1
+            except:
+                pass
+
+    # 6. Operating Cash Flow > 0
+    ocf = info.get('operatingCashflow')
+    if ocf is not None:
+        try:
+            if float(ocf) > 0:
+                score += 1
+        except:
+            pass
+
+    # 7. Operating Margin >= 15% (substitute for promoter pledge)
+    op_margin = info.get('operatingMargins')
+    if op_margin is not None:
+        try:
+            if float(op_margin) >= 0.15:
+                score += 1
+        except:
+            pass
+
+    return score
+
+def fetch_and_save_fundamentals(symbol, ticker=None):
+    try:
+        import yfinance as yf
+        if not ticker:
+            ticker = yf.Ticker(f"{symbol}.NS")
+        info = ticker.info
+        financials = ticker.financials
+        score = calculate_fundamental_score(info, financials)
+        db.update_fundamental_score(symbol, score)
+        return score, info
+    except Exception as e:
+        log.warning(f"Failed to fetch/save fundamentals for {symbol}: {e}")
+        return None, None
+
 # Setup APScheduler
 # Register Dual Scanners (IST Native)
 import scanners.mf
@@ -149,6 +276,7 @@ def api_stock(symbol):
         # Fetch news and fundamentals
         news = []
         fundamentals = {}
+        fundamental_score = stock_data.get('fundamental_score')
         try:
             import feedparser
             url = f"https://news.google.com/rss/search?q={symbol}+NSE+stock+when:7d"
@@ -172,7 +300,6 @@ def api_stock(symbol):
             log.warning(f"Failed to fetch Google News for {symbol}: {e}")
             
         try:
-            
             info = ticker.info
             if info:
                 fundamentals = {
@@ -185,6 +312,8 @@ def api_stock(symbol):
                     'sector': info.get('sector'),
                     'industry': info.get('industry')
                 }
+                fundamental_score = calculate_fundamental_score(info)
+                db.update_fundamental_score(symbol, fundamental_score)
         except Exception as e:
             log.warning(f"Failed to fetch news/fundamentals for {symbol}: {e}")
 
@@ -195,7 +324,8 @@ def api_stock(symbol):
             'last_fetched': stock_data['last_fetched'].isoformat() if stock_data.get('last_fetched') else None,
             'alerts': alerts,
             'news': news,
-            'fundamentals': fundamentals
+            'fundamentals': fundamentals,
+            'fundamental_score': fundamental_score
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -350,6 +480,10 @@ def admin():
                 bse_code = None
                     
             db.add_stock(symbol, bse_code)
+            try:
+                fetch_and_save_fundamentals(symbol, ticker)
+            except Exception as e:
+                log.error(f"Error calculating fundamental score on addition of {symbol}: {e}")
             flash(f"Success: {symbol} added to watchlist.", "success")
             return redirect(url_for('admin'))
             

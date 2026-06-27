@@ -30,12 +30,17 @@
         <div class="watchlist" id="watchlist-container">
             {% for stock in prices %}
             <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
-                <div class="item-symbol">
-                    <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ stock['symbol'] }}', event)">×</button>
-                    {{ stock['symbol'] }}
-                    {% if stock['has_alert'] %}
-                        <span class="alert-dot" title="Recent Alert"></span>
-                    {% endif %}
+                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                    <div class="item-symbol">
+                        <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ stock['symbol'] }}', event)">×</button>
+                        {{ stock['symbol'] }}
+                        {% if stock['has_alert'] %}
+                            <span class="alert-dot" title="Recent Alert"></span>
+                        {% endif %}
+                    </div>
+                    <div class="score-badge {% if stock['fundamental_score'] != None %}{% if stock['fundamental_score'] >= 5 %}score-high{% elif stock['fundamental_score'] >= 3 %}score-med{% else %}score-low{% endif %}{% endif %}">
+                        F-Score: {{ stock['fundamental_score'] if stock['fundamental_score'] != None else '-' }}/7
+                    </div>
                 </div>
                 <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
                     {% if stock['latest_price'] %}
@@ -153,7 +158,10 @@
         <div class="stock-details" id="stock-details" style="display: none;">
             <div class="stock-header">
                 <div>
-                    <h2 class="stock-name-large" id="detail-symbol">RELIANCE</h2>
+                    <h2 class="stock-name-large" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <span id="detail-symbol">RELIANCE</span>
+                        <span id="detail-fscore" class="score-badge" style="font-size: 0.85rem; padding: 4px 10px; border-radius: 8px;">F-Score: -/7</span>
+                    </h2>
                     <div class="stock-price-large-container" id="detail-price-container">
                         <span class="stock-price-large" id="detail-price">₹0.00</span>
                         <span class="stock-moved-large" id="detail-moved"></span>
@@ -296,6 +304,23 @@
 
                 // Update Header
                 document.getElementById('detail-symbol').textContent = data.symbol;
+                
+                const detailFscore = document.getElementById('detail-fscore');
+                if (detailFscore && data.fundamental_score !== undefined && data.fundamental_score !== null) {
+                    detailFscore.textContent = `F-Score: ${data.fundamental_score}/7`;
+                    detailFscore.className = 'score-badge';
+                    if (data.fundamental_score >= 5) {
+                        detailFscore.classList.add('score-high');
+                    } else if (data.fundamental_score >= 3) {
+                        detailFscore.classList.add('score-med');
+                    } else {
+                        detailFscore.classList.add('score-low');
+                    }
+                    detailFscore.style.display = 'inline-block';
+                } else if (detailFscore) {
+                    detailFscore.style.display = 'none';
+                }
+                
                 document.getElementById('detail-price').textContent = data.price ? `₹${data.price}` : 'No Data';
                 
                 const detailMoved = document.getElementById('detail-moved');
@@ -474,6 +499,19 @@
                             }
                         } else {
                             priceDiv.textContent = 'No Data';
+                        }
+                    }
+                    
+                    const scoreDiv = element.querySelector('.score-badge');
+                    if (scoreDiv && data.fundamental_score !== undefined && data.fundamental_score !== null) {
+                        scoreDiv.textContent = `F-Score: ${data.fundamental_score}/7`;
+                        scoreDiv.className = 'score-badge';
+                        if (data.fundamental_score >= 5) {
+                            scoreDiv.classList.add('score-high');
+                        } else if (data.fundamental_score >= 3) {
+                            scoreDiv.classList.add('score-med');
+                        } else {
+                            scoreDiv.classList.add('score-low');
                         }
                     }
                 }

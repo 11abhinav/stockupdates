@@ -67,6 +67,12 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS change_pct NUMERIC(10, 2);
                 """)
                 
+                # Add fundamental_score column if it doesn't exist
+                cur.execute("""
+                    ALTER TABLE stockupdates.prices 
+                    ADD COLUMN IF NOT EXISTS fundamental_score INTEGER;
+                """)
+                
                 # Create alerts table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS stockupdates.alerts (
@@ -207,7 +213,7 @@ def get_all_prices():
             if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched 
+                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched, p.fundamental_score
                     FROM stockupdates.watchlist w
                     LEFT JOIN stockupdates.prices p ON w.symbol = p.symbol
                     ORDER BY w.symbol;
@@ -216,6 +222,24 @@ def get_all_prices():
     except Exception as e:
         log.error(f"Error fetching prices: {e}")
         return []
+
+def update_fundamental_score(symbol, score):
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stockupdates.prices (symbol, fundamental_score, last_fetched)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (symbol) DO UPDATE 
+                    SET fundamental_score = EXCLUDED.fundamental_score,
+                        last_fetched = CURRENT_TIMESTAMP;
+                """, (symbol.upper(), score))
+                conn.commit()
+    except Exception as e:
+        log.error(f"Error updating fundamental score for {symbol}: {e}")
 
 def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, 
                confidence=None, trigger_type=None, tags=None,

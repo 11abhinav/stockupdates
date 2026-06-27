@@ -32,7 +32,7 @@
         <div class="watchlist" id="watchlist-container">
             {% for item in watchlist %}
             <div class="watchlist-item" style="cursor: pointer;" onclick="if(!event.target.classList.contains('delete-btn')) window.location.href='/?stock={{ item.symbol }}';" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}">
-                <div>
+                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
                     <div class="item-symbol">
                         <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ item.symbol }}', event)">×</button>
                         {{ item.symbol }}
@@ -41,6 +41,9 @@
                         {% endif %}
                     </div>
                     <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
+                    <div class="score-badge {% if item['fundamental_score'] != None %}{% if item['fundamental_score'] >= 5 %}score-high{% elif item['fundamental_score'] >= 3 %}score-med{% else %}score-low{% endif %}{% endif %}" style="align-self: flex-start;">
+                        F-Score: {{ item['fundamental_score'] if item['fundamental_score'] != None else '-' }}/7
+                    </div>
                 </div>
                 <div class="item-price {% if not item.latest_price %}no-price{% endif %}">
                     {% if item.latest_price %}
