@@ -72,7 +72,19 @@ def init_db():
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS stop_loss NUMERIC(10, 2);",
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS confidence NUMERIC(5, 2);",
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(50);",
-                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS tags JSONB;"
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS tags JSONB;",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS t1_price NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS t2_price NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS t3_price NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS risk_per_share NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS rr_to_t1 NUMERIC(5, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS rr_to_t2 NUMERIC(5, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS rr_to_t3 NUMERIC(5, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS trail_mode VARCHAR(255);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS position_size_hint INTEGER;",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS setup_expiry_minutes INTEGER;",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS invalid BOOLEAN;",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS reason VARCHAR(255);"
                 ]
                 for query in alter_queries:
                     cur.execute(query)
@@ -162,22 +174,29 @@ def get_all_prices():
         log.error(f"Error fetching prices: {e}")
         return []
 
-def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, confidence=None, trigger_type=None, tags=None):
+def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, 
+               confidence=None, trigger_type=None, tags=None,
+               t1_price=None, t2_price=None, t3_price=None, risk_per_share=None,
+               rr_to_t1=None, rr_to_t2=None, rr_to_t3=None, trail_mode=None,
+               position_size_hint=None, setup_expiry_minutes=None, invalid=None, reason=None):
     if not DATABASE_URL:
         return
+    import json
     try:
-        import json
-        tags_json = json.dumps(tags) if tags else None
-        
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.alerts (
-                        symbol, alert_type, message, created_at,
-                        entry_price, target_price, stop_loss, confidence, trigger_type, tags
-                    )
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s)
-                """, (symbol.upper(), alert_type, message, entry_price, target_price, stop_loss, confidence, trigger_type, tags_json))
+                        symbol, alert_type, message, entry_price, target_price, stop_loss, confidence, trigger_type, tags,
+                        t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, rr_to_t3, trail_mode, 
+                        position_size_hint, setup_expiry_minutes, invalid, reason
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    symbol.upper(), alert_type, message, entry_price, target_price, stop_loss, confidence, trigger_type, 
+                    json.dumps(tags) if tags else None,
+                    t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, rr_to_t3, trail_mode,
+                    position_size_hint, setup_expiry_minutes, invalid, reason
+                ))
                 conn.commit()
     except Exception as e:
         log.error(f"Error saving alert for {symbol}: {e}")

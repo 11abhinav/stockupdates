@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from apscheduler.schedulers.background import BackgroundScheduler
 import db
 
@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("app")
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
 
 # Initialize DB on startup
 db.init_db()
@@ -139,14 +140,25 @@ def api_search():
         results = []
         for quote in data.get('quotes', []):
             symbol = quote.get('symbol', '')
-            # Prioritize .NS stocks, and sometimes .BO if no .NS is available
-            if symbol.endswith('.NS'):
+            exchange = quote.get('exchange', '')
+            # Allow both NSE and BSE stocks, but avoid indices starting with 0P
+            if exchange in ['NSI', 'BSE'] and not symbol.startswith('0P'):
+                clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
                 results.append({
-                    'symbol': symbol.replace('.NS', ''),
+                    'symbol': clean_symbol,
                     'name': quote.get('shortname', quote.get('longname', '')),
-                    'exchange': 'NSE'
+                    'exchange': 'NSE' if exchange == 'NSI' else 'BSE'
                 })
-        return jsonify(results)
+        
+        # Deduplicate by symbol
+        seen = set()
+        deduped = []
+        for r in results:
+            if r['symbol'] not in seen:
+                seen.add(r['symbol'])
+                deduped.append(r)
+                
+        return jsonify(deduped)
     except Exception as e:
         log.error(f"Search API Error: {e}")
         return jsonify([])
@@ -168,9 +180,42 @@ def admin():
     if request.method == 'POST':
         symbol = request.form.get('symbol', '').strip().upper()
         bse_code = request.form.get('bse_code', '').strip()
+        
         if symbol:
-            success = db.add_stock(symbol, bse_code if bse_code else None)
-            return redirect(url_for('admin', success=success))
+            # Check for duplicates
+            watchlist = db.get_watchlist()
+            if any(w['symbol'] == symbol for w in watchlist):
+                flash(f"Error: {symbol} is already in the watchlist.", "error")
+                return redirect(url_for('admin'))
+                
+            # Check if valid ticker
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(symbol + ".NS")
+                hist = ticker.history(period="1d")
+                if hist.empty:
+                    flash(f"Error: {symbol} is an invalid NSE ticker.", "error")
+                    return redirect(url_for('admin'))
+            except Exception as e:
+                log.error(f"Error validating {symbol}: {e}")
+                flash(f"Error: {symbol} could not be validated. Check again.", "error")
+                return redirect(url_for('admin'))
+
+            if not bse_code:
+                # Auto-fetch BSE code from Screener.in if not provided
+                try:
+                    import requests
+                    import re
+                    res = requests.get(f'https://www.screener.in/company/{symbol}/', headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+                    match = re.search(r'BSE:\s*(\d{6})', res.text)
+                    if match:
+                        bse_code = match.group(1)
+                except Exception as e:
+                    log.error(f"Failed to auto-fetch BSE code for {symbol}: {e}")
+                    
+            db.add_stock(symbol, bse_code)
+            flash(f"Success: {symbol} added to watchlist.", "success")
+            return redirect(url_for('admin'))
             
     prices = db.get_all_prices()
     recent_alerts = db.get_recent_alerts(200)

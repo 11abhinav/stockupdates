@@ -127,220 +127,7 @@
 
         .alert-dot {
             width: 8px;
-            height: 8px;
-            background: #f59e0b; /* warning color */
-            border-radius: 50%;
-            display: inline-block;
-            box-shadow: 0 0 6px #f59e0b;
-        }
-
-        .item-bse {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-        
-        .delete-btn {
-            background: transparent;
-            color: var(--text-muted);
-            border: none;
-            cursor: pointer;
-            padding: 4px;
-            margin-right: 6px;
-            font-size: 1.1rem;
-            line-height: 1;
-            transition: color 0.2s;
-            border-radius: 4px;
-            display: none; /* Hidden by default */
-        }
-        .delete-btn:hover {
-            color: var(--warning);
-            background: rgba(239, 68, 68, 0.1);
-        }
-        
-        /* When watchlist container has edit-mode class, show the delete buttons */
-        .watchlist.edit-mode .delete-btn {
-            display: inline-block;
-        }
-        
-        .item-price {
-            text-align: right;
-            font-weight: 600;
-        }
-
-        .price-val {
-            font-size: 1.1rem;
-            background: linear-gradient(to right, #f8fafc, #cbd5e1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .no-price {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            font-weight: normal;
-        }
-
-        /* Main Content Area */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 3rem;
-            overflow-y: auto;
-            position: relative;
-        }
-
-        .top-nav {
-            position: absolute;
-            top: 2rem;
-            right: 3rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .nav-btn {
-            background: rgba(24, 24, 27, 0.8);
-            color: var(--text-main);
-            text-decoration: none;
-            padding: 0.6rem 1.2rem;
-            border-radius: 8px;
-            border: 1px solid var(--glass-border);
-            font-weight: 500;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-            cursor: pointer;
-        }
-        
-        .nav-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.2);
-            transform: translateY(-1px);
-        }
-
-        .admin-form-container {
-            max-width: 600px;
-            width: 100%;
-            margin: 4rem auto 0;
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 2.5rem;
-            backdrop-filter: blur(16px);
-            box-shadow: var(--card-shadow);
-        }
-
-        .card-title {
-            font-size: 1.75rem;
-            font-weight: 600;
-            margin-top: 0;
-            margin-bottom: 2rem;
-            color: #fff;
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-            position: relative;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        input {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            color: #fff;
-            font-family: inherit;
-            font-size: 1rem;
-            box-sizing: border-box;
-            transition: border-color 0.3s;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        /* Autocomplete Suggestions */
-        .suggestions {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: #1e293b;
-            border: 1px solid var(--glass-border);
-            border-radius: 8px;
-            margin-top: 4px;
-            max-height: 200px;
-            overflow-y: auto;
-            z-index: 100;
-            display: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        }
-
-        .suggestion-item {
-            padding: 0.75rem 1rem;
-            cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .suggestion-item:last-child {
-            border-bottom: none;
-        }
-
-        .suggestion-item:hover {
-            background: rgba(59, 130, 246, 0.2);
-        }
-
-        .sugg-symbol {
-            font-weight: 600;
-            color: #fff;
-        }
-        
-        .sugg-name {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-        }
-
-        .btn-primary {
-            width: 100%;
-            padding: 1rem;
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-
-        .btn-primary:hover {
-            background: #2563eb;
-        }
-
-        .success-msg {
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid var(--success);
-            color: var(--success);
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-            text-align: center;
-        }
-
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
 </head>
 <body>
 
@@ -399,28 +186,36 @@
         <div class="top-nav">
             <a href="/" class="nav-btn">← Back to Dashboard</a>
         </div>
-
-        <div class="admin-form-container">
-            <h2 class="card-title">Add New Stock</h2>
-            
-            {% if request.args.get('success') == 'True' %}
-            <div class="success-msg">Stock successfully added to watchlist!</div>
-            {% endif %}
-
-            <form method="POST" action="/admin">
-                <div class="form-group">
-                    <label for="symbol">NSE Symbol *</label>
-                    <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE (Type to search...)" required autocomplete="off">
-                    <div class="suggestions" id="suggestions-box"></div>
-                </div>
+        
+        <div class="admin-container">
+            <div class="admin-card">
+                <h2>Add New Stock</h2>
                 
-                <div class="form-group">
-                    <label for="bse_code">BSE Code (Optional for Announcements)</label>
-                    <input type="text" id="bse_code" name="bse_code" placeholder="e.g. 500325">
-                </div>
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                  {% if messages %}
+                    <div class="flash-messages">
+                    {% for category, message in messages %}
+                      <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                    </div>
+                  {% endif %}
+                {% endwith %}
 
-                <button type="submit" class="btn-primary">Add to Watchlist</button>
-            </form>
+                <form method="POST" action="/admin" id="add-form">
+                    <div class="form-group">
+                        <label for="symbol">NSE Symbol *</label>
+                        <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE (Type to search...)" required autocomplete="off">
+                        <div class="suggestions" id="suggestions-box"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="bse_code">BSE Code (Optional for Announcements)</label>
+                        <input type="text" id="bse_code" name="bse_code" placeholder="e.g. 500325">
+                    </div>
+
+                    <button type="submit" class="btn-primary">Add to Watchlist</button>
+                </form>
+            </div>
         </div>
     </div>
 

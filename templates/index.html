@@ -456,11 +456,23 @@
                         <span class="alert-time">{{ alert.created_at.strftime('%Y-%m-%d %H:%M:%S') if alert.created_at else '' }}</span>
                     </div>
                     <div class="alert-body">{{ alert.message }}</div>
-                    {% if alert.entry_price or alert.target_price or alert.stop_loss %}
-                    <div style="margin-top: 1rem; display: flex; gap: 1rem; font-size: 0.85rem; background: rgba(0,0,0,0.2); padding: 0.5rem; border-radius: 6px;">
-                        {% if alert.entry_price %}<div><span style="color:var(--text-muted)">Entry:</span> ₹{{ "%.2f"|format(alert.entry_price) }}</div>{% endif %}
-                        {% if alert.target_price %}<div><span style="color:var(--success)">Target:</span> ₹{{ "%.2f"|format(alert.target_price) }}</div>{% endif %}
-                        {% if alert.stop_loss %}<div><span style="color:var(--warning)">SL:</span> ₹{{ "%.2f"|format(alert.stop_loss) }}</div>{% endif %}
+                    {% if alert.entry_price or alert.stop_loss %}
+                    <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; font-size: 0.9rem; background: rgba(0,0,0,0.25); padding: 1rem; border-radius: 8px; border: 1px solid var(--glass-border);">
+                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                            {% if alert.entry_price %}<div><span style="color:var(--text-muted)">Entry:</span> <strong style="color:var(--text-main)">₹{{ "%.2f"|format(alert.entry_price) }}</strong></div>{% endif %}
+                            {% if alert.stop_loss %}<div><span style="color:var(--text-muted)">SL:</span> <strong style="color:var(--warning)">₹{{ "%.2f"|format(alert.stop_loss) }}</strong> {% if alert.risk_per_share %}<span style="font-size:0.75rem; color:var(--warning)">(Risk: ₹{{ "%.2f"|format(alert.risk_per_share) }})</span>{% endif %}</div>{% endif %}
+                        </div>
+                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                            {% if alert.t1_price %}<div><span style="color:var(--text-muted)">T1 ({{ alert.rr_to_t1 }}R):</span> <strong style="color:var(--success)">₹{{ "%.2f"|format(alert.t1_price) }}</strong></div>{% endif %}
+                            {% if alert.t2_price %}<div><span style="color:var(--text-muted)">T2 ({{ alert.rr_to_t2 }}R):</span> <strong style="color:var(--success)">₹{{ "%.2f"|format(alert.t2_price) }}</strong></div>{% endif %}
+                            {% if alert.t3_price %}<div><span style="color:var(--text-muted)">T3:</span> <strong style="color:var(--success)">₹{{ "%.2f"|format(alert.t3_price) }}</strong></div>{% endif %}
+                        </div>
+                        {% if alert.trail_mode or alert.position_size_hint %}
+                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.5rem; margin-top: 0.2rem;">
+                            {% if alert.position_size_hint %}<div><span style="color:var(--text-muted)">Qty (₹10k risk):</span> <strong style="color:var(--accent-hover)">{{ alert.position_size_hint }}</strong></div>{% endif %}
+                            {% if alert.trail_mode %}<div style="flex:1;"><span style="color:var(--text-muted)">Trail:</span> {{ alert.trail_mode }}</div>{% endif %}
+                        </div>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>
@@ -636,12 +648,33 @@
                         const card = document.createElement('div');
                         card.className = `alert-card alert-type-${alert.alert_type}`;
                         
+                        let planHtml = '';
+                        if (alert.entry_price || alert.stop_loss) {
+                            planHtml = `<div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; font-size: 0.9rem; background: rgba(0,0,0,0.25); padding: 1rem; border-radius: 8px; border: 1px solid var(--glass-border);">
+                                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                                    ${alert.entry_price ? `<div><span style="color:var(--text-muted)">Entry:</span> <strong style="color:var(--text-main)">₹${parseFloat(alert.entry_price).toFixed(2)}</strong></div>` : ''}
+                                    ${alert.stop_loss ? `<div><span style="color:var(--text-muted)">SL:</span> <strong style="color:var(--warning)">₹${parseFloat(alert.stop_loss).toFixed(2)}</strong> ${alert.risk_per_share ? `<span style="font-size:0.75rem; color:var(--warning)">(Risk: ₹${parseFloat(alert.risk_per_share).toFixed(2)})</span>` : ''}</div>` : ''}
+                                </div>
+                                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                                    ${alert.t1_price ? `<div><span style="color:var(--text-muted)">T1 (${alert.rr_to_t1 || 1.0}R):</span> <strong style="color:var(--success)">₹${parseFloat(alert.t1_price).toFixed(2)}</strong></div>` : ''}
+                                    ${alert.t2_price ? `<div><span style="color:var(--text-muted)">T2 (${alert.rr_to_t2 || 2.0}R):</span> <strong style="color:var(--success)">₹${parseFloat(alert.t2_price).toFixed(2)}</strong></div>` : ''}
+                                    ${alert.t3_price ? `<div><span style="color:var(--text-muted)">T3:</span> <strong style="color:var(--success)">₹${parseFloat(alert.t3_price).toFixed(2)}</strong></div>` : ''}
+                                </div>
+                                ${(alert.trail_mode || alert.position_size_hint) ? `
+                                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.5rem; margin-top: 0.2rem;">
+                                    ${alert.position_size_hint ? `<div><span style="color:var(--text-muted)">Qty (₹10k risk):</span> <strong style="color:var(--accent-hover)">${alert.position_size_hint}</strong></div>` : ''}
+                                    ${alert.trail_mode ? `<div style="flex:1;"><span style="color:var(--text-muted)">Trail:</span> ${alert.trail_mode}</div>` : ''}
+                                </div>` : ''}
+                            </div>`;
+                        }
+                        
                         card.innerHTML = `
                             <div class="alert-header">
                                 <span class="alert-type">${alert.alert_type}</span>
                                 <span class="alert-time">${date.toLocaleString()}</span>
                             </div>
                             <div class="alert-body">${alert.message}</div>
+                            ${planHtml}
                         `;
                         feed.appendChild(card);
                     });

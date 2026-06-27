@@ -1,6 +1,7 @@
 import logging
 from db import get_watchlist
 from scanners.core import fetch_yfinance_cached, emit_alert
+from scanners.trade_plan import build_intraday_trade_plan, pivot_low
 
 log = logging.getLogger("scanners.momentum")
 
@@ -54,16 +55,26 @@ def run():
                 
                 # ATR for stop loss
                 atr = (df_5m['High'] - df_5m['Low']).iloc[-14:].mean()
-                stop_loss = round(current_price - (atr * 1.5), 2)
-                target = round(current_price + (atr * 3), 2)
+                
+                trigger_candle_low = df_5m['Low'].iloc[-1]
+                prev_pivot = pivot_low(df_5m, left=3, right=3)
+                
+                trade_plan = build_intraday_trade_plan(
+                    trigger_level=recent_15m_high,
+                    atr5=atr,
+                    trigger_candle_low=trigger_candle_low,
+                    prev_pivot_low=prev_pivot,
+                    ema20=close_5.ewm(span=20, adjust=False).mean().iloc[-1],
+                    buffer_pct=0.0015,
+                    atr_sl_buffer_mult=0.25,
+                    current_price=current_price
+                )
                 
                 emit_alert(
                     symbol=symbol,
                     scanner_name="MOMENTUM",
                     message=f"Intraday 5m breakout from 15m compression. Volume surge {last_vol_5/avg_vol_5:.1f}x.",
-                    entry=round(current_price, 2),
-                    target=target,
-                    stop_loss=stop_loss,
+                    trade_plan=trade_plan,
                     confidence=7.5,
                     tags={"timeframe": "5m", "setup": "compression_breakout"}
                 )
