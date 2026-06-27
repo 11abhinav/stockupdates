@@ -221,6 +221,17 @@ def safe_float(value, default=0.0):
 # FRESHNESS CHECK
 # =============================================================================
 
+def is_market_open():
+    now = datetime.now(timezone.utc)
+    if now.weekday() > 4:
+        return False
+    current_time = now.time()
+    # Market opens 09:15 IST -> 03:45 UTC
+    # Market closes 15:30 IST -> 10:00 UTC
+    market_open = datetime.strptime("03:45", "%H:%M").time()
+    market_close = datetime.strptime("10:00", "%H:%M").time()
+    return market_open <= current_time <= market_close
+
 def is_within_hours(dt_or_str, hours=FRESH_HOURS, label="entry"):
     import time as _time
     now = datetime.now(timezone.utc)
@@ -434,6 +445,10 @@ def fetch_bse_via_rss():
     return None
 
 def check_bse_announcements():
+    if not is_market_open():
+        log.info("Market is closed. Skipping BSE checks.")
+        return
+        
     try:
         log.info("BSE: starting announcement check")
         alerts = load_json_file(BSE_ALERTS_FILE)
@@ -702,6 +717,10 @@ def export_results(df):
 # =============================================================================
 
 def run():
+    if not is_market_open():
+        log.info("Market is closed. Skipping technical scan.")
+        return
+        
     log.info("=" * 60)
     log.info("SCAN START")
     log.info("=" * 60)

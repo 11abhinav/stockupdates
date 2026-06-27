@@ -17,15 +17,10 @@ db.init_db()
 # Setup APScheduler
 scheduler = BackgroundScheduler()
 
-# Add jobs matching the cron schedules from bot.py
-# Market open 09:20 IST -> 03:50 UTC
-scheduler.add_job(bot.run, 'cron', day_of_week='mon-fri', hour=3, minute=50)
-# Mid-session 12:00 IST -> 06:30 UTC
-scheduler.add_job(bot.run, 'cron', day_of_week='mon-fri', hour=6, minute=30)
-# Market close 15:35 IST -> 10:05 UTC
-scheduler.add_job(bot.run, 'cron', day_of_week='mon-fri', hour=10, minute=5)
-# BSE only every 30 min during market hours (03:30 to 10:00 UTC)
-scheduler.add_job(bot.check_bse_announcements, 'cron', day_of_week='mon-fri', hour='3-10', minute='*/30')
+# We run the background tasks every 10 minutes.
+# bot.py natively checks if the market is open and skips execution if closed.
+scheduler.add_job(bot.run, 'interval', minutes=10)
+scheduler.add_job(bot.check_bse_announcements, 'interval', minutes=10)
 
 scheduler.start()
 
@@ -51,6 +46,16 @@ def index():
 def api_stock(symbol):
     try:
         symbol = symbol.upper()
+        
+        # Fetch live price on-demand when clicked
+        import yfinance as yf
+        ticker = yf.Ticker(f"{symbol}.NS")
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            live_price = float(hist["Close"].iloc[-1])
+            # Update DB with fresh price
+            db.update_price(symbol, live_price)
+            
         prices = db.get_all_prices()
         stock_data = next((p for p in prices if p['symbol'] == symbol), None)
         if not stock_data:
