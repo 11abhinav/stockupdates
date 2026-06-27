@@ -157,7 +157,7 @@
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for item in watchlist %}
-            <div class="watchlist-item" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}">
+            <div class="watchlist-item" style="cursor: pointer;" onclick="if(!event.target.classList.contains('delete-btn')) window.location.href='/?stock={{ item.symbol }}';" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}">
                 <div>
                     <div class="item-symbol">
                         <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ item.symbol }}', event)">×</button>

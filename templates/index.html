@@ -594,6 +594,13 @@
         }
         
         function showGlobalAlerts() {
+            // Remove URL parameter without reloading page
+            if (window.history.replaceState) {
+                const url = new URL(window.location);
+                url.searchParams.delete('stock');
+                window.history.replaceState(null, '', url);
+            }
+            
             // Deselect sidebar items
             document.querySelectorAll('.watchlist-item').forEach(item => item.classList.remove('active'));
             
@@ -798,6 +805,22 @@
                 btn.style.borderColor = '';
             }
         }
+
+        window.onload = () => {
+            const params = new URLSearchParams(window.location.search);
+            const stock = params.get('stock');
+            if (stock) {
+                loadStockDetails(stock);
+                const items = document.querySelectorAll('.watchlist-item');
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].dataset.symbol === stock) {
+                        items[i].classList.add('active');
+                        items[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        break;
+                    }
+                }
+            }
+        };
     </script>
 </body>
 </html>
