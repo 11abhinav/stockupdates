@@ -1,33 +1,33 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-    /* Super Premium Dynamic Palette */
-    --bg-base: #060814;
-    --bg-surface: rgba(18, 20, 30, 0.7);
-    --bg-surface-hover: rgba(28, 30, 45, 0.9);
+    /* Super Premium Light Palette (Fintech/Banking style) */
+    --bg-base: #f0f2f5;
+    --bg-surface: rgba(255, 255, 255, 0.85);
+    --bg-surface-hover: rgba(255, 255, 255, 1);
     
-    --glass-border: rgba(255, 255, 255, 0.15);
-    --glass-highlight: rgba(255, 255, 255, 0.25);
+    --glass-border: rgba(0, 0, 0, 0.06);
+    --glass-highlight: rgba(0, 0, 0, 0.12);
     
-    --text-main: #ffffff;
-    --text-muted: #94a3b8;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
     
-    --accent: #6366f1;
-    --accent-hover: #818cf8;
-    --accent-glow: rgba(99, 102, 241, 0.6);
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-glow: rgba(37, 99, 235, 0.2);
     
-    --success: #10b981;
-    --success-glow: rgba(16, 185, 129, 0.3);
+    --success: #059669;
+    --success-glow: rgba(5, 150, 105, 0.15);
     
-    --warning: #f43f5e;
-    --warning-glow: rgba(244, 63, 94, 0.3);
+    --warning: #e11d48;
+    --warning-glow: rgba(225, 29, 72, 0.15);
 
-    --gradient-primary: linear-gradient(135deg, #6366f1 0%, #d946ef 100%);
-    --gradient-text: linear-gradient(to right, #60a5fa, #d946ef);
-    --gradient-header: linear-gradient(to right, #ffffff, #c4b5fd);
+    --gradient-primary: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    --gradient-text: linear-gradient(to right, #1e3a8a, #3b82f6);
+    --gradient-header: linear-gradient(to right, #0f172a, #334155);
     
-    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
-    --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.08);
     --shadow-glow: 0 0 20px var(--accent-glow);
 }
 
@@ -52,26 +52,26 @@ body {
 body::before, body::after {
     content: '';
     position: fixed;
-    width: 70vw;
-    height: 70vw;
+    width: 80vw;
+    height: 80vw;
     border-radius: 50%;
     filter: blur(140px);
-    opacity: 0.45;
+    opacity: 0.3;
     z-index: -1;
     animation: float 20s infinite ease-in-out alternate;
     pointer-events: none;
 }
 
 body::before {
-    top: -30%;
+    top: -20%;
     left: -10%;
-    background: radial-gradient(circle, #6366f1 0%, transparent 60%);
+    background: radial-gradient(circle, #bfdbfe 0%, transparent 60%);
 }
 
 body::after {
-    bottom: -30%;
+    bottom: -20%;
     right: -10%;
-    background: radial-gradient(circle, #d946ef 0%, transparent 60%);
+    background: radial-gradient(circle, #ddd6fe 0%, transparent 60%);
     animation-delay: -10s;
 }
 
@@ -89,14 +89,14 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .sidebar {
     width: 360px;
     min-width: 360px;
-    background: rgba(8, 8, 12, 0.6);
+    background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-right: 1px solid var(--glass-border);
     display: flex;
     flex-direction: column;
     z-index: 10;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.3);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.03);
 }
 
 .main-content {
@@ -105,7 +105,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     flex-direction: column;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(circle at center, rgba(255,255,255,0.02) 0%, transparent 100%);
+    background: transparent;
 }
 
 /* Sidebar Header */
@@ -135,7 +135,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     display: flex;
     gap: 6px;
     margin-top: 16px;
-    background: rgba(0,0,0,0.3);
+    background: rgba(0,0,0,0.03);
     padding: 4px;
     border-radius: 10px;
     border: 1px solid var(--glass-border);
@@ -156,7 +156,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 .sort-btn:hover {
     color: var(--text-main);
-    background: rgba(255,255,255,0.05);
+    background: rgba(0,0,0,0.05);
 }
 
 .sort-btn.active {
@@ -168,7 +168,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 /* Buttons */
 .nav-btn {
-    background: rgba(20, 20, 25, 0.7);
+    background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(12px);
     color: var(--text-main);
     border: 1px solid var(--glass-border);
@@ -186,10 +186,10 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .nav-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--glass-highlight);
+    background: rgba(255, 255, 255, 1);
+    border-color: rgba(0,0,0,0.15);
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.06);
 }
 
 .btn-primary {
@@ -248,7 +248,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+    background: linear-gradient(135deg, rgba(255,255,255,0.6) 0%, transparent 100%);
     opacity: 0;
     transition: opacity 0.4s;
     pointer-events: none;
@@ -256,17 +256,17 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 .watchlist-item:hover {
     background: var(--bg-surface-hover);
-    border-color: rgba(168, 85, 247, 0.5);
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 12px 30px rgba(168, 85, 247, 0.15);
+    border-color: rgba(0,0,0,0.15);
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.06);
 }
 
 .watchlist-item:hover::before { opacity: 1; }
 
 .watchlist-item.active {
-    background: rgba(99, 102, 241, 0.2);
-    border-color: rgba(99, 102, 241, 0.8);
-    box-shadow: 0 0 25px rgba(99, 102, 241, 0.25);
+    background: rgba(37, 99, 235, 0.05);
+    border-color: rgba(37, 99, 235, 0.3);
+    box-shadow: 0 0 20px rgba(37, 99, 235, 0.1);
 }
 
 .item-symbol {
@@ -460,7 +460,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .fundamental-card {
-    background: linear-gradient(145deg, rgba(28, 30, 45, 0.6) 0%, rgba(18, 20, 30, 0.6) 100%);
+    background: var(--bg-surface);
     border: 1px solid var(--glass-border);
     padding: 24px;
     border-radius: 20px;
@@ -470,9 +470,10 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .fundamental-card:hover {
-    background: rgba(30, 30, 38, 0.6);
-    border-color: rgba(255,255,255,0.1);
+    background: var(--bg-surface-hover);
+    border-color: rgba(0,0,0,0.1);
     transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
 }
 
 .fundamental-label {
@@ -500,7 +501,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .alert-card {
-    background: linear-gradient(145deg, rgba(24, 26, 40, 0.8) 0%, rgba(14, 16, 24, 0.8) 100%);
+    background: var(--bg-surface);
     border: 1px solid var(--glass-border);
     border-radius: 20px;
     padding: 24px 28px;
@@ -514,9 +515,9 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .alert-card:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 20px 40px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.1);
-    background: linear-gradient(145deg, rgba(34, 36, 50, 0.9) 0%, rgba(24, 26, 34, 0.9) 100%);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 32px rgba(0,0,0,0.06);
+    background: var(--bg-surface-hover);
 }
 
 /* Alert Type Colors */
@@ -539,7 +540,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     letter-spacing: 0.05em;
     font-size: 0.85rem;
     padding: 4px 10px;
-    background: rgba(255,255,255,0.05);
+    background: rgba(0,0,0,0.05);
     border-radius: 6px;
 }
 
@@ -552,7 +553,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .alert-body {
     line-height: 1.6;
     font-size: 1.05rem;
-    color: #e2e8f0;
+    color: #334155;
     white-space: pre-wrap;
 }
 
@@ -560,7 +561,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .news-title {
     font-weight: 700;
     font-size: 1.15rem;
-    color: #fff;
+    color: var(--text-main);
     margin-bottom: 12px;
     line-height: 1.4;
     font-family: 'Outfit', sans-serif;
@@ -569,7 +570,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 /* Trade Plan Layout */
 .trade-plan {
     margin-top: 20px;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.02);
     padding: 20px;
     border-radius: 12px;
     border: 1px solid var(--glass-border);
@@ -620,7 +621,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid rgba(255,255,255,0.1);
+    border: 3px solid rgba(0,0,0,0.1);
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
@@ -667,7 +668,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .form-group input {
     width: 100%;
     padding: 16px;
-    background: rgba(0,0,0,0.3);
+    background: #ffffff;
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     color: var(--text-main);
@@ -680,7 +681,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 4px var(--accent-glow);
-    background: rgba(0,0,0,0.5);
+    background: #ffffff;
 }
 
 .suggestions {
@@ -688,7 +689,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     top: calc(100% + 8px);
     left: 0;
     right: 0;
-    background: rgba(20, 20, 25, 0.95);
+    background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
@@ -705,14 +706,14 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(0,0,0,0.05);
     transition: background 0.2s;
 }
 
 .suggestion-item:last-child { border-bottom: none; }
-.suggestion-item:hover { background: rgba(255,255,255,0.05); }
+.suggestion-item:hover { background: rgba(0,0,0,0.02); }
 
-.sugg-symbol { font-weight: 700; color: #fff; font-family: 'Outfit', sans-serif; }
+.sugg-symbol { font-weight: 700; color: var(--text-main); font-family: 'Outfit', sans-serif; }
 .sugg-name { color: var(--text-muted); font-size: 0.85rem; }
 
 /* Flashes */
