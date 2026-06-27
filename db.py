@@ -110,6 +110,23 @@ def add_stock(symbol, bse_code=None):
         log.error(f"Error adding stock {symbol}: {e}")
         return False
 
+def remove_stock(symbol):
+    if not DATABASE_URL:
+        return False
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                # We also might want to remove it from prices table just in case,
+                # but removing from watchlist is the primary goal.
+                # Foreign keys are not strictly set to cascade, so let's delete from both
+                cur.execute("DELETE FROM stockupdates.prices WHERE symbol = %s;", (symbol.upper(),))
+                cur.execute("DELETE FROM stockupdates.watchlist WHERE symbol = %s;", (symbol.upper(),))
+                conn.commit()
+                return True
+    except Exception as e:
+        log.error(f"Error removing stock {symbol}: {e}")
+        return False
+
 def update_price(symbol, price, change_pct=None):
     if not DATABASE_URL:
         return

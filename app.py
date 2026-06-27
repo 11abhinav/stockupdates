@@ -151,6 +151,18 @@ def api_search():
         log.error(f"Search API Error: {e}")
         return jsonify([])
 
+@app.route('/api/remove_stock/<symbol>', methods=['POST'])
+def api_remove_stock(symbol):
+    try:
+        success = db.remove_stock(symbol)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to remove stock'})
+    except Exception as e:
+        log.error(f"Remove stock error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
     if request.method == 'POST':

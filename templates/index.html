@@ -171,6 +171,23 @@
             font-size: 0.9rem;
         }
 
+        .delete-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            margin-right: 6px;
+            font-size: 1.1rem;
+            line-height: 1;
+            transition: color 0.2s;
+            border-radius: 4px;
+        }
+        .delete-btn:hover {
+            color: var(--warning);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
         .main-content {
             flex: 1;
             display: flex;
@@ -371,6 +388,7 @@
             {% for stock in prices %}
             <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
                 <div class="item-symbol">
+                    <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ stock['symbol'] }}', event)">×</button>
                     {{ stock['symbol'] }}
                     {% if stock['has_alert'] %}
                         <span class="alert-dot" title="Recent Alert"></span>
@@ -670,15 +688,33 @@
                 const res = await fetch('/api/refresh_watchlist');
                 const data = await res.json();
                 if (data.success) {
-                    window.location.reload();
+                    location.reload();
                 } else {
-                    alert('Error: ' + data.error);
+                    alert('Error refreshing: ' + data.error);
                 }
-            } catch (err) {
-                alert('Error refreshing watchlist: ' + err.message);
+            } catch (e) {
+                alert('Request failed');
             }
-            btn.innerHTML = '↻ Refresh All Prices';
+            
+            btn.innerHTML = originalText;
             btn.disabled = false;
+        }
+
+        async function removeStock(symbol, event) {
+            event.stopPropagation();
+            if (!confirm(`Are you sure you want to remove ${symbol} from the watchlist?`)) return;
+            
+            try {
+                const res = await fetch(`/api/remove_stock/${symbol}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error removing stock: ' + data.error);
+                }
+            } catch (e) {
+                alert('Request failed');
+            }
         }
     </script>
 </body>

@@ -139,6 +139,23 @@
             color: var(--text-muted);
         }
         
+        .delete-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            margin-right: 6px;
+            font-size: 1.1rem;
+            line-height: 1;
+            transition: color 0.2s;
+            border-radius: 4px;
+        }
+        .delete-btn:hover {
+            color: var(--warning);
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
         .item-price {
             text-align: right;
             font-weight: 600;
@@ -325,12 +342,21 @@
         <div class="sidebar-header">
             <h1 class="sidebar-title">Admin Panel</h1>
             <div class="sidebar-subtitle">Active Watchlist ({{ watchlist|length }})</div>
+            <div class="sort-controls" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                <button class="sort-btn active" onclick="sortWatchlist('name', this)">Name</button>
+                <button class="sort-btn" onclick="sortWatchlist('price', this)">Price</button>
+                <button class="sort-btn" onclick="sortWatchlist('moved', this)">% Move</button>
+            </div>
+            <button class="nav-btn" style="width: 100%; margin-top: 1rem; font-size: 0.9rem; justify-content: center;" onclick="refreshWatchlist(this)">
+                ↻ Refresh All Prices
+            </button>
         </div>
-        <div class="watchlist">
+        <div class="watchlist" id="watchlist-container">
             {% for item in watchlist %}
-            <div class="watchlist-item">
+            <div class="watchlist-item" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}">
                 <div>
                     <div class="item-symbol">
+                        <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ item.symbol }}', event)">×</button>
                         {{ item.symbol }}
                         {% if item['has_alert'] %}
                             <span class="alert-dot" title="Recent Alert"></span>
@@ -450,6 +476,83 @@
                 suggBox.style.display = 'none';
             }
         });
+
+        let currentSort = { criteria: 'name', asc: true };
+
+        function sortWatchlist(criteria, btn) {
+            // Update active button
+            const sortControls = document.querySelector('.sidebar-header .sort-controls');
+            sortControls.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            if (currentSort.criteria === criteria) {
+                currentSort.asc = !currentSort.asc;
+            } else {
+                currentSort.criteria = criteria;
+                currentSort.asc = true;
+            }
+
+            const container = document.getElementById('watchlist-container');
+            const items = Array.from(container.querySelectorAll('.watchlist-item'));
+
+            items.sort((a, b) => {
+                let valA, valB;
+                if (criteria === 'name') {
+                    valA = a.dataset.symbol;
+                    valB = b.dataset.symbol;
+                    return currentSort.asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else if (criteria === 'price') {
+                    valA = parseFloat(a.dataset.price);
+                    valB = parseFloat(b.dataset.price);
+                    return currentSort.asc ? valA - valB : valB - valA;
+                } else if (criteria === 'moved') {
+                    valA = parseFloat(a.dataset.moved);
+                    valB = parseFloat(b.dataset.moved);
+                    return currentSort.asc ? valA - valB : valB - valA;
+                }
+            });
+
+            container.innerHTML = '';
+            items.forEach(item => container.appendChild(item));
+        }
+
+        async function refreshWatchlist(btn) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '↻ Refreshing...';
+            btn.disabled = true;
+            
+            try {
+                const res = await fetch('/api/refresh_watchlist');
+                const data = await res.json();
+                if (data.success) {
+                    location.reload(); // Quick way to update everything on admin side
+                } else {
+                    alert('Error refreshing: ' + data.error);
+                }
+            } catch (e) {
+                alert('Request failed');
+            }
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+
+        async function removeStock(symbol, event) {
+            event.stopPropagation();
+            if (!confirm(`Are you sure you want to remove ${symbol} from the watchlist?`)) return;
+            
+            try {
+                const res = await fetch(`/api/remove_stock/${symbol}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error removing stock: ' + data.error);
+                }
+            } catch (e) {
+                alert('Request failed');
+            }
+        }
     </script>
 </body>
 </html>
