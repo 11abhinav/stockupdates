@@ -10,10 +10,22 @@ log = logging.getLogger("scanners.news")
 # Simple memory cache for alerts to avoid duplicate messages per day
 _alerted = set()
 
-def is_recent(published_str, max_hours=24):
+from dateutil import parser
+from datetime import datetime, timezone, timedelta
+
+def is_recent(published_str, max_hours=6):
     """Check if the news/announcement is within max_hours"""
-    # Simple check for now, can be improved using dateutil if needed
-    return True 
+    if not published_str:
+        return False
+    try:
+        pub_date = parser.parse(published_str)
+        if pub_date.tzinfo is None:
+            pub_date = pub_date.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return (now - pub_date) <= timedelta(hours=max_hours)
+    except Exception as e:
+        log.error(f"Date parse error: {e}")
+        return False
 
 def get_active_symbols():
     """Returns symbols that had an alert in the last 3 days"""
@@ -47,6 +59,10 @@ def run_news_scan():
             entry = feed.entries[0]
             title = entry.get("title", "")
             link = entry.get("link", "")
+            published = entry.get("published", "")
+            
+            if not is_recent(published, max_hours=6):
+                continue
             
             alert_key = f"{symbol}_{title}"
             if alert_key in _alerted:
