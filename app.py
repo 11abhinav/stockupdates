@@ -3,7 +3,6 @@ import logging
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from apscheduler.schedulers.background import BackgroundScheduler
 import db
-import bot
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -125,6 +124,33 @@ def api_refresh_watchlist():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/search')
+def api_search():
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify([])
+    try:
+        import requests
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        # Search Yahoo Finance, filtering for NSE (.NS) and BSE (.BO) stocks
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=15&newsCount=0"
+        resp = requests.get(url, headers=headers, timeout=5)
+        data = resp.json()
+        results = []
+        for quote in data.get('quotes', []):
+            symbol = quote.get('symbol', '')
+            # Prioritize .NS stocks, and sometimes .BO if no .NS is available
+            if symbol.endswith('.NS'):
+                results.append({
+                    'symbol': symbol.replace('.NS', ''),
+                    'name': quote.get('shortname', quote.get('longname', '')),
+                    'exchange': 'NSE'
+                })
+        return jsonify(results)
+    except Exception as e:
+        log.error(f"Search API Error: {e}")
+        return jsonify([])
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
     if request.method == 'POST':
@@ -134,13 +160,26 @@ def admin():
             success = db.add_stock(symbol, bse_code if bse_code else None)
             return redirect(url_for('admin', success=success))
             
-    watchlist = db.get_watchlist()
+    prices = db.get_all_prices()
     recent_alerts = db.get_recent_alerts(200)
     alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
-    for w in watchlist:
-        w['has_alert'] = w['symbol'] in alerts_by_symbol
+    
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    utc = ZoneInfo("UTC")
+    
+    for p in prices:
+        p['has_alert'] = p['symbol'] in alerts_by_symbol
+        if p.get('last_fetched'):
+            dt = p['last_fetched']
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=utc)
+            p['last_fetched'] = dt.astimezone(ist)
+            
+    # Sort prices: those with alerts first, then alphabetically
+    prices.sort(key=lambda x: (not x.get('has_alert', False), x['symbol']))
         
-    return render_template('admin.html', watchlist=watchlist)
+    return render_template('admin.html', watchlist=prices)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

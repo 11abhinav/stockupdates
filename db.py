@@ -135,7 +135,7 @@ def get_all_prices():
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT w.symbol, p.latest_price, p.change_pct, p.last_fetched 
+                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched 
                     FROM stockupdates.watchlist w
                     LEFT JOIN stockupdates.prices p ON w.symbol = p.symbol
                     ORDER BY w.symbol;

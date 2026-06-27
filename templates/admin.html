@@ -107,6 +107,7 @@
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
+            flex-shrink: 0;
         }
         
         .watchlist-item:hover {
@@ -136,6 +137,24 @@
         .item-bse {
             font-size: 0.75rem;
             color: var(--text-muted);
+        }
+        
+        .item-price {
+            text-align: right;
+            font-weight: 600;
+        }
+
+        .price-val {
+            font-size: 1.1rem;
+            background: linear-gradient(to right, #f8fafc, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .no-price {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: normal;
         }
 
         /* Main Content Area */
@@ -310,13 +329,30 @@
         <div class="watchlist">
             {% for item in watchlist %}
             <div class="watchlist-item">
-                <div class="item-symbol">
-                    {{ item.symbol }}
-                    {% if item['has_alert'] %}
-                        <span class="alert-dot" title="Recent Alert"></span>
+                <div>
+                    <div class="item-symbol">
+                        {{ item.symbol }}
+                        {% if item['has_alert'] %}
+                            <span class="alert-dot" title="Recent Alert"></span>
+                        {% endif %}
+                    </div>
+                    <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
+                </div>
+                <div class="item-price {% if not item.latest_price %}no-price{% endif %}">
+                    {% if item.latest_price %}
+                        <div class="price-val">₹{{ item.latest_price }}</div>
+                        {% if item.change_pct != None %}
+                            <div style="font-size: 0.8rem; margin-top: 2px; color: {{ 'var(--success)' if item.change_pct > 0 else 'var(--warning)' if item.change_pct < 0 else 'var(--text-muted)' }}">
+                                {{ '+' if item.change_pct > 0 else '' }}{{ "%.2f"|format(item.change_pct) }}%
+                            </div>
+                        {% endif %}
+                        <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                            {{ item.last_fetched.strftime('%m-%d %H:%M') if item.last_fetched else '' }}
+                        </div>
+                    {% else %}
+                        No Data
                     {% endif %}
                 </div>
-                <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
             </div>
             {% endfor %}
         </div>
