@@ -150,5 +150,21 @@ def get_recent_alerts(limit=50):
         log.error(f"Error fetching alerts: {e}")
         return []
 
+def get_stock_alerts(symbol, limit=50):
+    if not DATABASE_URL:
+        return []
+    try:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM stockupdates.alerts 
+                    WHERE symbol = %s
+                    ORDER BY created_at DESC LIMIT %s;
+                """, (symbol, limit))
+                return cur.fetchall()
+    except Exception as e:
+        log.error(f"Error fetching stock alerts for {symbol}: {e}")
+        return []
+
 if __name__ == "__main__":
     init_db()

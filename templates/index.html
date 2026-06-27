@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StockUpdates Dashboard</title>
+    <title>StockUpdates Intelligence</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -18,6 +18,10 @@
             --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
         
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             background: var(--bg-dark);
@@ -25,26 +29,130 @@
                               radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
             color: var(--text-main);
             margin: 0;
-            padding: 2rem;
-            min-height: 100vh;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
         }
 
-        .header {
+        /* Sidebar Styling */
+        .sidebar {
+            width: 350px;
+            min-width: 350px;
+            border-right: 1px solid var(--glass-border);
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
+            flex-direction: column;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(10px);
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
             border-bottom: 1px solid var(--glass-border);
         }
 
-        .title {
-            font-size: 2rem;
+        .sidebar-title {
+            font-size: 1.5rem;
             font-weight: 700;
             background: linear-gradient(to right, #60a5fa, #34d399);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin: 0;
+            margin: 0 0 1rem 0;
+        }
+
+        .sort-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .sort-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            color: var(--text-muted);
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            flex: 1;
+            transition: all 0.2s;
+        }
+
+        .sort-btn.active, .sort-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .watchlist {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        /* Custom Scrollbar for watchlist */
+        .watchlist::-webkit-scrollbar {
+            width: 6px;
+        }
+        .watchlist::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+        }
+
+        .watchlist-item {
+            background: var(--glass-bg);
+            border: 1px solid transparent;
+            padding: 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .watchlist-item:hover {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .watchlist-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: var(--accent);
+        }
+
+        .item-symbol {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .item-price {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .item-price.no-price {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .top-nav {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
         }
 
         .nav-btn {
@@ -58,154 +166,286 @@
             transition: all 0.3s ease;
             backdrop-filter: blur(10px);
         }
-
+        
         .nav-btn:hover {
             background: rgba(59, 130, 246, 0.2);
             border-color: var(--accent);
-            transform: translateY(-2px);
         }
 
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 1.5rem;
+        .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            font-size: 1.2rem;
         }
 
-        .stock-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            backdrop-filter: blur(16px);
-            box-shadow: var(--card-shadow);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            position: relative;
-            overflow: hidden;
+        .stock-details {
+            display: none;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            animation: fadeIn 0.3s ease-in-out;
         }
 
-        .stock-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
-            border-color: rgba(255,255,255,0.2);
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .stock-card.has-alert {
-            border-color: var(--warning);
-            background: linear-gradient(145deg, rgba(30, 41, 59, 0.8), rgba(245, 158, 11, 0.05));
-        }
-
-        .card-header {
+        .stock-header {
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--glass-border);
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
+            align-items: flex-end;
         }
 
-        .symbol {
-            font-size: 1.4rem;
+        .stock-name-large {
+            font-size: 3rem;
+            font-weight: 700;
+            margin: 0;
+            line-height: 1.1;
+        }
+
+        .stock-price-large {
+            font-size: 2rem;
+            color: var(--success);
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .stock-meta {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        .tv-btn {
+            background: #2962FF;
+            color: white;
+            text-decoration: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.3s;
+        }
+
+        .tv-btn:hover {
+            background: #1E4ED8;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: #cbd5e1;
+            font-weight: 600;
+        }
+
+        .alerts-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .alert-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border-left: 4px solid var(--accent);
+        }
+
+        .alert-type-MOMENTUM { border-left-color: #ec4899; }
+        .alert-type-BSE { border-left-color: #3b82f6; }
+        .alert-type-NEWS { border-left-color: #8b5cf6; }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .alert-type {
             font-weight: 700;
             color: #fff;
         }
 
-        .price {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--success);
-        }
-
-        .last-fetched {
-            font-size: 0.8rem;
+        .alert-time {
             color: var(--text-muted);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 5px;
         }
 
-        .pulse {
-            width: 8px;
-            height: 8px;
-            background-color: var(--success);
-            border-radius: 50%;
-            display: inline-block;
-            box-shadow: 0 0 8px var(--success);
-        }
-
-        .alerts-container {
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px dashed rgba(255,255,255,0.1);
-        }
-        
-        .alerts-title {
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--warning);
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-        }
-
-        .alert-item {
-            background: rgba(0,0,0,0.2);
-            padding: 0.75rem;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            margin-bottom: 0.5rem;
-            border-left: 3px solid var(--warning);
+        .alert-body {
             color: #cbd5e1;
+            line-height: 1.5;
             white-space: pre-wrap;
         }
-        
-        .alert-type-MOMENTUM { border-color: #ec4899; }
-        .alert-type-BSE { border-color: #3b82f6; }
-        .alert-type-NEWS { border-color: #8b5cf6; }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            display: none;
+        }
 
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h1 class="title">StockUpdates Intelligence</h1>
-        <a href="/admin" class="nav-btn">Admin Panel</a>
-    </div>
-
-    <div class="dashboard-grid">
-        {% for stock in prices %}
-        {% set stock_alerts = alerts.get(stock['symbol'], []) %}
-        <div class="stock-card {% if stock_alerts %}has-alert{% endif %}">
-            <div class="card-header">
-                <div class="symbol">{{ stock['symbol'] }}</div>
-                <div class="price">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h1 class="sidebar-title">StockUpdates</h1>
+            <div class="sort-controls">
+                <button class="sort-btn active" onclick="sortWatchlist('name')">Sort Name</button>
+                <button class="sort-btn" onclick="sortWatchlist('price')">Sort Price</button>
+            </div>
+        </div>
+        <div class="watchlist" id="watchlist-container">
+            {% for stock in prices %}
+            <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
+                <div class="item-symbol">{{ stock['symbol'] }}</div>
+                <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
                     {% if stock['latest_price'] %}
                         ₹{{ stock['latest_price'] }}
                     {% else %}
-                        -
+                        No Data
                     {% endif %}
                 </div>
             </div>
-            <div class="last-fetched">
-                {% if stock['last_fetched'] %}
-                    <span class="pulse"></span> Fetched: {{ stock['last_fetched'].strftime('%Y-%m-%d %H:%M:%S') }}
-                {% else %}
-                    <span class="pulse" style="background:var(--text-muted); box-shadow:none;"></span> Awaiting initial scan
-                {% endif %}
-            </div>
-
-            {% if stock_alerts %}
-            <div class="alerts-container">
-                <div class="alerts-title">Recent Alerts</div>
-                {% for alert in stock_alerts[:3] %}
-                <div class="alert-item alert-type-{{ alert['alert_type'] }}">
-                    <strong>{{ alert['alert_type'] }}</strong> &middot; <span style="opacity:0.7">{{ alert['created_at'].strftime('%H:%M') }}</span><br>
-                    {{ alert['message'][:100] }}{% if alert['message']|length > 100 %}...{% endif %}
-                </div>
-                {% endfor %}
-            </div>
-            {% endif %}
+            {% endfor %}
         </div>
-        {% endfor %}
     </div>
 
+    <div class="main-content">
+        <div class="top-nav">
+            <a href="/admin" class="nav-btn">Admin Panel</a>
+        </div>
+
+        <div class="empty-state" id="empty-state">
+            ← Select a stock from the watchlist to view details.
+        </div>
+
+        <div class="loading" id="loading-state">
+            Loading data...
+        </div>
+
+        <div class="stock-details" id="stock-details">
+            <div class="stock-header">
+                <div>
+                    <h2 class="stock-name-large" id="detail-symbol">RELIANCE</h2>
+                    <div class="stock-price-large" id="detail-price">₹0.00</div>
+                    <div class="stock-meta" id="detail-meta">Last Fetched: -</div>
+                </div>
+                <div>
+                    <a href="#" target="_blank" class="tv-btn" id="tv-link">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        TradingView
+                    </a>
+                </div>
+            </div>
+
+            <h3 class="section-title">Recent Notices & Alerts</h3>
+            <div class="alerts-feed" id="alerts-feed">
+                <!-- Alerts will be injected here via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function sortWatchlist(criteria) {
+            // Update active button
+            document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            const container = document.getElementById('watchlist-container');
+            const items = Array.from(container.children);
+
+            items.sort((a, b) => {
+                if (criteria === 'name') {
+                    return a.dataset.symbol.localeCompare(b.dataset.symbol);
+                } else if (criteria === 'price') {
+                    return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
+                }
+            });
+
+            container.innerHTML = '';
+            items.forEach(item => container.appendChild(item));
+        }
+
+        async function loadStock(symbol, element) {
+            // Highlight selected item
+            document.querySelectorAll('.watchlist-item').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+
+            // Show loading
+            document.getElementById('empty-state').style.display = 'none';
+            document.getElementById('stock-details').style.display = 'none';
+            document.getElementById('loading-state').style.display = 'block';
+
+            try {
+                const response = await fetch(`/api/stock/${symbol}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Error loading stock data: ' + data.error);
+                    document.getElementById('loading-state').style.display = 'none';
+                    return;
+                }
+
+                // Update Header
+                document.getElementById('detail-symbol').textContent = data.symbol;
+                document.getElementById('detail-price').textContent = data.price ? `₹${data.price}` : 'No Data';
+                
+                let metaText = 'Awaiting initial scan';
+                if (data.last_fetched) {
+                    const date = new Date(data.last_fetched);
+                    metaText = `Last Fetched: ${date.toLocaleString()}`;
+                }
+                document.getElementById('detail-meta').textContent = metaText;
+
+                // Update TradingView Link
+                document.getElementById('tv-link').href = `https://in.tradingview.com/chart/?symbol=NSE:${data.symbol}`;
+
+                // Update Alerts
+                const feed = document.getElementById('alerts-feed');
+                feed.innerHTML = '';
+                
+                if (data.alerts && data.alerts.length > 0) {
+                    data.alerts.forEach(alert => {
+                        const date = new Date(alert.created_at);
+                        const card = document.createElement('div');
+                        card.className = `alert-card alert-type-${alert.alert_type}`;
+                        
+                        card.innerHTML = `
+                            <div class="alert-header">
+                                <span class="alert-type">${alert.alert_type}</span>
+                                <span class="alert-time">${date.toLocaleString()}</span>
+                            </div>
+                            <div class="alert-body">${alert.message}</div>
+                        `;
+                        feed.appendChild(card);
+                    });
+                } else {
+                    feed.innerHTML = '<div style="color:var(--text-muted)">No recent alerts or notices found for this stock.</div>';
+                }
+
+                // Show details
+                document.getElementById('loading-state').style.display = 'none';
+                document.getElementById('stock-details').style.display = 'block';
+
+            } catch (err) {
+                console.error(err);
+                alert('Failed to fetch stock data.');
+                document.getElementById('loading-state').style.display = 'none';
+                document.getElementById('empty-state').style.display = 'flex';
+            }
+        }
+    </script>
 </body>
 </html>
