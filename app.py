@@ -17,11 +17,14 @@ db.init_db()
 # Setup APScheduler
 scheduler = BackgroundScheduler()
 
-# We run the background tasks every 10 minutes.
-# bot.py natively checks if the market is open and skips execution if closed.
-from datetime import datetime
-scheduler.add_job(bot.run, 'interval', minutes=10, next_run_time=datetime.now())
-scheduler.add_job(bot.check_bse_announcements, 'interval', minutes=10, next_run_time=datetime.now())
+# Register Dual Scanners (IST Native)
+import scanners.mf
+import scanners.momentum
+import scanners.news
+
+scheduler.add_job(scanners.mf.run, 'interval', minutes=30)
+scheduler.add_job(scanners.momentum.run, 'interval', minutes=5)
+scheduler.add_job(scanners.news.run_bse_scan, 'interval', minutes=30)
 
 scheduler.start()
 

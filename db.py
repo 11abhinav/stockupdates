@@ -55,10 +55,27 @@ def init_db():
                         symbol VARCHAR(50),
                         alert_type VARCHAR(50),
                         message TEXT,
-                        score INTEGER,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        entry_price NUMERIC(10, 2),
+                        target_price NUMERIC(10, 2),
+                        stop_loss NUMERIC(10, 2),
+                        confidence NUMERIC(5, 2),
+                        trigger_type VARCHAR(50),
+                        tags JSONB
                     );
                 """)
+                
+                # Add new columns to existing alerts table just in case it already exists
+                alter_queries = [
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS entry_price NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS target_price NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS stop_loss NUMERIC(10, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS confidence NUMERIC(5, 2);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS trigger_type VARCHAR(50);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS tags JSONB;"
+                ]
+                for query in alter_queries:
+                    cur.execute(query)
                 conn.commit()
                 log.info("Database initialized successfully.")
     except Exception as e:
@@ -128,19 +145,25 @@ def get_all_prices():
         log.error(f"Error fetching prices: {e}")
         return []
 
-def log_alert(symbol, alert_type, message, score=None):
+def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, confidence=None, trigger_type=None, tags=None):
     if not DATABASE_URL:
         return
     try:
+        import json
+        tags_json = json.dumps(tags) if tags else None
+        
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO stockupdates.alerts (symbol, alert_type, message, score)
-                    VALUES (%s, %s, %s, %s);
-                """, (symbol.upper(), alert_type, message, score))
+                    INSERT INTO stockupdates.alerts (
+                        symbol, alert_type, message, created_at,
+                        entry_price, target_price, stop_loss, confidence, trigger_type, tags
+                    )
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s)
+                """, (symbol.upper(), alert_type, message, entry_price, target_price, stop_loss, confidence, trigger_type, tags_json))
                 conn.commit()
     except Exception as e:
-        log.error(f"Error logging alert for {symbol}: {e}")
+        log.error(f"Error saving alert for {symbol}: {e}")
 
 def get_recent_alerts(limit=50):
     if not DATABASE_URL:
@@ -149,8 +172,11 @@ def get_recent_alerts(limit=50):
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT * FROM stockupdates.alerts 
-                    ORDER BY created_at DESC LIMIT %s;
+                    SELECT id, symbol, alert_type, message, created_at,
+                           entry_price, target_price, stop_loss, confidence, trigger_type, tags
+                    FROM stockupdates.alerts
+                    ORDER BY created_at DESC
+                    LIMIT %s;
                 """, (limit,))
                 return cur.fetchall()
     except Exception as e:
@@ -164,10 +190,12 @@ def get_stock_alerts(symbol, limit=50):
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT * FROM stockupdates.alerts 
+                    SELECT id, symbol, alert_type, message, created_at,
+                           entry_price, target_price, stop_loss, confidence, trigger_type, tags
+                    FROM stockupdates.alerts 
                     WHERE symbol = %s
                     ORDER BY created_at DESC LIMIT %s;
-                """, (symbol, limit))
+                """, (symbol.upper(), limit))
                 return cur.fetchall()
     except Exception as e:
         log.error(f"Error fetching stock alerts for {symbol}: {e}")
