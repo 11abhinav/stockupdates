@@ -516,6 +516,16 @@
                 </div>
             </div>
 
+            <h3 class="section-title">Fundamentals</h3>
+            <div class="fundamentals-grid" id="fundamentals-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2.5rem;">
+                <!-- Fundamentals will be injected here via JS -->
+            </div>
+
+            <h3 class="section-title">Latest News</h3>
+            <div class="news-feed" id="news-feed" style="margin-bottom: 2.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                <!-- News will be injected here via JS -->
+            </div>
+
             <h3 class="section-title">Recent Notices & Alerts</h3>
             <div class="alerts-feed" id="alerts-feed">
                 <!-- Alerts will be injected here via JS -->
@@ -656,6 +666,62 @@
 
                 // Update TradingView Link
                 document.getElementById('tv-link').href = `https://in.tradingview.com/chart/?symbol=NSE:${data.symbol}`;
+
+                // Update Fundamentals
+                const fundGrid = document.getElementById('fundamentals-grid');
+                fundGrid.innerHTML = '';
+                if (data.fundamentals && Object.keys(data.fundamentals).length > 0) {
+                    const f = data.fundamentals;
+                    const formatNum = (num) => {
+                        if (!num) return '-';
+                        if (num >= 1e7) return (num / 1e7).toFixed(2) + ' Cr';
+                        if (num >= 1e5) return (num / 1e5).toFixed(2) + ' L';
+                        return parseFloat(num).toFixed(2);
+                    };
+                    const items = [
+                        { label: 'Market Cap', value: formatNum(f.marketCap) },
+                        { label: 'P/E Ratio', value: f.peRatio ? f.peRatio.toFixed(2) : '-' },
+                        { label: 'P/B Ratio', value: f.pbRatio ? f.pbRatio.toFixed(2) : '-' },
+                        { label: 'Div Yield', value: f.divYield ? f.divYield.toFixed(2) + '%' : '-' },
+                        { label: '52W High', value: f.high52 ? '₹' + f.high52.toFixed(2) : '-' },
+                        { label: '52W Low', value: f.low52 ? '₹' + f.low52.toFixed(2) : '-' },
+                        { label: 'Sector', value: f.sector || '-' },
+                        { label: 'Industry', value: f.industry || '-' }
+                    ];
+                    
+                    items.forEach(item => {
+                        fundGrid.innerHTML += `
+                            <div style="background: rgba(24, 24, 27, 0.4); border: 1px solid var(--glass-border); padding: 1rem; border-radius: 8px;">
+                                <div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">${item.label}</div>
+                                <div style="font-size: 1.1rem; font-weight: 600; color: var(--text-main);">${item.value}</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    fundGrid.innerHTML = '<div style="color:var(--text-muted); grid-column: 1/-1;">No fundamental data available.</div>';
+                }
+
+                // Update News
+                const newsFeed = document.getElementById('news-feed');
+                newsFeed.innerHTML = '';
+                if (data.news && data.news.length > 0) {
+                    data.news.forEach(item => {
+                        const date = item.time ? new Date(item.time * 1000).toLocaleString() : '';
+                        newsFeed.innerHTML += `
+                            <a href="${item.link}" target="_blank" style="text-decoration: none; color: inherit;">
+                                <div class="alert-card" style="border-left: 4px solid #3b82f6; display: flex; flex-direction: column; gap: 0.5rem;">
+                                    <div style="font-weight: 600; font-size: 1rem; color: #fff;">${item.title}</div>
+                                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+                                        <span>${item.publisher || 'News'}</span>
+                                        <span>${date}</span>
+                                    </div>
+                                </div>
+                            </a>
+                        `;
+                    });
+                } else {
+                    newsFeed.innerHTML = '<div style="color:var(--text-muted)">No recent news found for this stock.</div>';
+                }
 
                 // Update Alerts
                 const feed = document.getElementById('alerts-feed');

@@ -86,12 +86,57 @@ def api_stock(symbol):
             return jsonify({'error': 'Stock not found'}), 404
             
         alerts = db.get_stock_alerts(symbol, limit=50)
+        
+        # Fetch news and fundamentals
+        news = []
+        fundamentals = {}
+        try:
+            import feedparser
+            url = f"https://news.google.com/rss/search?q={symbol}+NSE+stock+when:7d"
+            feed = feedparser.parse(url)
+            
+            for entry in feed.entries[:5]:
+                import dateutil.parser
+                try:
+                    dt = dateutil.parser.parse(entry.get("published", ""))
+                    time_val = dt.timestamp()
+                except:
+                    time_val = None
+                    
+                news.append({
+                    'title': entry.get("title", ""),
+                    'publisher': entry.get("source", {}).get("title", "News") if hasattr(entry, 'source') else "News",
+                    'link': entry.get("link", ""),
+                    'time': time_val
+                })
+        except Exception as e:
+            log.warning(f"Failed to fetch Google News for {symbol}: {e}")
+            
+        try:
+            
+            info = ticker.info
+            if info:
+                fundamentals = {
+                    'marketCap': info.get('marketCap'),
+                    'peRatio': info.get('trailingPE'),
+                    'pbRatio': info.get('priceToBook'),
+                    'divYield': info.get('dividendYield', 0) * 100 if info.get('dividendYield') else None,
+                    'high52': info.get('fiftyTwoWeekHigh'),
+                    'low52': info.get('fiftyTwoWeekLow'),
+                    'sector': info.get('sector'),
+                    'industry': info.get('industry')
+                }
+        except Exception as e:
+            log.warning(f"Failed to fetch news/fundamentals for {symbol}: {e}")
+
         return jsonify({
             'symbol': symbol,
             'price': stock_data['latest_price'],
             'change_pct': stock_data['change_pct'],
             'last_fetched': stock_data['last_fetched'].isoformat() if stock_data.get('last_fetched') else None,
-            'alerts': alerts
+            'alerts': alerts,
+            'news': news,
+            'fundamentals': fundamentals
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -207,12 +252,23 @@ def admin():
                 try:
                     import requests
                     import re
-                    res = requests.get(f'https://www.screener.in/company/{symbol}/', headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-                    match = re.search(r'BSE:\s*(\d{6})', res.text)
-                    if match:
-                        bse_code = match.group(1)
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5'
+                    }
+                    res = requests.get(f'https://www.screener.in/company/{symbol}/', headers=headers, timeout=5)
+                    if res.status_code == 200:
+                        match = re.search(r'BSE:\s*(\d{6})', res.text)
+                        if match:
+                            bse_code = match.group(1)
+                    else:
+                        log.warning(f"Screener returned status {res.status_code} for {symbol}")
                 except Exception as e:
                     log.error(f"Failed to auto-fetch BSE code for {symbol}: {e}")
+            
+            if not bse_code:
+                bse_code = None
                     
             db.add_stock(symbol, bse_code)
             flash(f"Success: {symbol} added to watchlist.", "success")
