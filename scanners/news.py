@@ -21,8 +21,7 @@ def get_active_symbols():
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT DISTINCT symbol FROM stockupdates.alerts 
-                    WHERE created_at > NOW() - INTERVAL '3 days'
+                    SELECT DISTINCT symbol FROM stockupdates.watchlist
                 """)
                 return [row[0] for row in cur.fetchall()]
     except Exception as e:
@@ -65,10 +64,7 @@ def run_news_scan():
             log.error(f"Error checking news for {symbol}: {e}")
 
 def run_bse_scan():
-    if not is_market_open():
-        return
-        
-    log.info("Running BSE Scanner...")
+    log.info("Running BSE Scanner / News Scanner...")
     # Add BSE logic here. For brevity, using RSS fallback approach for all active symbols.
     run_news_scan() # Placeholder calling news scan for now, since it covers catalyst checks.
 
