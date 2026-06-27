@@ -19,8 +19,9 @@ scheduler = BackgroundScheduler()
 
 # We run the background tasks every 10 minutes.
 # bot.py natively checks if the market is open and skips execution if closed.
-scheduler.add_job(bot.run, 'interval', minutes=10)
-scheduler.add_job(bot.check_bse_announcements, 'interval', minutes=10)
+from datetime import datetime
+scheduler.add_job(bot.run, 'interval', minutes=10, next_run_time=datetime.now())
+scheduler.add_job(bot.check_bse_announcements, 'interval', minutes=10, next_run_time=datetime.now())
 
 scheduler.start()
 
