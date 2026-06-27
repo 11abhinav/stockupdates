@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - StockUpdates</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --success: #10b981;
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-dark);
+            background-image: radial-gradient(circle at 85% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
+                              radial-gradient(circle at 15% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .title {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0;
+        }
+
+        .nav-btn {
+            background: var(--glass-bg);
+            color: var(--text-main);
+            text-decoration: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--glass-border);
+            font-weight: 600;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .nav-btn:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--accent);
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(16px);
+            box-shadow: var(--card-shadow);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            color: #fff;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-family: inherit;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .success-msg {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .watchlist-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 1rem;
+        }
+
+        .watchlist-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: center;
+            transition: background 0.3s;
+        }
+        
+        .watchlist-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .item-symbol {
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .item-bse {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 class="title">Admin Panel</h1>
+        <a href="/" class="nav-btn">← Back to Dashboard</a>
+    </div>
+
+    <div class="container">
+        <!-- Add Stock Form -->
+        <div class="card" style="height: fit-content;">
+            <h2 class="card-title">Add New Stock</h2>
+            
+            {% if request.args.get('success') == 'True' %}
+            <div class="success-msg">Stock successfully added to watchlist!</div>
+            {% endif %}
+
+            <form method="POST" action="/admin">
+                <div class="form-group">
+                    <label for="symbol">NSE Symbol *</label>
+                    <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="bse_code">BSE Code (Optional for Announcements)</label>
+                    <input type="text" id="bse_code" name="bse_code" placeholder="e.g. 500325">
+                </div>
+
+                <button type="submit" class="btn-primary">Add to Watchlist</button>
+            </form>
+        </div>
+
+        <!-- Current Watchlist -->
+        <div class="card">
+            <h2 class="card-title">Active Watchlist ({{ watchlist|length }})</h2>
+            <div class="watchlist-grid">
+                {% for item in watchlist %}
+                <div class="watchlist-item">
+                    <div class="item-symbol">{{ item.symbol }}</div>
+                    <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

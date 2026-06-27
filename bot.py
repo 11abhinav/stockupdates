@@ -82,81 +82,20 @@ FRESH_HOURS      = 12   # max age for news/BSE alerts
 os.makedirs(EXPORT_FOLDER, exist_ok=True)
 
 # =============================================================================
-# WATCHLIST
+# WATCHLIST & BSE MAPPING (DB)
 # =============================================================================
 
-WATCHLIST = [
-    "ADANIENT", "ADANIGREEN", "ADANIPORTS", "AKZOINDIA", "ANANTRAJ",
-    "ASIANPAINT", "ATGL", "BAJAJFINSV", "BEL", "BLS", "BLUEDART",
-    "CASTROLIND", "CGPOWER", "CLEAN", "COALINDIA", "DBL", "EIDPARRY",
-    "FILATEX", "FORTIS", "GILLETTE", "GSFC", "HDFCBANK", "HINDCOPPER",
-    "HINDUNILVR", "ICICIBANK", "IDBI", "IFCI", "INDUSTOWER", "INFY",
-    "IRB", "IRCTC", "JIOFIN", "JSWENERGY", "LATENTVIEW", "LLOYDSENGG",
-    "LT", "MARUTI", "MAZDOCK", "NATCOPHARM", "ONGC", "ORIENTCEM",
-    "PFC", "PIDILITIND", "POONAWALLA", "PVRINOX", "RELIANCE", "RVNL",
-    "SBIN", "SUZLON", "SWIGGY", "SYMPHONY", "TATATECH", "TITAN", "TRENT",
-]
+from db import get_watchlist, update_price, log_alert
 
-# =============================================================================
-# BSE CODE → NSE SYMBOL MAP
-# =============================================================================
-
-BSE_CODE_TO_NSE = {
-    "500410": "ADANIENT",
-    "541450": "ADANIGREEN",
-    "532921": "ADANIPORTS",
-    "500710": "AKZOINDIA",
-    "541523": "ANANTRAJ",
-    "500820": "ASIANPAINT",
-    "543529": "ATGL",
-    "532978": "BAJAJFINSV",
-    "500049": "BEL",
-    "543579": "BLS",
-    "526612": "BLUEDART",
-    "500870": "CASTROLIND",
-    "541137": "CGPOWER",
-    "590061": "CLEAN",
-    "533278": "COALINDIA",
-    "534816": "DBL",
-    "500116": "EIDPARRY",
-    "526227": "FILATEX",
-    "532779": "FORTIS",
-    "507815": "GILLETTE",
-    "500690": "GSFC",
-    "500180": "HDFCBANK",
-    "513599": "HINDCOPPER",
-    "500696": "HINDUNILVR",
-    "532174": "ICICIBANK",
-    "500116": "IDBI",
-    "500106": "IFCI",
-    "534816": "INDUSTOWER",
-    "500209": "INFY",
-    "532947": "IRB",
-    "542830": "IRCTC",
-    "543940": "JIOFIN",
-    "533148": "JSWENERGY",
-    "540005": "LATENTVIEW",
-    "539275": "LLOYDSENGG",
-    "500510": "LT",
-    "532500": "MARUTI",
-    "543237": "MAZDOCK",
-    "524816": "NATCOPHARM",
-    "500312": "ONGC",
-    "502165": "ORIENTCEM",
-    "532810": "PFC",
-    "500331": "PIDILITIND",
-    "543277": "POONAWALLA",
-    "532344": "PVRINOX",
-    "500325": "RELIANCE",
-    "542649": "RVNL",
-    "500112": "SBIN",
-    "532667": "SUZLON",
-    "543288": "SWIGGY",
-    "517385": "SYMPHONY",
-    "544028": "TATATECH",
-    "500114": "TITAN",
-    "500251": "TRENT",
-}
+def get_watchlist_data():
+    try:
+        wl = get_watchlist()
+        watchlist = [r['symbol'] for r in wl]
+        bse_map = {r['bse_code']: r['symbol'] for r in wl if r['bse_code']}
+        return watchlist, bse_map
+    except Exception as e:
+        log.error("Failed to load watchlist from DB: %s", e)
+        return [], {}
 
 # =============================================================================
 # BSE DIRECT ANNOUNCEMENT LINK BUILDER
@@ -386,6 +325,11 @@ def check_news(symbol):
             f"🔗 {link}",
         ])
         send_telegram(msg)
+        try:
+            from db import log_alert
+            log_alert(symbol, "NEWS", title)
+        except Exception as db_exc:
+            log.warning("DB log failed: %s", db_exc)
         alerts[key] = today
         save_json_file(NEWS_ALERTS_FILE, alerts)
         log.info("NEWS [%s]: alert sent", symbol)
@@ -502,6 +446,7 @@ def check_bse_announcements():
             return
 
         matched = skipped_old = skipped_dup = skipped_nomatch = 0
+        watchlist, bse_map = get_watchlist_data()
 
         for entry in entries[:60]:
             raw_title  = entry.get("title", "")
@@ -515,12 +460,12 @@ def check_bse_announcements():
                 continue
 
             # PRIMARY: exact BSE code match
-            symbol = BSE_CODE_TO_NSE.get(scrip_cd)
+            symbol = bse_map.get(scrip_cd)
 
             # FALLBACK (RSS): whole-word match
             if symbol is None:
                 import re
-                for s in WATCHLIST:
+                for s in watchlist:
                     pattern = rf"\b{re.escape(s)}\b"
                     if re.search(pattern, scrip_name.upper()) or \
                        re.search(pattern, raw_title.upper()):
@@ -558,6 +503,10 @@ def check_bse_announcements():
                 f"🔗 {link}",
             ])
             send_telegram(msg)
+            try:
+                log_alert(symbol, "BSE", raw_title)
+            except Exception as db_exc:
+                log.warning("DB log failed: %s", db_exc)
             alerts[key] = today
             matched += 1
             log.info("BSE ALERT: %s | %s | scrip_cd=%s | link=%s", symbol, raw_title[:60], scrip_cd, link)
@@ -759,10 +708,11 @@ def run():
 
     nifty_20d = fetch_nifty_returns(20)
     results   = []
-    total     = len(WATCHLIST)
+    watchlist, _ = get_watchlist_data()
+    total     = len(watchlist)
     skipped   = 0
 
-    for index, symbol in enumerate(WATCHLIST, start=1):
+    for index, symbol in enumerate(watchlist, start=1):
         try:
             log.info("─── [%d/%d] %s", index, total, symbol)
 
@@ -779,6 +729,11 @@ def run():
 
             current_price = safe_float(close.iloc[-1])
             prev_close    = safe_float(close.iloc[-2])
+            
+            try:
+                update_price(symbol, current_price)
+            except Exception as e:
+                log.warning("DB price update failed for %s: %s", symbol, e)
 
             if prev_close == 0:
                 log.warning("STOCK [%s]: prev_close=0, skipping", symbol)
@@ -932,6 +887,10 @@ def run():
                 ])
 
                 send_telegram(msg)
+                try:
+                    log_alert(symbol, "MOMENTUM", msg, score)
+                except Exception as db_exc:
+                    log.warning("DB log failed: %s", db_exc)
                 mark_alert_sent(symbol)
                 log.info("ALERT [%s]: sent score=%d/14", symbol, score)
 

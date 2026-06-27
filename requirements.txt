@@ -6,3 +6,7 @@ requests
 feedparser
 openpyxl
 pyarrow
+psycopg2-binary
+Flask
+APScheduler
+gunicorn
