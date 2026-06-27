@@ -1,10 +1,7 @@
 [build]
 builder = "NIXPACKS"
-
-[env]
-PORT = "8080"
  
 [deploy]
-startCommand = "gunicorn app:app -b 0.0.0.0:8080 --workers 2 --threads 4"
+startCommand = "bash -c 'gunicorn app:app -b 0.0.0.0:${PORT} --workers 2 --threads 4'"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
