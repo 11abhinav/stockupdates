@@ -316,6 +316,7 @@
             <div class="sort-controls">
                 <button class="sort-btn active" onclick="sortWatchlist('name')">Sort Name</button>
                 <button class="sort-btn" onclick="sortWatchlist('price')">Sort Price</button>
+                <button class="sort-btn" onclick="sortWatchlist('moved')">Sort % Move</button>
             </div>
             <button class="nav-btn" style="width: 100%; margin-top: 1rem; font-size: 0.9rem;" onclick="refreshWatchlist(this)">
                 ↻ Refresh All Prices
@@ -323,7 +324,7 @@
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for stock in prices %}
-            <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
+            <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
                 <div class="item-symbol">
                     {{ stock['symbol'] }}
                     {% if stock['has_alert'] %}
@@ -333,6 +334,11 @@
                 <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
                     {% if stock['latest_price'] %}
                         <div class="price-val">₹{{ stock['latest_price'] }}</div>
+                        {% if stock['change_pct'] != None %}
+                            <div style="font-size: 0.8rem; margin-top: 2px; color: {{ 'var(--success)' if stock['change_pct'] > 0 else 'var(--warning)' if stock['change_pct'] < 0 else 'var(--text-muted)' }}">
+                                {{ '+' if stock['change_pct'] > 0 else '' }}{{ "%.2f"|format(stock['change_pct']) }}%
+                            </div>
+                        {% endif %}
                         <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
                             {{ stock['last_fetched'].strftime('%m-%d %H:%M') if stock['last_fetched'] else '' }}
                         </div>
@@ -422,6 +428,8 @@
                     return a.dataset.symbol.localeCompare(b.dataset.symbol);
                 } else if (criteria === 'price') {
                     return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
+                } else if (criteria === 'moved') {
+                    return parseFloat(b.dataset.moved) - parseFloat(a.dataset.moved);
                 }
             });
 
@@ -523,12 +531,24 @@
                         if (data.price) {
                             const now = new Date();
                             const timeStr = `${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                            
+                            let movedHtml = '';
+                            if (data.change_pct !== undefined && data.change_pct !== null) {
+                                const movedColor = data.change_pct > 0 ? 'var(--success)' : data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)';
+                                const prefix = data.change_pct > 0 ? '+' : '';
+                                movedHtml = `<div style="font-size: 0.8rem; margin-top: 2px; color: ${movedColor}">${prefix}${data.change_pct.toFixed(2)}%</div>`;
+                            }
+                            
                             priceDiv.innerHTML = `
                                 <div class="price-val">₹${data.price}</div>
+                                ${movedHtml}
                                 <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">${timeStr}</div>
                             `;
                             priceDiv.classList.remove('no-price');
                             element.dataset.price = data.price; // Update dataset for sorting
+                            if (data.change_pct !== undefined && data.change_pct !== null) {
+                                element.dataset.moved = data.change_pct;
+                            }
                         } else {
                             priceDiv.textContent = 'No Data';
                         }

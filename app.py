@@ -32,8 +32,25 @@ def index():
         recent_alerts = db.get_recent_alerts(200)
         
         alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
+        
+        from zoneinfo import ZoneInfo
+        ist = ZoneInfo("Asia/Kolkata")
+        utc = ZoneInfo("UTC")
+        
         for p in prices:
             p['has_alert'] = p['symbol'] in alerts_by_symbol
+            if p.get('last_fetched'):
+                dt = p['last_fetched']
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=utc)
+                p['last_fetched'] = dt.astimezone(ist)
+                
+        for a in recent_alerts:
+            if a.get('created_at'):
+                dt = a['created_at']
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=utc)
+                a['created_at'] = dt.astimezone(ist)
             
         # Sort prices: those with alerts first, then alphabetically
         prices.sort(key=lambda x: (not x.get('has_alert', False), x['symbol']))
@@ -51,11 +68,13 @@ def api_stock(symbol):
         # Fetch live price on-demand when clicked
         import yfinance as yf
         ticker = yf.Ticker(f"{symbol}.NS")
-        hist = ticker.history(period="1d")
-        if not hist.empty:
+        hist = ticker.history(period="5d")
+        if not hist.empty and len(hist) >= 2:
             live_price = float(hist["Close"].iloc[-1])
+            prev_close = float(hist["Close"].iloc[-2])
+            change_pct = ((live_price - prev_close) / prev_close) * 100
             # Update DB with fresh price
-            db.update_price(symbol, live_price)
+            db.update_price(symbol, live_price, change_pct)
             
         prices = db.get_all_prices()
         stock_data = next((p for p in prices if p['symbol'] == symbol), None)
@@ -66,6 +85,7 @@ def api_stock(symbol):
         return jsonify({
             'symbol': symbol,
             'price': stock_data['latest_price'],
+            'change_pct': stock_data['change_pct'],
             'last_fetched': stock_data['last_fetched'].isoformat() if stock_data.get('last_fetched') else None,
             'alerts': alerts
         })
@@ -79,19 +99,23 @@ def api_refresh_watchlist():
         symbols = [w['symbol'] for w in watchlist]
         
         import yfinance as yf
-        # Batch download all tickers to be faster
-        df = yf.download([f"{s}.NS" for s in symbols], period="1d", progress=False)
+        # Batch download all tickers for 5 days to get prev close
+        df = yf.download([f"{s}.NS" for s in symbols], period="5d", progress=False)
         
-        if not df.empty:
+        if not df.empty and len(df) >= 2:
             for s in symbols:
                 try:
                     # if only 1 symbol, df structure is different than if multiple
                     if len(symbols) == 1:
                         live_price = float(df['Close'].iloc[-1])
+                        prev_close = float(df['Close'].iloc[-2])
                     else:
                         live_price = float(df['Close'][f"{s}.NS"].iloc[-1])
-                    if not __import__("math").isnan(live_price):
-                        db.update_price(s, live_price)
+                        prev_close = float(df['Close'][f"{s}.NS"].iloc[-2])
+                        
+                    if not __import__("math").isnan(live_price) and not __import__("math").isnan(prev_close) and prev_close > 0:
+                        change_pct = ((live_price - prev_close) / prev_close) * 100
+                        db.update_price(s, live_price, change_pct)
                 except Exception as e:
                     pass
         return jsonify({'success': True})

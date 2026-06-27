@@ -42,6 +42,12 @@ def init_db():
                     );
                 """)
                 
+                # Add change_pct column if it doesn't exist
+                cur.execute("""
+                    ALTER TABLE stockupdates.prices 
+                    ADD COLUMN IF NOT EXISTS change_pct NUMERIC(10, 2);
+                """)
+                
                 # Create alerts table
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS stockupdates.alerts (
@@ -87,19 +93,20 @@ def add_stock(symbol, bse_code=None):
         log.error(f"Error adding stock {symbol}: {e}")
         return False
 
-def update_price(symbol, price):
+def update_price(symbol, price, change_pct=None):
     if not DATABASE_URL:
         return
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO stockupdates.prices (symbol, latest_price, last_fetched)
-                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                    INSERT INTO stockupdates.prices (symbol, latest_price, change_pct, last_fetched)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (symbol) DO UPDATE 
                     SET latest_price = EXCLUDED.latest_price,
+                        change_pct = COALESCE(EXCLUDED.change_pct, stockupdates.prices.change_pct),
                         last_fetched = CURRENT_TIMESTAMP;
-                """, (symbol.upper(), price))
+                """, (symbol.upper(), price, change_pct))
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating price for {symbol}: {e}")
@@ -111,7 +118,7 @@ def get_all_prices():
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT w.symbol, p.latest_price, p.last_fetched 
+                    SELECT w.symbol, p.latest_price, p.change_pct, p.last_fetched 
                     FROM stockupdates.watchlist w
                     LEFT JOIN stockupdates.prices p ON w.symbol = p.symbol
                     ORDER BY w.symbol;

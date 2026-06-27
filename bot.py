@@ -749,8 +749,10 @@ def run():
             current_price = safe_float(close.iloc[-1])
             prev_close    = safe_float(close.iloc[-2])
             
+            change_pct   = (current_price - prev_close) / prev_close * 100
+            
             try:
-                update_price(symbol, current_price)
+                update_price(symbol, current_price, change_pct)
             except Exception as e:
                 log.warning("DB price update failed for %s: %s", symbol, e)
 
@@ -758,8 +760,6 @@ def run():
                 log.warning("STOCK [%s]: prev_close=0, skipping", symbol)
                 skipped += 1
                 continue
-
-            change_pct   = (current_price - prev_close) / prev_close * 100
             avg_volume   = safe_float(volume.rolling(20).mean().iloc[-1])
             volume_ratio = (float(volume.iloc[-1]) / avg_volume) if avg_volume > 0 else 0
 
