@@ -809,3 +809,29 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     color: #ef4444 !important;
     border-color: rgba(239, 68, 68, 0.2) !important;
 }
+
+/* Watchlist Item Card highlighting based on fundamental score */
+.watchlist-item.fscore-high {
+    background: linear-gradient(90deg, rgba(16, 185, 129, 0.03) 0%, var(--bg-surface) 100%);
+    border-left: 4px solid #10b981 !important;
+    border-color: rgba(16, 185, 129, 0.15);
+}
+
+.watchlist-item.fscore-med {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.03) 0%, var(--bg-surface) 100%);
+    border-left: 4px solid #f59e0b !important;
+    border-color: rgba(245, 158, 11, 0.15);
+}
+
+.watchlist-item.fscore-low {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.03) 0%, var(--bg-surface) 100%);
+    border-left: 4px solid #ef4444 !important;
+    border-color: rgba(239, 68, 68, 0.15);
+}
+
+/* Ensure padding adjustments when left border is active */
+.watchlist-item.fscore-high,
+.watchlist-item.fscore-med,
+.watchlist-item.fscore-low {
+    padding-left: 16px;
+}

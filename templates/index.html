@@ -29,7 +29,7 @@
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for stock in prices %}
-            <div class="watchlist-item" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
+            <div class="watchlist-item {% if stock['fundamental_score'] != None %}{% if stock['fundamental_score'] >= 7 %}fscore-high{% elif stock['fundamental_score'] >= 4 %}fscore-med{% else %}fscore-low{% endif %}{% endif %}" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
                 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
                     <div class="item-symbol">
                         <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ stock['symbol'] }}', event)">×</button>
@@ -38,8 +38,8 @@
                             <span class="alert-dot" title="Recent Alert"></span>
                         {% endif %}
                     </div>
-                    <div class="score-badge {% if stock['fundamental_score'] != None %}{% if stock['fundamental_score'] >= 5 %}score-high{% elif stock['fundamental_score'] >= 3 %}score-med{% else %}score-low{% endif %}{% endif %}">
-                        F-Score: {{ stock['fundamental_score'] if stock['fundamental_score'] != None else '-' }}/7
+                    <div class="score-badge {% if stock['fundamental_score'] != None %}{% if stock['fundamental_score'] >= 7 %}score-high{% elif stock['fundamental_score'] >= 4 %}score-med{% else %}score-low{% endif %}{% endif %}">
+                        F-Score: {{ stock['fundamental_score'] if stock['fundamental_score'] != None else '-' }}/10
                     </div>
                 </div>
                 <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
@@ -160,7 +160,7 @@
                 <div>
                     <h2 class="stock-name-large" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <span id="detail-symbol">RELIANCE</span>
-                        <span id="detail-fscore" class="score-badge" style="font-size: 0.85rem; padding: 4px 10px; border-radius: 8px;">F-Score: -/7</span>
+                        <span id="detail-fscore" class="score-badge" style="font-size: 0.85rem; padding: 4px 10px; border-radius: 8px;">F-Score: -/10</span>
                     </h2>
                     <div class="stock-price-large-container" id="detail-price-container">
                         <span class="stock-price-large" id="detail-price">₹0.00</span>
@@ -307,11 +307,11 @@
                 
                 const detailFscore = document.getElementById('detail-fscore');
                 if (detailFscore && data.fundamental_score !== undefined && data.fundamental_score !== null) {
-                    detailFscore.textContent = `F-Score: ${data.fundamental_score}/7`;
+                    detailFscore.textContent = `F-Score: ${data.fundamental_score}/10`;
                     detailFscore.className = 'score-badge';
-                    if (data.fundamental_score >= 5) {
+                    if (data.fundamental_score >= 7) {
                         detailFscore.classList.add('score-high');
-                    } else if (data.fundamental_score >= 3) {
+                    } else if (data.fundamental_score >= 4) {
                         detailFscore.classList.add('score-med');
                     } else {
                         detailFscore.classList.add('score-low');
@@ -504,14 +504,26 @@
                     
                     const scoreDiv = element.querySelector('.score-badge');
                     if (scoreDiv && data.fundamental_score !== undefined && data.fundamental_score !== null) {
-                        scoreDiv.textContent = `F-Score: ${data.fundamental_score}/7`;
+                        scoreDiv.textContent = `F-Score: ${data.fundamental_score}/10`;
                         scoreDiv.className = 'score-badge';
-                        if (data.fundamental_score >= 5) {
+                        if (data.fundamental_score >= 7) {
                             scoreDiv.classList.add('score-high');
-                        } else if (data.fundamental_score >= 3) {
+                        } else if (data.fundamental_score >= 4) {
                             scoreDiv.classList.add('score-med');
                         } else {
                             scoreDiv.classList.add('score-low');
+                        }
+                    }
+
+                    // Update whole card background class
+                    element.classList.remove('fscore-high', 'fscore-med', 'fscore-low');
+                    if (data.fundamental_score !== undefined && data.fundamental_score !== null) {
+                        if (data.fundamental_score >= 7) {
+                            element.classList.add('fscore-high');
+                        } else if (data.fundamental_score >= 4) {
+                            element.classList.add('fscore-med');
+                        } else {
+                            element.classList.add('fscore-low');
                         }
                     }
                 }

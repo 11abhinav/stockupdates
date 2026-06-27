@@ -24,14 +24,17 @@ db.init_db()
 
 def calculate_fundamental_score(info, financials):
     """
-    Calculate a score out of 7 points based on key fundamental metrics:
+    Calculate a score out of 10 points based on key fundamental metrics:
     - Market Cap >= 5,000 Cr (50 Billion INR): +1
     - ROCE/ROE >= 15%: +1
     - Debt/Equity <= 0.5 (or debtToEquity <= 50 in yfinance): +1
     - 3Y Sales CAGR >= 10% (fallback to revenueGrowth >= 10%): +1
     - 3Y Profit CAGR >= 10% (fallback to earningsGrowth >= 10%): +1
     - Latest year operating cash flow > 0: +1
-    - Operating Margin >= 15% (substitute for promoter pledge): +1
+    - Operating Margin >= 15%: +1
+    - PE Ratio between 0 and 40 (Quality-Growth valuation check): +1
+    - PB Ratio between 0 and 5.0: +1
+    - Dividend Yield >= 0.5%: +1
     """
     if not info:
         return 0
@@ -124,11 +127,43 @@ def calculate_fundamental_score(info, financials):
         except:
             pass
 
-    # 7. Operating Margin >= 15% (substitute for promoter pledge)
+    # 7. Operating Margin >= 15%
     op_margin = info.get('operatingMargins')
     if op_margin is not None:
         try:
             if float(op_margin) >= 0.15:
+                score += 1
+        except:
+            pass
+
+    # 8. PE Ratio between 0 and 40
+    pe = info.get('trailingPE') or info.get('peRatio')
+    if pe is not None:
+        try:
+            if 0 < float(pe) < 40.0:
+                score += 1
+        except:
+            pass
+
+    # 9. PB Ratio between 0 and 5.0
+    pb = info.get('priceToBook') or info.get('pbRatio')
+    if pb is not None:
+        try:
+            if 0 < float(pb) < 5.0:
+                score += 1
+        except:
+            pass
+
+    # 10. Dividend Yield >= 0.5% (Yield >= 0.005)
+    div = info.get('dividendYield') or info.get('divYield')
+    if div is not None:
+        try:
+            div_val = float(div)
+            if div_val < 1.0:
+                div_val = div_val * 100
+            if div_val >= 0.5:
+                score += 1
+            elif float(div) >= 0.005: # backup if not scaled to 100
                 score += 1
         except:
             pass
