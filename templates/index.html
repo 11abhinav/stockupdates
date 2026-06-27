@@ -458,6 +458,18 @@
                     feed.innerHTML = '<div style="color:var(--text-muted)">No recent alerts or notices found for this stock.</div>';
                 }
 
+                // Update the left sidebar element visually
+                if (element) {
+                    const priceDiv = element.querySelector('.item-price');
+                    if (priceDiv) {
+                        priceDiv.textContent = data.price ? `₹${data.price}` : 'No Data';
+                        if (data.price) {
+                            priceDiv.classList.remove('no-price');
+                            element.dataset.price = data.price; // Update dataset for sorting
+                        }
+                    }
+                }
+
                 // Show details
                 document.getElementById('loading-state').style.display = 'none';
                 document.getElementById('stock-details').style.display = 'block';
