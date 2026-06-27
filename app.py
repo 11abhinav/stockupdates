@@ -30,8 +30,12 @@ import scanners.news
 import scanners.tracker
 
 # Setup APScheduler
-scheduler = BackgroundScheduler()
 ist_tz = ZoneInfo("Asia/Kolkata")
+job_defaults = {
+    'misfire_grace_time': 120,
+    'max_instances': 1
+}
+scheduler = BackgroundScheduler(timezone=ist_tz, job_defaults=job_defaults)
 
 # MF Breakout Scanner (Every 30 min during market hours)
 scheduler.add_job(
