@@ -46,24 +46,24 @@ def run():
             # Volume Check: Is volume expanding on the breakout?
             is_expanding_volume = last_vol >= avg_vol * 1.5
             
-            # Calculate Risk/Reward (ATR based Stop Loss) using the new Trade Plan
-            atr = (hourly_df['High'] - hourly_df['Low']).iloc[-14:].mean()
-            
-            swing_low = recent_swing_low(hourly_df, lookback=20)
-            base_low = consolidation_base_low(hourly_df, lookback=40)
-            
-            trade_plan = build_mf_trade_plan(
-                breakout_level=recent_high,
-                latest_close=current_price,
-                atr=atr,
-                swing_low=swing_low,
-                ema20=ema50, # using ema50 from daily as a proxy, or calculate ema20 on hourly
-                base_low=base_low,
-                breakout_buffer_pct=0.0015,
-                atr_sl_buffer_mult=0.5
-            )
-            
             if is_expanding_volume:
+                # Calculate Risk/Reward (ATR based Stop Loss) using the new Trade Plan
+                atr = (hourly_df['High'] - hourly_df['Low']).iloc[-14:].mean()
+                
+                swing_low = recent_swing_low(hourly_df, lookback=20)
+                base_low = consolidation_base_low(hourly_df, lookback=40)
+                
+                trade_plan = build_mf_trade_plan(
+                    breakout_level=recent_high,
+                    latest_close=current_price,
+                    atr=atr,
+                    swing_low=swing_low,
+                    ema20=ema50, # using ema50 from daily as a proxy, or calculate ema20 on hourly
+                    base_low=base_low,
+                    breakout_buffer_pct=0.0015,
+                    atr_sl_buffer_mult=0.5
+                )
+
                 # Emit Full Breakout Alert
                 emit_alert(
                     symbol=symbol,
@@ -74,12 +74,12 @@ def run():
                     tags={"trend": "strong", "volume": "expanding"}
                 )
             else:
-                # Emit Qualifying Alert (Ladder)
+                # Emit Qualifying Alert (Ladder) without a trade plan
                 emit_alert(
                     symbol=symbol,
                     scanner_name="MF_QUALIFYING",
                     message=f"Eligible on 1H structure, waiting for volume expansion to qualify on 30m/5m (currently {last_vol/avg_vol:.1f}x avg vol).",
-                    trade_plan=trade_plan,
+                    trade_plan=None,
                     confidence=6.0,
                     tags={"status": "waiting", "ladder": "1H_ready"}
                 )
