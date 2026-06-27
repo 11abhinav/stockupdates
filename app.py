@@ -248,6 +248,25 @@ def api_remove_stock(symbol):
         log.error(f"Remove stock error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/api/clean_dummy_alerts')
+def api_clean_dummy_alerts():
+    try:
+        with db.get_db_connection() as conn:
+            if not conn: return jsonify({'error': 'No DB connection'})
+            with conn.cursor() as cur:
+                # Delete any alerts that were injected with DUMMY or TEST symbols
+                cur.execute("DELETE FROM stockupdates.alerts WHERE symbol LIKE 'DUMMY%' OR symbol = 'TEST' OR message LIKE '%Mock%';")
+                conn.commit()
+        
+        # Clear the memory cache as well so the UI updates instantly
+        global _alerts_cache
+        _alerts_cache["data"] = []
+        _alerts_cache["timestamp"] = 0
+        
+        return jsonify({'success': True, 'message': 'All dummy/mock alerts have been wiped from the database!'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
     if request.method == 'POST':
