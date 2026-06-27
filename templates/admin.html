@@ -20,6 +20,12 @@
                 <button class="sort-btn" onclick="sortWatchlist('price', this)">Price</button>
                 <button class="sort-btn" onclick="sortWatchlist('moved', this)">% Move</button>
             </div>
+            <div class="filter-controls" style="margin-top: 1rem;">
+                <button class="filter-btn active" onclick="filterWatchlist('ALL', this)">All</button>
+                <button class="filter-btn" onclick="filterWatchlist('STRONG', this)">Strong</button>
+                <button class="filter-btn" onclick="filterWatchlist('NEUTRAL', this)">Neutral</button>
+                <button class="filter-btn" onclick="filterWatchlist('CAUTION', this)">Caution</button>
+            </div>
             <div class="sort-controls" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
                 <button class="nav-btn" style="flex: 1; font-size: 0.8rem; padding: 0.5rem; justify-content: center;" onclick="refreshWatchlist(this)">
                     ↻ Refresh
@@ -31,7 +37,7 @@
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for item in watchlist %}
-            <div class="watchlist-item {% if item['fundamental_score'] != None %}{% if item['fundamental_score'] >= 7 %}fscore-high{% elif item['fundamental_score'] >= 4 %}fscore-med{% else %}fscore-low{% endif %}{% endif %}" style="cursor: pointer;" onclick="if(!event.target.classList.contains('delete-btn')) window.location.href='/?stock={{ item.symbol }}';" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}">
+            <div class="watchlist-item {% if item['fundamental_score'] != None %}{% if item['fundamental_score'] >= 7 %}fscore-high{% elif item['fundamental_score'] >= 4 %}fscore-med{% else %}fscore-low{% endif %}{% endif %}" style="cursor: pointer;" onclick="if(!event.target.classList.contains('delete-btn')) window.location.href='/?stock={{ item.symbol }}';" data-symbol="{{ item.symbol }}" data-price="{{ item.latest_price or 0 }}" data-moved="{{ item.change_pct or 0 }}" data-fscore="{{ item['fundamental_score'] if item['fundamental_score'] != None else -1 }}">
                 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
                     <div class="item-symbol">
                         <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ item.symbol }}', event)">×</button>
@@ -42,7 +48,17 @@
                     </div>
                     <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
                     <div class="score-badge {% if item['fundamental_score'] != None %}{% if item['fundamental_score'] >= 7 %}score-high{% elif item['fundamental_score'] >= 4 %}score-med{% else %}score-low{% endif %}{% endif %}" style="align-self: flex-start;">
-                        F-Score: {{ item['fundamental_score'] if item['fundamental_score'] != None else '-' }}/10
+                        {% if item['fundamental_score'] != None %}
+                            {% if item['fundamental_score'] >= 7 %}
+                                Strong ({{ item['fundamental_score'] }})
+                            {% elif item['fundamental_score'] >= 4 %}
+                                Neutral ({{ item['fundamental_score'] }})
+                            {% else %}
+                                Caution ({{ item['fundamental_score'] }})
+                            {% endif %}
+                        {% else %}
+                            Pending
+                        {% endif %}
                     </div>
                 </div>
                 <div class="item-price {% if not item.latest_price %}no-price{% endif %}">
@@ -246,6 +262,41 @@
                 btn.style.background = '';
                 btn.style.borderColor = '';
             }
+        }
+
+        let watchlistFilter = 'ALL';
+        function filterWatchlist(category, btn) {
+            watchlistFilter = category;
+            const items = document.querySelectorAll('.watchlist-item');
+            items.forEach(item => {
+                const score = parseInt(item.dataset.fscore);
+                if (category === 'ALL') {
+                    item.style.display = 'flex';
+                } else if (category === 'STRONG') {
+                    if (score >= 7) {
+                        item.style.display = 'flex';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                } else if (category === 'NEUTRAL') {
+                    if (score >= 4 && score <= 6) {
+                        item.style.display = 'flex';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                } else if (category === 'CAUTION') {
+                    if (score >= 0 && score <= 3) {
+                        item.style.display = 'flex';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                }
+            });
+            
+            // Update active filter button state
+            const filterControls = btn.parentElement;
+            filterControls.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
         }
     </script>
 </body>
