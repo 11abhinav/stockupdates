@@ -316,8 +316,10 @@
             <div class="sort-controls">
                 <button class="sort-btn active" onclick="sortWatchlist('name')">Sort Name</button>
                 <button class="sort-btn" onclick="sortWatchlist('price')">Sort Price</button>
-                <button class="sort-btn" onclick="sortWatchlist('alerts')">Alerts First</button>
             </div>
+            <button class="nav-btn" style="width: 100%; margin-top: 1rem; font-size: 0.9rem;" onclick="refreshWatchlist(this)">
+                ↻ Refresh All Prices
+            </button>
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for stock in prices %}
@@ -330,7 +332,10 @@
                 </div>
                 <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
                     {% if stock['latest_price'] %}
-                        ₹{{ stock['latest_price'] }}
+                        <div class="price-val">₹{{ stock['latest_price'] }}</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">
+                            {{ stock['last_fetched'].strftime('%m-%d %H:%M') if stock['last_fetched'] else '' }}
+                        </div>
                     {% else %}
                         No Data
                     {% endif %}
@@ -342,11 +347,38 @@
 
     <div class="main-content">
         <div class="top-nav">
+            <button class="nav-btn" style="margin-right:1rem;" onclick="showGlobalAlerts()">Global Alerts</button>
             <a href="/admin" class="nav-btn">Admin Panel</a>
         </div>
 
-        <div class="empty-state" id="empty-state">
-            ← Select a stock from the watchlist to view details.
+        <div class="global-alerts" id="global-alerts-container">
+            <div class="stock-header">
+                <div>
+                    <h2 class="stock-name-large">Global Alerts Feed</h2>
+                    <div class="stock-meta">Latest notices and news across your entire watchlist.</div>
+                </div>
+            </div>
+            
+            <div class="sort-controls" style="margin-bottom: 2rem;">
+                <button class="sort-btn active" onclick="filterGlobalAlerts('ALL')">All</button>
+                <button class="sort-btn" onclick="filterGlobalAlerts('BSE')">BSE Only</button>
+                <button class="sort-btn" onclick="filterGlobalAlerts('NEWS')">News Only</button>
+                <button class="sort-btn" onclick="filterGlobalAlerts('MOMENTUM')">Momentum Only</button>
+            </div>
+            
+            <div class="alerts-feed" id="global-alerts-feed">
+                {% for alert in all_alerts %}
+                <div class="alert-card alert-type-{{ alert.alert_type }}" data-type="{{ alert.alert_type }}">
+                    <div class="alert-header">
+                        <span class="alert-type">[{{ alert.symbol }}] {{ alert.alert_type }}</span>
+                        <span class="alert-time">{{ alert.created_at.strftime('%Y-%m-%d %H:%M:%S') if alert.created_at else '' }}</span>
+                    </div>
+                    <div class="alert-body">{{ alert.message }}</div>
+                </div>
+                {% else %}
+                <div style="color:var(--text-muted)">No recent alerts found in the database.</div>
+                {% endfor %}
+            </div>
         </div>
 
         <div class="loading" id="loading-state">
@@ -377,8 +409,9 @@
 
     <script>
         function sortWatchlist(criteria) {
-            // Update active button
-            document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+            // Update active button (specifically inside the sidebar)
+            const sidebarHeader = document.querySelector('.sidebar-header');
+            sidebarHeader.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
             event.target.classList.add('active');
 
             const container = document.getElementById('watchlist-container');
@@ -389,11 +422,6 @@
                     return a.dataset.symbol.localeCompare(b.dataset.symbol);
                 } else if (criteria === 'price') {
                     return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
-                } else if (criteria === 'alerts') {
-                    const aAlert = a.dataset.hasAlert === "True" ? 1 : 0;
-                    const bAlert = b.dataset.hasAlert === "True" ? 1 : 0;
-                    if (aAlert !== bAlert) return bAlert - aAlert;
-                    return a.dataset.symbol.localeCompare(b.dataset.symbol);
                 }
             });
 
@@ -401,13 +429,43 @@
             items.forEach(item => container.appendChild(item));
         }
 
+        function filterGlobalAlerts(type) {
+            // Update active button for global filters
+            const globalAlertsContainer = document.getElementById('global-alerts-container');
+            globalAlertsContainer.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            const feed = document.getElementById('global-alerts-feed');
+            const cards = feed.querySelectorAll('.alert-card');
+            
+            cards.forEach(card => {
+                if (type === 'ALL' || card.dataset.type === type) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+        
+        function showGlobalAlerts() {
+            // Deselect sidebar items
+            document.querySelectorAll('.watchlist-item').forEach(item => item.classList.remove('active'));
+            
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('stock-details').style.display = 'none';
+            document.getElementById('global-alerts-container').style.display = 'block';
+        }
+
         async function loadStock(symbol, element) {
             // Highlight selected item
             document.querySelectorAll('.watchlist-item').forEach(el => el.classList.remove('active'));
-            element.classList.add('active');
+            if (element) element.classList.add('active');
+
+            // Hide global alerts
+            const globalAlerts = document.getElementById('global-alerts-container');
+            if (globalAlerts) globalAlerts.style.display = 'none';
 
             // Show loading
-            document.getElementById('empty-state').style.display = 'none';
             document.getElementById('stock-details').style.display = 'none';
             document.getElementById('loading-state').style.display = 'block';
 
@@ -462,10 +520,17 @@
                 if (element) {
                     const priceDiv = element.querySelector('.item-price');
                     if (priceDiv) {
-                        priceDiv.textContent = data.price ? `₹${data.price}` : 'No Data';
                         if (data.price) {
+                            const now = new Date();
+                            const timeStr = `${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                            priceDiv.innerHTML = `
+                                <div class="price-val">₹${data.price}</div>
+                                <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal; margin-top: 2px;">${timeStr}</div>
+                            `;
                             priceDiv.classList.remove('no-price');
                             element.dataset.price = data.price; // Update dataset for sorting
+                        } else {
+                            priceDiv.textContent = 'No Data';
                         }
                     }
                 }
@@ -476,10 +541,27 @@
 
             } catch (err) {
                 console.error(err);
-                alert('Failed to fetch stock data.');
+                alert('Error loading stock data: ' + err.message);
                 document.getElementById('loading-state').style.display = 'none';
-                document.getElementById('empty-state').style.display = 'flex';
             }
+        }
+        
+        async function refreshWatchlist(btn) {
+            btn.innerHTML = '↻ Refreshing...';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/refresh_watchlist');
+                const data = await res.json();
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (err) {
+                alert('Error refreshing watchlist: ' + err.message);
+            }
+            btn.innerHTML = '↻ Refresh All Prices';
+            btn.disabled = false;
         }
     </script>
 </body>

@@ -38,7 +38,7 @@ def index():
         # Sort prices: those with alerts first, then alphabetically
         prices.sort(key=lambda x: (not x.get('has_alert', False), x['symbol']))
         
-        return render_template('index.html', prices=prices)
+        return render_template('index.html', prices=prices, all_alerts=recent_alerts)
     except Exception as e:
         import traceback
         return f"<h1>Error Occurred</h1><pre>{traceback.format_exc()}</pre>", 200
@@ -71,6 +71,32 @@ def api_stock(symbol):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/refresh_watchlist')
+def api_refresh_watchlist():
+    try:
+        watchlist = db.get_watchlist()
+        symbols = [w['symbol'] for w in watchlist]
+        
+        import yfinance as yf
+        # Batch download all tickers to be faster
+        df = yf.download([f"{s}.NS" for s in symbols], period="1d", progress=False)
+        
+        if not df.empty:
+            for s in symbols:
+                try:
+                    # if only 1 symbol, df structure is different than if multiple
+                    if len(symbols) == 1:
+                        live_price = float(df['Close'].iloc[-1])
+                    else:
+                        live_price = float(df['Close'][f"{s}.NS"].iloc[-1])
+                    if not __import__("math").isnan(live_price):
+                        db.update_price(s, live_price)
+                except Exception as e:
+                    pass
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
