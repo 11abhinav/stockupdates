@@ -2,8 +2,7 @@ import logging
 import feedparser
 import requests
 import traceback
-from datetime import datetime, timezone, timedelta
-from db import get_watchlist_data, get_connection
+from db import get_connection
 from scanners.core import is_market_open, emit_alert, get_ist_now
 
 log = logging.getLogger("scanners.news")
