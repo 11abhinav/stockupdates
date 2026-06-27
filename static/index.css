@@ -23,7 +23,8 @@
     --warning-glow: rgba(244, 63, 94, 0.2);
 
     --gradient-primary: linear-gradient(135deg, #4f46e5 0%, #a855f7 100%);
-    --gradient-text: linear-gradient(to right, #ffffff, #94a3b8);
+    --gradient-text: linear-gradient(to right, #60a5fa, #a855f7);
+    --gradient-header: linear-gradient(to right, #ffffff, #93c5fd);
     
     --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -239,6 +240,8 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     align-items: center;
     position: relative;
     overflow: hidden;
+    flex-shrink: 0;
+    min-height: 72px;
 }
 
 .watchlist-item::before {
@@ -274,6 +277,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     gap: 8px;
     color: var(--text-main);
     letter-spacing: -0.01em;
+    min-width: 0;
 }
 
 .item-bse {
@@ -329,6 +333,12 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 .delete-btn:hover { color: var(--warning); transform: scale(1.1); }
 .watchlist.edit-mode .delete-btn { display: inline-block; animation: fadeIn 0.3s ease; }
+
+.watchlist-item .item-symbol {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 @keyframes fadeIn {
     from { opacity: 0; transform: scale(0.9); }
@@ -393,9 +403,10 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     font-weight: 800;
     margin-bottom: 12px;
     line-height: 1;
-    background: var(--gradient-text);
+    background: var(--gradient-header);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
 }
 
 .stock-meta {
