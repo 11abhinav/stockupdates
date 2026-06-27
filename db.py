@@ -84,7 +84,10 @@ def init_db():
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS position_size_hint INTEGER;",
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS setup_expiry_minutes INTEGER;",
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS invalid BOOLEAN;",
-                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS reason VARCHAR(255);"
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS reason VARCHAR(255);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS status VARCHAR(50);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS highest_hit VARCHAR(50);",
+                    "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP;"
                 ]
                 for query in alter_queries:
                     cur.execute(query)
@@ -189,17 +192,53 @@ def save_alert(symbol, alert_type, message, entry_price=None, target_price=None,
                     INSERT INTO stockupdates.alerts (
                         symbol, alert_type, message, entry_price, target_price, stop_loss, confidence, trigger_type, tags,
                         t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, rr_to_t3, trail_mode, 
-                        position_size_hint, setup_expiry_minutes, invalid, reason
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        position_size_hint, setup_expiry_minutes, invalid, reason, status
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     symbol.upper(), alert_type, message, entry_price, target_price, stop_loss, confidence, trigger_type, 
                     json.dumps(tags) if tags else None,
                     t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, rr_to_t3, trail_mode,
-                    position_size_hint, setup_expiry_minutes, invalid, reason
+                    position_size_hint, setup_expiry_minutes, invalid, reason, 
+                    'OPEN' if entry_price else None
                 ))
                 conn.commit()
     except Exception as e:
         log.error(f"Error saving alert for {symbol}: {e}")
+
+def get_open_alerts():
+    """Fetch all alerts with status 'OPEN'."""
+    if not DATABASE_URL:
+        return []
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, symbol, alert_type, message, created_at, 
+                           entry_price, stop_loss, target_price, t1_price, t2_price, t3_price,
+                           highest_hit
+                    FROM stockupdates.alerts 
+                    WHERE status = 'OPEN'
+                """)
+                columns = [desc[0] for desc in cur.description]
+                return [dict(zip(columns, row)) for row in cur.fetchall()]
+    except Exception as e:
+        log.error(f"Error fetching open alerts: {e}")
+        return []
+
+def update_alert_status(alert_id, new_status, highest_hit=None):
+    if not DATABASE_URL:
+        return
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE stockupdates.alerts
+                    SET status = %s, highest_hit = COALESCE(%s, highest_hit), resolved_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (new_status, highest_hit, alert_id))
+                conn.commit()
+    except Exception as e:
+        log.error(f"Error updating alert {alert_id}: {e}")
 
 def get_recent_alerts(limit=50):
     if not DATABASE_URL:
@@ -209,7 +248,9 @@ def get_recent_alerts(limit=50):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT id, symbol, alert_type, message, created_at,
-                           entry_price, target_price, stop_loss, confidence, trigger_type, tags
+                           entry_price, target_price, stop_loss, confidence, trigger_type, tags,
+                           t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, trail_mode, position_size_hint,
+                           status, highest_hit
                     FROM stockupdates.alerts
                     ORDER BY created_at DESC
                     LIMIT %s;
@@ -227,7 +268,9 @@ def get_stock_alerts(symbol, limit=50):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT id, symbol, alert_type, message, created_at,
-                           entry_price, target_price, stop_loss, confidence, trigger_type, tags
+                           entry_price, target_price, stop_loss, confidence, trigger_type, tags,
+                           t1_price, t2_price, t3_price, risk_per_share, rr_to_t1, rr_to_t2, trail_mode, position_size_hint,
+                           status, highest_hit
                     FROM stockupdates.alerts 
                     WHERE symbol = %s
                     ORDER BY created_at DESC LIMIT %s;

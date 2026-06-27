@@ -452,9 +452,20 @@
             <div class="alerts-feed" id="global-alerts-feed">
                 {% for alert in all_alerts %}
                 <div class="alert-card alert-type-{{ alert.alert_type }}" data-type="{{ alert.alert_type }}">
-                    <div class="alert-header">
+                    <div class="alert-header" style="align-items: center;">
                         <span class="alert-type">[{{ alert.symbol }}] {{ alert.alert_type }}</span>
-                        <span class="alert-time">{{ alert.created_at.strftime('%Y-%m-%d %H:%M:%S') if alert.created_at else '' }}</span>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            {% if alert.status %}
+                                {% if alert.status == 'CLOSED_WIN' %}
+                                    <span style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">WIN {{ alert.highest_hit if alert.highest_hit else '' }}</span>
+                                {% elif alert.status == 'CLOSED_LOSS' %}
+                                    <span style="background: rgba(239, 68, 68, 0.2); color: #f87171; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">LOSS (SL)</span>
+                                {% elif alert.status == 'OPEN' %}
+                                    <span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">ACTIVE</span>
+                                {% endif %}
+                            {% endif %}
+                            <span class="alert-time">{{ alert.created_at.strftime('%Y-%m-%d %H:%M:%S') if alert.created_at else '' }}</span>
+                        </div>
                     </div>
                     <div class="alert-body">{{ alert.message }}</div>
                     {% if alert.entry_price or alert.stop_loss %}
@@ -669,10 +680,22 @@
                             </div>`;
                         }
                         
+                        let statusBadge = '';
+                        if (alert.status === 'CLOSED_WIN') {
+                            statusBadge = `<span style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">WIN ${alert.highest_hit ? alert.highest_hit : ''}</span>`;
+                        } else if (alert.status === 'CLOSED_LOSS') {
+                            statusBadge = `<span style="background: rgba(239, 68, 68, 0.2); color: #f87171; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">LOSS (SL)</span>`;
+                        } else if (alert.status === 'OPEN') {
+                            statusBadge = `<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">ACTIVE</span>`;
+                        }
+                        
                         card.innerHTML = `
-                            <div class="alert-header">
+                            <div class="alert-header" style="align-items: center;">
                                 <span class="alert-type">${alert.alert_type}</span>
-                                <span class="alert-time">${date.toLocaleString()}</span>
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    ${statusBadge}
+                                    <span class="alert-time">${date.toLocaleString()}</span>
+                                </div>
                             </div>
                             <div class="alert-body">${alert.message}</div>
                             ${planHtml}
