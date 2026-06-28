@@ -65,6 +65,17 @@ def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5):
             'timestamp': now,
             'data': df
         }
+        
+        # Update CMP in database if this is the smallest candle we fetch (5m)
+        if interval == "5m":
+            try:
+                from db import update_price
+                latest_close = float(df['Close'].iloc[-1])
+                # We update the price, leaving change_pct unchanged (handled by daily fetch)
+                update_price(symbol, latest_close)
+            except Exception as e:
+                log.warning(f"Failed to update CMP for {symbol} from candle fetch: {e}")
+                
         return df.copy()
         
     return None

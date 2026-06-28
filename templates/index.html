@@ -51,9 +51,9 @@
                 </div>
                 <div class="item-price {% if not stock['latest_price'] %}no-price{% endif %}">
                     {% if stock['latest_price'] %}
-                        <div class="price-val">₹{{ stock['latest_price'] }}</div>
+                        <div class="price-val" id="price-val-{{ stock['symbol'] }}">₹{{ stock['latest_price'] }}</div>
                         {% if stock['change_pct'] != None %}
-                            <div class="price-change" style="color: {{ 'var(--success)' if stock['change_pct'] > 0 else 'var(--warning)' if stock['change_pct'] < 0 else 'var(--text-muted)' }}">
+                            <div class="price-change" id="price-change-{{ stock['symbol'] }}" style="color: {{ 'var(--success)' if stock['change_pct'] > 0 else 'var(--warning)' if stock['change_pct'] < 0 else 'var(--text-muted)' }}">
                                 {{ '+' if stock['change_pct'] > 0 else '' }}{{ "%.2f"|format(stock['change_pct']) }}%
                             </div>
                         {% endif %}
@@ -1132,9 +1132,35 @@
             return 900000; // 15 min during non-market hours
         }
 
+        async function pollPrices() {
+            // Only update prices if it's market hours (to save bandwidth/processing)
+            if (getUserPollingInterval() > 60000) return;
+            try {
+                const res = await fetch(`/api/prices`);
+                const priceMap = await res.json();
+                for (const symbol in priceMap) {
+                    const data = priceMap[symbol];
+                    const valEl = document.getElementById(`price-val-${symbol}`);
+                    if (valEl && data.latest_price !== null) {
+                        valEl.textContent = `₹${data.latest_price}`;
+                        // Also update data attribute on the container so chart loading works correctly
+                        const container = document.querySelector(`.watchlist-item[data-symbol="${symbol}"]`);
+                        if (container) container.dataset.price = data.latest_price;
+                    }
+                    // Currently we don't update change_pct strictly as it might require yesterday's close, but we can if provided.
+                    const changeEl = document.getElementById(`price-change-${symbol}`);
+                    if (changeEl && data.change_pct !== null) {
+                        changeEl.textContent = `${data.change_pct > 0 ? '+' : ''}${data.change_pct.toFixed(2)}%`;
+                        changeEl.style.color = data.change_pct > 0 ? 'var(--success)' : (data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)');
+                    }
+                }
+            } catch (e) {}
+        }
+
         function scheduleUserPolling() {
             setTimeout(async () => {
                 await pollUserNotifications();
+                await pollPrices(); // Added price polling alongside notifications
                 scheduleUserPolling();
             }, getUserPollingInterval());
         }

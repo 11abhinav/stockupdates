@@ -887,6 +887,20 @@ def api_stock(symbol):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/prices')
+def get_prices():
+    try:
+        prices = db.get_all_prices()
+        price_map = {}
+        for p in prices:
+            price_map[p['symbol']] = {
+                'latest_price': float(p['latest_price']) if p['latest_price'] else None,
+                'change_pct': float(p['change_pct']) if p['change_pct'] else None,
+            }
+        return jsonify(price_map)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/refresh_watchlist')
 def api_refresh_watchlist():
     try:
