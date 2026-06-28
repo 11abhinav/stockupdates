@@ -356,7 +356,7 @@ def calculate_value_score(stock, sector_medians):
     if is_financial_sector(sector):
         # 1. P/B relative to sector
         if stock_pb is not None and stock_pb > 0:
-            sector_pb = med.get("median_pb")
+            sector_pb = stock.get('tt_indpb') or med.get("median_pb")
             if sector_pb is not None:
                 if stock_pb <= sector_pb:
                     score += 5
@@ -388,7 +388,7 @@ def calculate_value_score(stock, sector_medians):
     else:
         # 1. P/E relative to sector
         if stock_pe is not None and stock_pe > 0:
-            sector_pe = med.get("median_pe")
+            sector_pe = stock.get('tt_indpe') or med.get("median_pe")
             if sector_pe is not None:
                 if stock_pe <= sector_pe:
                     score += 5
@@ -404,7 +404,7 @@ def calculate_value_score(stock, sector_medians):
                     
         # 2. P/B relative to sector
         if stock_pb is not None and stock_pb > 0:
-            sector_pb = med.get("median_pb")
+            sector_pb = stock.get('tt_indpb') or med.get("median_pb")
             if sector_pb is not None:
                 if stock_pb <= sector_pb:
                     score += 4
@@ -429,13 +429,13 @@ def calculate_fair_value(stock, current_price, sector_medians):
     med = sector_medians.get(sector, {})
     
     if is_financial_sector(sector):
-        sector_pb = med.get("median_pb")
+        sector_pb = stock.get('tt_indpb') or med.get("median_pb")
         stock_bvps = norm_num(stock.get('bvps'))
         if sector_pb is not None and stock_bvps is not None and stock_bvps > 0:
             fair_value = sector_pb * stock_bvps
             return fair_value, "SECTOR_PB"
     else:
-        sector_pe = med.get("median_pe")
+        sector_pe = stock.get('tt_indpe') or med.get("median_pe")
         stock_eps = norm_num(stock.get('eps'))
         if sector_pe is not None and stock_eps is not None and stock_eps > 0:
             fair_value = sector_pe * stock_eps
@@ -482,6 +482,29 @@ def build_valuation_output(stock, current_price, sector_medians):
         "valuation_confidence": val_confidence
     }
 
+def fetch_tickertape_industry_metrics(symbol):
+    try:
+        import requests
+        # First search for the symbol to get the SID
+        search_res = requests.get(f'https://api.tickertape.in/search?text={symbol}', timeout=5)
+        if search_res.status_code == 200:
+            data = search_res.json().get('data', {})
+            stocks = data.get('stocks', [])
+            if stocks:
+                # We usually want the first EXACT match or just the first stock
+                sid = stocks[0].get('sid')
+                if sid:
+                    # Fetch info using the SID
+                    info_res = requests.get(f'https://api.tickertape.in/stocks/info/{sid}', timeout=5)
+                    if info_res.status_code == 200:
+                        ratios = info_res.json().get('data', {}).get('ratios', {})
+                        indpe = norm_num(ratios.get('indpe'))
+                        indpb = norm_num(ratios.get('indpb'))
+                        return indpe, indpb
+    except Exception as e:
+        log.warning(f"Failed to fetch Tickertape metrics for {symbol}: {e}")
+    return None, None
+
 def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
     try:
         import yfinance as yf
@@ -503,7 +526,17 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
         div_yield = norm_pct(info.get('dividendYield') or info.get('divYield'))
         current_price = norm_num(info.get('currentPrice') or info.get('regularMarketPrice'))
         
-        db.update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield)
+        # Yahoo Finance often omits trailingPE, so we can calculate it manually if we have EPS and price
+        if pe is None and eps is not None and eps > 0 and current_price is not None:
+            pe = current_price / eps
+            
+        # Same for Price to Book
+        if pb is None and bvps is not None and bvps > 0 and current_price is not None:
+            pb = current_price / bvps
+            
+        tt_indpe, tt_indpb = fetch_tickertape_industry_metrics(symbol)
+            
+        db.update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb)
         
         current_stock = {
             'sector': sector,
@@ -512,7 +545,9 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
             'roe': roe,
             'eps': eps,
             'bvps': bvps,
-            'div_yield': div_yield
+            'div_yield': div_yield,
+            'tt_indpe': tt_indpe,
+            'tt_indpb': tt_indpb
         }
         return q_score, current_stock, current_price, info
     except Exception as e:

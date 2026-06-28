@@ -86,7 +86,9 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS bvps NUMERIC(10, 2),
                     ADD COLUMN IF NOT EXISTS div_yield NUMERIC(10, 4),
                     ADD COLUMN IF NOT EXISTS fair_value NUMERIC(10, 2),
-                    ADD COLUMN IF NOT EXISTS valuation_label VARCHAR(50);
+                    ADD COLUMN IF NOT EXISTS valuation_label VARCHAR(50),
+                    ADD COLUMN IF NOT EXISTS tt_indpe NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS tt_indpb NUMERIC(10, 2);
                 """)
                 
                 # Create alerts table
@@ -306,7 +308,7 @@ def update_fundamental_scores(symbol, quality_score, value_score):
     except Exception as e:
         log.error(f"Error updating fundamental scores for {symbol}: {e}")
 
-def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield):
+def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe=None, tt_indpb=None):
     if not DATABASE_URL:
         return
     try:
@@ -315,8 +317,8 @@ def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.prices (
-                        symbol, sector, pe, pb, roe, eps, bvps, div_yield, last_fetched
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb, last_fetched
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (symbol) DO UPDATE 
                     SET sector = EXCLUDED.sector,
                         pe = EXCLUDED.pe,
@@ -325,8 +327,10 @@ def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield
                         eps = EXCLUDED.eps,
                         bvps = EXCLUDED.bvps,
                         div_yield = EXCLUDED.div_yield,
+                        tt_indpe = EXCLUDED.tt_indpe,
+                        tt_indpb = EXCLUDED.tt_indpb,
                         last_fetched = CURRENT_TIMESTAMP;
-                """, (symbol.upper(), sector, pe, pb, roe, eps, bvps, div_yield))
+                """, (symbol.upper(), sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb))
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating fundamental metrics for {symbol}: {e}")
@@ -360,8 +364,9 @@ def get_all_fundamentals():
             if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT symbol, sector, pe, pb, roe, eps, bvps, div_yield
-                    FROM stockupdates.prices;
+                    SELECT symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb
+                    FROM stockupdates.prices
+                    WHERE sector IS NOT NULL;
                 """)
                 return cur.fetchall()
     except Exception as e:
