@@ -6,6 +6,7 @@ import yfinance as yf
 from zoneinfo import ZoneInfo
 from db import save_alert
 from scanners.trade_plan import TradePlan, calculate_position_size
+from scanners.fyers_client import get_fyers_history
 
 log = logging.getLogger("scanners")
 IST = ZoneInfo("Asia/Kolkata")
@@ -26,10 +27,10 @@ def is_market_open():
     
     return market_open <= now <= market_close
 
-def fetch_yfinance_cached(symbol, period="5d", interval="1d", ttl_minutes=5):
+def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5):
     """
-    Fetch data and cache it for ttl_minutes.
-    Useful for 5m intraday data across scanners.
+    Fetch data from Fyers (if available) with fallback to Yahoo Finance.
+    Cache it for ttl_minutes to avoid spamming APIs.
     """
     cache_key = f"{symbol}_{period}_{interval}"
     cached = _data_cache.get(cache_key)
@@ -39,18 +40,34 @@ def fetch_yfinance_cached(symbol, period="5d", interval="1d", ttl_minutes=5):
     if cached and (now - cached['timestamp']) < timedelta(minutes=ttl_minutes):
         return cached['data'].copy()
         
-    try:
-        ticker = yf.Ticker(f"{symbol}.NS")
-        df = ticker.history(period=period, interval=interval, prepost=False)
-        if not df.empty:
-            _data_cache[cache_key] = {
-                'timestamp': now,
-                'data': df
-            }
+    df = None
+    
+    # 1. Try Fyers API first if credentials exist
+    if os.environ.get("FYERS_CLIENT_ID"):
+        days = int(period.replace('d', '')) if 'd' in period else 5
+        try:
+            df = get_fyers_history(symbol, resolution=interval, days=days)
+        except Exception as e:
+            log.warning(f"Fyers fetch failed for {symbol}, falling back to Yahoo: {e}")
+            df = None
+            
+    # 2. Fallback to Yahoo Finance
+    if df is None or df.empty:
+        try:
+            ticker = yf.Ticker(f"{symbol}.NS")
+            df = ticker.history(period=period, interval=interval, prepost=False)
+        except Exception as e:
+            log.error(f"Yahoo fetch failed for {symbol} {period}/{interval}: {e}")
+            return None
+            
+    if df is not None and not df.empty:
+        _data_cache[cache_key] = {
+            'timestamp': now,
+            'data': df
+        }
         return df.copy()
-    except Exception as e:
-        log.error(f"Error fetching {symbol} {period}/{interval}: {e}")
-        return None
+        
+    return None
 
 def send_telegram(message):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")

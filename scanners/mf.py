@@ -1,6 +1,6 @@
 import logging
 from db import get_watchlist
-from scanners.core import fetch_yfinance_cached, emit_alert
+from scanners.core import fetch_intraday_cached, emit_alert
 from scanners.trade_plan import build_mf_trade_plan, recent_swing_low, consolidation_base_low
 
 log = logging.getLogger("scanners.mf")
@@ -13,7 +13,7 @@ def run():
         symbol = row['symbol']
         try:
             # 1. Fetch Daily Data (Trend check)
-            daily_df = fetch_yfinance_cached(symbol, period="6mo", interval="1d", ttl_minutes=60)
+            daily_df = fetch_intraday_cached(symbol, period="6mo", interval="1d", ttl_minutes=60)
             if daily_df is None or len(daily_df) < 200:
                 continue
                 
@@ -28,7 +28,7 @@ def run():
                 continue
                 
             # 2. Fetch 1H Data (Breakout Structure & Volume)
-            hourly_df = fetch_yfinance_cached(symbol, period="1mo", interval="1h", ttl_minutes=15)
+            hourly_df = fetch_intraday_cached(symbol, period="1mo", interval="1h", ttl_minutes=15)
             if hourly_df is None or len(hourly_df) < 20:
                 continue
                 

@@ -1,6 +1,6 @@
 import logging
 from db import get_watchlist
-from scanners.core import fetch_yfinance_cached, emit_alert
+from scanners.core import fetch_intraday_cached, emit_alert
 from scanners.trade_plan import build_intraday_trade_plan, pivot_low
 
 log = logging.getLogger("scanners.momentum")
@@ -23,7 +23,7 @@ def run():
         symbol = row['symbol']
         try:
             # 1. Fetch 15m Data (Compression / Trend setup)
-            df_15m = fetch_yfinance_cached(symbol, period="5d", interval="15m", ttl_minutes=15)
+            df_15m = fetch_intraday_cached(symbol, period="5d", interval="15m", ttl_minutes=15)
             if df_15m is None or len(df_15m) < 20:
                 continue
                 
@@ -37,7 +37,7 @@ def run():
                 continue
                 
             # 2. Fetch 5m Data (Trigger & Confirmation)
-            df_5m = fetch_yfinance_cached(symbol, period="5d", interval="5m", ttl_minutes=5)
+            df_5m = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5)
             if df_5m is None or len(df_5m) < 10:
                 continue
                 
