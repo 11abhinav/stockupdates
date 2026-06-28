@@ -30,7 +30,8 @@ def resolve_open_alerts():
             
         try:
             # Fetch 5m data. Use ttl_minutes=5 so we hit cache if momentum scanner just ran it
-            df = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5)
+            bse = alert.get('bse_code')
+            df = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5, bse_code=bse)
             if df is None or df.empty:
                 continue
                 

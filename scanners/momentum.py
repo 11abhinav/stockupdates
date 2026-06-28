@@ -34,9 +34,10 @@ def run():
     
     for row in watchlist:
         symbol = row['symbol']
+        bse = row.get('bse_code')
         try:
             # 1. Fetch 15m Data (Compression / Trend setup)
-            df_15m = fetch_intraday_cached(symbol, period="5d", interval="15m", ttl_minutes=15)
+            df_15m = fetch_intraday_cached(symbol, period="5d", interval="15m", ttl_minutes=15, bse_code=bse)
             if df_15m is None or len(df_15m) < 20:
                 health.record_stock_stale("MOMENTUM", symbol)
                 continue
@@ -53,7 +54,7 @@ def run():
                 continue
                 
             # 2. Fetch 5m Data (Trigger & Confirmation)
-            df_5m = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5)
+            df_5m = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5, bse_code=bse)
             if df_5m is None or len(df_5m) < 10:
                 health.record_stock_stale("MOMENTUM", symbol)
                 continue

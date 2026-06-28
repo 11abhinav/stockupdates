@@ -482,11 +482,13 @@ def build_valuation_output(stock, current_price, sector_medians):
         "valuation_confidence": val_confidence
     }
 
-def fetch_and_save_raw_metrics(symbol, ticker=None):
+def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
     try:
         import yfinance as yf
         if not ticker:
             ticker = yf.Ticker(f"{symbol}.NS")
+            if ticker.history(period="1d").empty and bse_code:
+                ticker = yf.Ticker(f"{bse_code}.BO")
         info = ticker.info
         financials = ticker.financials
         
@@ -519,8 +521,12 @@ def fetch_and_save_raw_metrics(symbol, ticker=None):
 
 def refresh_universe(symbols):
     all_rows = []
+    watchlist = db.get_watchlist()
+    bse_map = {w['symbol']: w['bse_code'] for w in watchlist}
+    
     for sym in symbols:
-        q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(sym)
+        bse_code = bse_map.get(sym)
+        q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(sym, bse_code=bse_code)
         if current_stock:
             all_rows.append((sym, q_score, current_stock, current_price, info))
         time.sleep(2) # rate limit protection
@@ -544,8 +550,8 @@ def refresh_universe(symbols):
     
     return results, sector_medians
 
-def fetch_and_save_fundamentals(symbol, ticker=None):
-    q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(symbol, ticker)
+def fetch_and_save_fundamentals(symbol, bse_code=None, ticker=None):
+    q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(symbol, bse_code, ticker)
     if not current_stock:
         return None, None, None
         
@@ -1040,19 +1046,6 @@ def admin():
                 flash(f"Error: {symbol} is already in the watchlist.", "error")
                 return redirect(url_for('admin'))
                 
-            # Check if valid ticker
-            try:
-                import yfinance as yf
-                ticker = yf.Ticker(symbol + ".NS")
-                hist = ticker.history(period="1d")
-                if hist.empty:
-                    flash(f"Error: {symbol} is an invalid NSE ticker.", "error")
-                    return redirect(url_for('admin'))
-            except Exception as e:
-                log.error(f"Error validating {symbol}: {e}")
-                flash(f"Error: {symbol} could not be validated. Check again.", "error")
-                return redirect(url_for('admin'))
-
             if not bse_code:
                 # Auto-fetch BSE code from Screener.in if not provided
                 try:
@@ -1075,10 +1068,32 @@ def admin():
             
             if not bse_code:
                 bse_code = None
-                    
+
+            # Check if valid ticker
+            valid_nse = False
+            valid_bse = False
+            ticker = None
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(symbol + ".NS")
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    valid_nse = True
+                elif bse_code:
+                    ticker = yf.Ticker(bse_code + ".BO")
+                    hist = ticker.history(period="1d")
+                    if not hist.empty:
+                        valid_bse = True
+            except Exception as e:
+                log.error(f"Error validating {symbol}: {e}")
+
+            if not valid_nse and not valid_bse:
+                flash(f"Error: {symbol} is invalid on NSE, and no valid BSE data was found (tried {bse_code}.BO).", "error")
+                return redirect(url_for('admin'))
+
             db.add_stock(symbol, bse_code)
             try:
-                fetch_and_save_fundamentals(symbol, ticker)
+                fetch_and_save_fundamentals(symbol, bse_code, ticker)
             except Exception as e:
                 log.error(f"Error calculating fundamental score on addition of {symbol}: {e}")
             flash(f"Success: {symbol} added to watchlist.", "success")

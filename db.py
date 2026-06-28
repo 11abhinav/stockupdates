@@ -407,11 +407,12 @@ def get_open_alerts():
             if not conn: return []
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT id, symbol, alert_type, message, created_at, 
-                           entry_price, stop_loss, target_price, t1_price, t2_price, t3_price,
-                           highest_hit
-                    FROM stockupdates.alerts 
-                    WHERE status = 'OPEN'
+                    SELECT a.id, a.symbol, a.alert_type, a.message, a.created_at, 
+                           a.entry_price, a.stop_loss, a.target_price, a.t1_price, a.t2_price, a.t3_price,
+                           a.highest_hit, w.bse_code
+                    FROM stockupdates.alerts a
+                    LEFT JOIN stockupdates.watchlist w ON a.symbol = w.symbol
+                    WHERE a.status = 'OPEN'
                 """)
                 columns = [desc[0] for desc in cur.description]
                 return [dict(zip(columns, row)) for row in cur.fetchall()]

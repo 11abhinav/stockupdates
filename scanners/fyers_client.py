@@ -127,15 +127,12 @@ def get_fyers_instance():
         log.error(f"Fyers headless login failed at unexpected point: {e}", exc_info=True)
         return None
 
-def get_fyers_history(symbol, resolution, days=5):
+def get_fyers_history(symbol, resolution, days=5, bse_code=None):
     fyers = get_fyers_instance()
     if not fyers:
         return None
         
-    # Fyers expects symbols like NSE:RELIANCE-EQ
-    fyers_symbol = f"NSE:{symbol}-EQ"
     from datetime import timedelta
-    
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
     
@@ -147,27 +144,43 @@ def get_fyers_history(symbol, resolution, days=5):
     else:
         res_code = resolution
         
-    data = {
-        "symbol": fyers_symbol,
-        "resolution": str(res_code),
-        "date_format": "1",
-        "range_from": start_date.strftime("%Y-%m-%d"),
-        "range_to": end_date.strftime("%Y-%m-%d"),
-        "cont_flag": "1"
-    }
-    
-    try:
-        res = fyers.history(data=data)
-        if res.get('s') == 'ok' and res.get('candles'):
-            candles = res['candles']
-            df = pd.DataFrame(candles, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
-            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
-            df.set_index('timestamp', inplace=True)
-            return df
-        else:
-            log.debug(f"Fyers history returned empty or failed for {symbol}: {res}")
-            return None
-    except Exception as e:
-        log.error(f"Error fetching Fyers data for {symbol}: {e}")
+    def _fetch_for_fyers_symbol(fsym):
+        data = {
+            "symbol": fsym,
+            "resolution": str(res_code),
+            "date_format": "1",
+            "range_from": start_date.strftime("%Y-%m-%d"),
+            "range_to": end_date.strftime("%Y-%m-%d"),
+            "cont_flag": "1"
+        }
+        try:
+            res = fyers.history(data=data)
+            if res.get('s') == 'ok' and res.get('candles'):
+                candles = res['candles']
+                df = pd.DataFrame(candles, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
+                df.set_index('timestamp', inplace=True)
+                return df
+        except Exception as e:
+            log.error(f"Error fetching Fyers data for {fsym}: {e}")
         return None
+
+    # 1. Try NSE
+    df = _fetch_for_fyers_symbol(f"NSE:{symbol}-EQ")
+    if df is not None:
+        return df
+        
+    # 2. Fallback to BSE using bse_code if provided
+    if bse_code:
+        df = _fetch_for_fyers_symbol(f"BSE:{bse_code}-A")
+        if df is not None:
+            return df
+            
+    # 3. Fallback to BSE using symbol name
+    df = _fetch_for_fyers_symbol(f"BSE:{symbol}-A")
+    if df is not None:
+        return df
+        
+    log.debug(f"Fyers history returned empty or failed for {symbol} on all NSE/BSE variants")
+    return None
