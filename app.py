@@ -896,7 +896,9 @@ def get_prices():
             price_map[p['symbol']] = {
                 'latest_price': float(p['latest_price']) if p['latest_price'] else None,
                 'change_pct': float(p['change_pct']) if p['change_pct'] else None,
-                'last_fetched': p['last_fetched'].isoformat() if p['last_fetched'] else None
+                'last_fetched': p['last_fetched'].isoformat() if p['last_fetched'] else None,
+                'quality_score': float(p['quality_score']) if p['quality_score'] is not None else None,
+                'value_score': float(p['value_score']) if p['value_score'] is not None else None
             }
         return jsonify(price_map)
     except Exception as e:

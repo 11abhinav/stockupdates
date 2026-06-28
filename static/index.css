@@ -1,39 +1,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
 
 :root {
-    /* Pro Fintech Dark Variables */
-    --bg: #09090b;          /* Ultra dark background */
-    --surface: #121217;     /* Dark panel surface */
-    --card: #18181f;        /* Interactive card surface */
-    --card2: #22222a;       /* Hover state surface */
+    /* Pro Fintech Light Variables */
+    --bg: #f8fafc;          /* Light gray background */
+    --surface: #ffffff;     /* White panel surface */
+    --card: #ffffff;        /* Interactive card surface */
+    --card2: #f1f5f9;       /* Hover state surface */
     
     /* Precise flat borders */
-    --border: rgba(255, 255, 255, 0.06);
-    --border2: rgba(255, 255, 255, 0.12);
+    --border: rgba(0, 0, 0, 0.08);
+    --border2: rgba(0, 0, 0, 0.15);
     --glass-border: var(--border);
     --glass-highlight: var(--border2);
     
-    /* Vibrant Neon Accents */
+    /* Vibrant Neon Accents (Kept but slightly adjusted for light mode contrast) */
     --accent: #2563eb;      /* Electric Blue */
-    --accent-dim: rgba(37, 99, 235, 0.15);
-    --accent-hover: #3b82f6;
-    --accent-glow: 0 0 16px rgba(37, 99, 235, 0.3);
+    --accent-dim: rgba(37, 99, 235, 0.1);
+    --accent-hover: #1d4ed8;
+    --accent-glow: 0 4px 16px rgba(37, 99, 235, 0.2);
     
-    --success: #10b981;     /* Bright Emerald */
-    --success-dim: rgba(16, 185, 129, 0.15);
-    --success-glow: 0 0 16px rgba(16, 185, 129, 0.3);
+    --success: #059669;     /* Deep Emerald for better light contrast */
+    --success-dim: rgba(5, 150, 105, 0.1);
+    --success-glow: 0 4px 16px rgba(5, 150, 105, 0.2);
     
-    --warning: #f43f5e;     /* Intense Rose */
-    --warning-dim: rgba(244, 63, 94, 0.15);
-    --warning-glow: 0 0 16px rgba(244, 63, 94, 0.3);
+    --warning: #e11d48;     /* Intense Rose */
+    --warning-dim: rgba(225, 29, 72, 0.1);
+    --warning-glow: 0 4px 16px rgba(225, 29, 72, 0.2);
     
-    --amber: #f59e0b;
-    --amber-dim: rgba(245, 158, 11, 0.15);
+    --amber: #d97706;
+    --amber-dim: rgba(217, 119, 6, 0.1);
     
     /* Crisp Typography Colors */
-    --text: #f8fafc;
-    --muted: #94a3b8;
-    --muted2: #64748b;
+    --text: #0f172a;
+    --muted: #64748b;
+    --muted2: #94a3b8;
     
     /* Mappings */
     --text-main: var(--text);
@@ -55,8 +55,8 @@
     
     /* Shadows & Radii */
     --radius: 8px;
-    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
     --shadow: var(--shadow-md);
     --glow: var(--accent-glow);
 }
@@ -95,7 +95,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     display: flex;
     flex-direction: column;
     z-index: 10;
-    box-shadow: 2px 0 12px rgba(0,0,0,0.5);
+    box-shadow: 2px 0 12px rgba(0,0,0,0.05);
 }
 
 .main-content {
@@ -195,7 +195,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .btn-primary {
     background: var(--accent);
     color: white;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: none;
     padding: 14px 24px;
     border-radius: 8px;
     font-weight: 600;

@@ -41,7 +41,7 @@
                             <span class="alert-dot" title="Recent Alert"></span>
                         {% endif %}
                     </div>
-                    <div class="score-badge {% if stock['quality_score'] != None %}{% if stock['quality_score'] <= 3 or stock['value_score'] <= 3 %}score-low{% elif stock['quality_score'] >= 7 %}score-high{% else %}score-med{% endif %}{% endif %}">
+                    <div class="score-badge {% if stock['quality_score'] != None %}{% if stock['quality_score'] <= 3 or stock['value_score'] <= 3 %}score-low{% elif stock['quality_score'] >= 7 %}score-high{% else %}score-med{% endif %}{% endif %}" id="score-badge-{{ stock['symbol'] }}">
                         {% if stock['quality_score'] != None and stock['value_score'] != None %}
                             Q: {{ stock['quality_score'] }} | V: {{ stock['value_score'] }}
                         {% else %}
@@ -70,7 +70,11 @@
     </div>
 
     <div class="main-content">
-        <div class="top-nav">
+        <div class="top-nav" style="display: flex; align-items: center; gap: 16px;">
+            <div class="notification-bell" onclick="showGlobalAlerts()" style="margin-right: 10px; cursor: pointer; color: var(--text-muted);">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 24px; height: 24px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                <span class="notif-badge" id="notif-badge" style="display:none; position: absolute; top: -5px; right: -5px; background: var(--warning); color: white; border-radius: 50%; padding: 2px 6px; font-size: 0.7rem; font-weight: bold;">0</span>
+            </div>
             <button class="nav-btn active" id="global-alerts-btn" onclick="showGlobalAlerts()">Global Alerts</button>
             <a href="/admin" class="nav-btn">Admin Panel</a>
         </div>
@@ -1161,6 +1165,32 @@
                         const hh = String(d.getHours()).padStart(2, '0');
                         const mn = String(d.getMinutes()).padStart(2, '0');
                         timeEl.textContent = `${mm}-${dd} ${hh}:${mn}`;
+                    }
+                    const scoreBadge = document.getElementById(`score-badge-${symbol}`);
+                    if (scoreBadge && data.quality_score !== null && data.value_score !== null) {
+                        scoreBadge.className = 'score-badge';
+                        if (data.quality_score <= 3 || data.value_score <= 3) {
+                            scoreBadge.classList.add('score-low');
+                        } else if (data.quality_score >= 7) {
+                            scoreBadge.classList.add('score-high');
+                        } else {
+                            scoreBadge.classList.add('score-med');
+                        }
+                        scoreBadge.textContent = `Q: ${data.quality_score} | V: ${data.value_score}`;
+                        
+                        const container = document.querySelector(`.watchlist-item[data-symbol="${symbol}"]`);
+                        if (container) {
+                            container.dataset.qscore = data.quality_score;
+                            container.dataset.vscore = data.value_score;
+                            container.classList.remove('fscore-high', 'fscore-med', 'fscore-low');
+                            if (data.quality_score <= 3 || data.value_score <= 3) {
+                                container.classList.add('fscore-low');
+                            } else if (data.quality_score >= 7) {
+                                container.classList.add('fscore-high');
+                            } else {
+                                container.classList.add('fscore-med');
+                            }
+                        }
                     }
                 }
             } catch (e) {}
