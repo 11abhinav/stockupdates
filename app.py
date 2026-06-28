@@ -565,7 +565,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
             )
 
     except Exception as e:
-        log.warning(f"calculate_fair_value_v2 failed for {stock.get('symbol', 'Unknown')}: {e}")
+        log.exception(f"calculate_fair_value_v2 failed for {stock.get('symbol', 'Unknown')}")
 
     fallback = current_price * 0.95 if current_price else None
     return FairValueResult(
