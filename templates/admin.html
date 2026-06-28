@@ -635,6 +635,10 @@
                 </div>
                 
                 <div id="diagnostics-body" style="display: block; padding: 20px; background: var(--bg-base);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">Scanner Health & Errors</span>
+                        <button onclick="fetchScannerStatus()" style="background: var(--bg-surface-hover); border: 1px solid var(--glass-border); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; color: var(--text-main); font-family: inherit;">🔄 Refresh</button>
+                    </div>
                     <div class="scanner-grid" id="scanner-cards-container">
                         <!-- MF Scanner Card -->
                         <div class="scanner-card" id="scanner-card-MF">
@@ -1219,26 +1223,31 @@
         // Enable audio on first click (browser autoplay policy)
         document.addEventListener('click', () => ensureAudioCtx(), { once: true });
 
-        // Dynamic polling interval based on market hours
-        function isMarketHours() {
+        function getNotificationInterval() {
             const now = new Date();
             const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
             const day = istTime.getDay();
-            if (day === 0 || day === 6) return false; // Weekend
+            if (day === 0 || day === 6) return 900000; // 15 min on weekends
             
             const timeInMinutes = istTime.getHours() * 60 + istTime.getMinutes();
-            return timeInMinutes >= 555 && timeInMinutes <= 930; // 9:15 to 15:30
+            // Weekday 9:00 to 15:30 -> 1 min
+            if (timeInMinutes >= 540 && timeInMinutes <= 930) return 60000;
+            return 900000; // 15 min outside market hours
         }
 
-        function schedulePolling() {
-            const intervalMs = isMarketHours() ? 60000 : 900000; // 1 min vs 15 min
+        function scheduleNotifications() {
             setTimeout(async () => {
-                await Promise.all([
-                    fetchScannerStatus(),
-                    pollNotifications()
-                ]);
-                schedulePolling();
-            }, intervalMs);
+                await pollNotifications();
+                scheduleNotifications();
+            }, getNotificationInterval());
+        }
+
+        function scheduleScannerStatus() {
+            // Scanner health / non-critical errors exactly 15 minutes (or manual refresh)
+            setTimeout(async () => {
+                await fetchScannerStatus();
+                scheduleScannerStatus();
+            }, 900000); 
         }
 
         function toggleDiagnostics() {
@@ -1259,7 +1268,10 @@
 
         // Start initial data load and polling
         fetchScannerStatus();
-        schedulePolling();
+        scheduleScannerStatus();
+        
+        pollNotifications();
+        scheduleNotifications();
     </script>
 </body>
 </html>

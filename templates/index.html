@@ -1122,12 +1122,12 @@
             const day = istTime.getDay();
             
             if (day === 0 || day === 6) {
-                return 600000; // 10 minutes on weekends
+                return 900000; // 15 minutes on weekends
             }
             
             const timeInMinutes = istTime.getHours() * 60 + istTime.getMinutes();
-            if (timeInMinutes >= 555 && timeInMinutes <= 930) {
-                return 60000; // 1 min during market hours
+            if (timeInMinutes >= 540 && timeInMinutes <= 930) {
+                return 60000; // 1 min during market hours (9:00 to 15:30)
             }
             return 900000; // 15 min during non-market hours
         }
