@@ -6,10 +6,272 @@
     <title>Admin - StockUpdates</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}?v=6">
+    <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}?v=7">
+    <style>
+        .scanner-health-section {
+            margin-bottom: 1.5rem;
+        }
+        .scanner-health-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .scanner-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            backdrop-filter: blur(20px);
+            transition: border-color 0.3s ease;
+        }
+        .scanner-card.status-down {
+            border-color: #ef4444;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+        }
+        .scanner-card.status-data_stale {
+            border-color: #f59e0b;
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+        }
+        .scanner-card.status-up {
+            border-color: #22c55e;
+        }
+        .scanner-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .scanner-name {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-badge.up { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .status-badge.down { background: rgba(239,68,68,0.15); color: #ef4444; animation: pulse-red 1.5s infinite; }
+        .status-badge.data_stale { background: rgba(245,158,11,0.15); color: #f59e0b; animation: pulse-orange 2s infinite; }
+        .status-badge.idle { background: rgba(148,163,184,0.15); color: #94a3b8; }
+
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+        }
+        @keyframes pulse-orange {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.3); }
+            50% { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+        }
+
+        .scanner-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .meta-item {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .meta-item .meta-value {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+        .scanner-schedule {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            background: rgba(148,163,184,0.08);
+            padding: 6px 10px;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+        }
+        .scanner-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .run-btn {
+            flex: 1;
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+            background: rgba(59,130,246,0.1);
+            color: var(--accent);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Inter', sans-serif;
+        }
+        .run-btn:hover { background: rgba(59,130,246,0.2); transform: translateY(-1px); }
+        .run-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .run-btn.running {
+            background: rgba(245,158,11,0.15);
+            color: #f59e0b;
+            border-color: rgba(245,158,11,0.3);
+        }
+
+        .critical-error-box {
+            background: rgba(239,68,68,0.08);
+            border: 1px solid rgba(239,68,68,0.25);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 0.75rem;
+            font-size: 0.78rem;
+            color: #ef4444;
+            font-weight: 500;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .critical-error-box .err-icon { font-size: 1rem; flex-shrink: 0; }
+
+        .noncritical-section {
+            border-top: 1px solid var(--card-border);
+            padding-top: 0.75rem;
+        }
+        .noncritical-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+        }
+        .noncritical-header .nc-title {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+        .noncritical-header .nc-count {
+            font-size: 0.7rem;
+            background: rgba(245,158,11,0.15);
+            color: #f59e0b;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+        .nc-clear-btn {
+            font-size: 0.7rem;
+            color: var(--accent);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            padding: 2px 6px;
+            font-family: 'Inter', sans-serif;
+        }
+        .nc-clear-btn:hover { text-decoration: underline; }
+        .noncritical-list { max-height: 200px; overflow-y: auto; }
+        .nc-error-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(148,163,184,0.08);
+            font-size: 0.72rem;
+        }
+        .nc-error-msg {
+            color: var(--text-muted);
+            flex: 1;
+            word-break: break-word;
+        }
+        .nc-error-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+            margin-left: 8px;
+        }
+        .nc-error-count {
+            background: rgba(148,163,184,0.12);
+            color: var(--text-muted);
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 0.65rem;
+            font-weight: 700;
+        }
+        .nc-ack-btn {
+            background: none;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            font-size: 0.85rem;
+            padding: 0 2px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .nc-ack-btn:hover { opacity: 1; }
+
+        /* Toast Notification System */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 380px;
+        }
+        .toast {
+            padding: 14px 18px;
+            border-radius: 14px;
+            backdrop-filter: blur(20px);
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--text-main);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            animation: toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            cursor: pointer;
+            transition: opacity 0.3s, transform 0.3s;
+            font-family: 'Inter', sans-serif;
+        }
+        .toast:hover { transform: translateX(-4px); }
+        .toast.toast-alert {
+            background: rgba(34,197,94,0.12);
+            border: 1px solid rgba(34,197,94,0.3);
+        }
+        .toast.toast-scanner-down {
+            background: rgba(239,68,68,0.12);
+            border: 1px solid rgba(239,68,68,0.3);
+        }
+        .toast.toast-fadeout {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+        .toast-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 1px; }
+        .toast-body { flex: 1; }
+        .toast-title { font-weight: 700; font-size: 0.82rem; margin-bottom: 2px; }
+        .toast-msg { font-size: 0.75rem; color: var(--text-muted); }
+        .toast-close {
+            background: none; border: none; color: var(--text-muted);
+            cursor: pointer; font-size: 1rem; padding: 0; opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        .toast-close:hover { opacity: 1; }
+
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+    </style>
 </head>
 <body>
     <div class="ambient-orb"></div>
+    <div class="toast-container" id="toast-container"></div>
 
     <div class="sidebar">
         <div class="sidebar-header">
@@ -81,6 +343,57 @@
         </div>
         
         <div class="admin-container">
+            <!-- Scanner Health Section -->
+            <div class="scanner-health-section">
+                <div class="scanner-health-title">🩺 Scanner Health Monitor</div>
+                <div id="scanner-cards-container">
+                    <!-- MF Scanner Card -->
+                    <div class="scanner-card" id="scanner-card-MF">
+                        <div class="scanner-header">
+                            <span class="scanner-name">📊 MF Breakout Scanner</span>
+                            <span class="status-badge idle" id="status-badge-MF">IDLE</span>
+                        </div>
+                        <div class="scanner-schedule">
+                            ⏰ Schedule: Mon-Fri 9:15, 9:45, 10:15, 10:45 ... 15:15 IST (every 30 min)
+                        </div>
+                        <div class="scanner-meta" id="scanner-meta-MF">
+                            <div class="meta-item">Last Run: <span class="meta-value" id="last-run-MF">Never</span></div>
+                            <div class="meta-item">Data Source: <span class="meta-value" id="data-source-MF">-</span></div>
+                            <div class="meta-item">Stocks Scanned: <span class="meta-value" id="stocks-scanned-MF">0</span></div>
+                            <div class="meta-item">Alerts: <span class="meta-value" id="alerts-MF">0</span></div>
+                        </div>
+                        <div class="scanner-actions">
+                            <button class="run-btn" id="run-btn-MF" onclick="runScanner('MF', this)">▶ Run Now</button>
+                        </div>
+                        <div id="critical-error-MF"></div>
+                        <div id="noncritical-section-MF"></div>
+                    </div>
+
+                    <!-- Momentum Scanner Card -->
+                    <div class="scanner-card" id="scanner-card-MOMENTUM">
+                        <div class="scanner-header">
+                            <span class="scanner-name">⚡ Momentum Scanner</span>
+                            <span class="status-badge idle" id="status-badge-MOMENTUM">IDLE</span>
+                        </div>
+                        <div class="scanner-schedule">
+                            ⏰ Schedule: Mon-Fri 9:15-15:30 IST (every 5 min)
+                        </div>
+                        <div class="scanner-meta" id="scanner-meta-MOMENTUM">
+                            <div class="meta-item">Last Run: <span class="meta-value" id="last-run-MOMENTUM">Never</span></div>
+                            <div class="meta-item">Data Source: <span class="meta-value" id="data-source-MOMENTUM">-</span></div>
+                            <div class="meta-item">Stocks Scanned: <span class="meta-value" id="stocks-scanned-MOMENTUM">0</span></div>
+                            <div class="meta-item">Alerts: <span class="meta-value" id="alerts-MOMENTUM">0</span></div>
+                        </div>
+                        <div class="scanner-actions">
+                            <button class="run-btn" id="run-btn-MOMENTUM" onclick="runScanner('MOMENTUM', this)">▶ Run Now</button>
+                        </div>
+                        <div id="critical-error-MOMENTUM"></div>
+                        <div id="noncritical-section-MOMENTUM"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Stock Card -->
             <div class="admin-card">
                 <h2>Add New Stock</h2>
                 
@@ -113,6 +426,243 @@
     </div>
 
     <script>
+        // ========== AUDIO SYSTEM ==========
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function ensureAudioCtx() {
+            if (!audioCtx) audioCtx = new AudioCtx();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playAlertTone() {
+            ensureAudioCtx();
+            // Soft ascending chime - pleasant notification
+            const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+            notes.forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + i * 0.15);
+                gain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + i * 0.15 + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.15 + 0.4);
+                osc.start(audioCtx.currentTime + i * 0.15);
+                osc.stop(audioCtx.currentTime + i * 0.15 + 0.5);
+            });
+        }
+
+        function playScannerDownTone() {
+            ensureAudioCtx();
+            // Descending warning tone - urgent but not jarring
+            const notes = [440, 349.23, 261.63]; // A4, F4, C4
+            notes.forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + i * 0.2);
+                gain.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + i * 0.2 + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.2 + 0.5);
+                osc.start(audioCtx.currentTime + i * 0.2);
+                osc.stop(audioCtx.currentTime + i * 0.2 + 0.6);
+            });
+        }
+
+        // ========== TOAST NOTIFICATIONS ==========
+        const toastContainer = document.getElementById('toast-container');
+        const shownToastKeys = new Set();
+
+        function showToast(type, title, message, key) {
+            if (key && shownToastKeys.has(key)) return;
+            if (key) shownToastKeys.add(key);
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type === 'alert' ? 'toast-alert' : 'toast-scanner-down'}`;
+            toast.innerHTML = `
+                <span class="toast-icon">${type === 'alert' ? '🚨' : '🔴'}</span>
+                <div class="toast-body">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-msg">${message}</div>
+                </div>
+                <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+            `;
+            toastContainer.appendChild(toast);
+
+            // Play sound
+            if (type === 'alert') playAlertTone();
+            else playScannerDownTone();
+
+            // Auto dismiss after 10 seconds
+            setTimeout(() => {
+                toast.classList.add('toast-fadeout');
+                setTimeout(() => toast.remove(), 400);
+            }, 10000);
+        }
+
+        // ========== SCANNER HEALTH ==========
+        let previousStatuses = {};
+
+        function timeAgo(isoString) {
+            if (!isoString) return 'Never';
+            const diff = (Date.now() - new Date(isoString).getTime()) / 1000;
+            if (diff < 60) return `${Math.floor(diff)}s ago`;
+            if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+            return `${Math.floor(diff/86400)}d ago`;
+        }
+
+        function updateScannerCard(name, data) {
+            const card = document.getElementById(`scanner-card-${name}`);
+            const badge = document.getElementById(`status-badge-${name}`);
+            const statusLower = data.status.toLowerCase();
+            
+            // Update status badge
+            badge.textContent = data.status.replace('_', ' ');
+            badge.className = `status-badge ${statusLower}`;
+
+            // Update card border
+            card.className = `scanner-card status-${statusLower}`;
+
+            // Update meta
+            document.getElementById(`last-run-${name}`).textContent = timeAgo(data.last_run);
+            document.getElementById(`data-source-${name}`).textContent = data.data_source || 'Auto';
+            document.getElementById(`stocks-scanned-${name}`).textContent = 
+                `${data.stocks_scanned}/${data.total_count}` + (data.stale_count > 0 ? ` (${data.stale_count} stale)` : '');
+            document.getElementById(`alerts-${name}`).textContent = data.alerts_processed;
+
+            // Critical error
+            const critEl = document.getElementById(`critical-error-${name}`);
+            if (data.critical_error) {
+                critEl.innerHTML = `
+                    <div class="critical-error-box">
+                        <span class="err-icon">🚨</span>
+                        <span>${data.critical_error}</span>
+                    </div>
+                `;
+            } else {
+                critEl.innerHTML = '';
+            }
+
+            // Non-critical errors
+            const ncEl = document.getElementById(`noncritical-section-${name}`);
+            const errors = data.non_critical_errors || [];
+            if (errors.length > 0) {
+                let errorsHtml = errors.map(e => `
+                    <div class="nc-error-item">
+                        <span class="nc-error-msg">[${e.symbol}] ${e.message}</span>
+                        <div class="nc-error-meta">
+                            <span class="nc-error-count">×${e.count}</span>
+                            <button class="nc-ack-btn" title="Acknowledge" onclick="ackError('${name}', '${e.key.replace(/'/g, "\\'")}')">✕</button>
+                        </div>
+                    </div>
+                `).join('');
+
+                ncEl.innerHTML = `
+                    <div class="noncritical-section">
+                        <div class="noncritical-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+                            <span class="nc-title">⚠️ Non-Critical Errors</span>
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <span class="nc-count">${errors.length}</span>
+                                <button class="nc-clear-btn" onclick="event.stopPropagation(); clearErrors('${name}')">Clear All</button>
+                            </div>
+                        </div>
+                        <div class="noncritical-list">${errorsHtml}</div>
+                    </div>
+                `;
+            } else {
+                ncEl.innerHTML = '';
+            }
+
+            // Detect status changes and fire toasts
+            const prev = previousStatuses[name];
+            if (prev && prev !== data.status) {
+                if (data.status === 'DOWN' || data.status === 'DATA_STALE') {
+                    showToast('scanner_down', `${name} Scanner ${data.status.replace('_', ' ')}`, 
+                        data.critical_error || `Scanner is ${data.status}`, `scanner-${name}-${data.status}`);
+                } else if (data.status === 'UP' && (prev === 'DOWN' || prev === 'DATA_STALE')) {
+                    showToast('alert', `${name} Scanner Recovered`, 'Scanner is back UP and running.', `scanner-${name}-recovered-${Date.now()}`);
+                }
+            }
+            previousStatuses[name] = data.status;
+        }
+
+        async function fetchScannerStatus() {
+            try {
+                const res = await fetch('/api/admin/scanner_status');
+                const data = await res.json();
+                for (const [name, status] of Object.entries(data)) {
+                    updateScannerCard(name, status);
+                }
+            } catch (e) {
+                console.error('Failed to fetch scanner status:', e);
+            }
+        }
+
+        async function runScanner(name, btn) {
+            btn.disabled = true;
+            btn.textContent = '⏳ Running...';
+            btn.classList.add('running');
+            try {
+                await fetch(`/api/admin/run_scanner/${name}`, { method: 'POST' });
+                // Poll faster for a bit to show results
+                setTimeout(fetchScannerStatus, 3000);
+                setTimeout(fetchScannerStatus, 8000);
+                setTimeout(fetchScannerStatus, 15000);
+            } catch (e) {
+                alert('Failed to trigger scanner: ' + e);
+            }
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = '▶ Run Now';
+                btn.classList.remove('running');
+            }, 20000);
+        }
+
+        async function ackError(scanner, errorKey) {
+            try {
+                await fetch('/api/admin/acknowledge_error', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scanner, error_key: errorKey })
+                });
+                fetchScannerStatus();
+            } catch (e) { console.error(e); }
+        }
+
+        async function clearErrors(scanner) {
+            try {
+                await fetch('/api/admin/clear_errors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scanner })
+                });
+                fetchScannerStatus();
+            } catch (e) { console.error(e); }
+        }
+
+        // ========== NOTIFICATION POLLING ==========
+        let lastNotifTime = Date.now() / 1000;
+
+        async function pollNotifications() {
+            try {
+                const res = await fetch(`/api/notifications?since=${lastNotifTime}`);
+                const data = await res.json();
+                if (data.server_time) lastNotifTime = data.server_time;
+
+                for (const n of data.notifications || []) {
+                    if (n.type === 'new_alert') {
+                        showToast('alert', `${n.alert_type} Alert`, n.message, `alert-${n.symbol}-${n.timestamp}`);
+                    }
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // ========== WATCHLIST FUNCTIONS ==========
         const symbolInput = document.getElementById('symbol');
         const suggBox = document.getElementById('suggestions-box');
         let debounceTimer;
@@ -128,7 +678,6 @@
 
             debounceTimer = setTimeout(async () => {
                 try {
-                    // Fetch from our internal backend API
                     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                     const indianStocks = await res.json();
                     
@@ -160,7 +709,6 @@
             }, 300);
         });
 
-        // Hide suggestions when clicking outside
         document.addEventListener('click', function(e) {
             if (e.target !== symbolInput && e.target !== suggBox) {
                 suggBox.style.display = 'none';
@@ -170,7 +718,6 @@
         let currentSort = { criteria: 'name', asc: true };
 
         function sortWatchlist(criteria, btn) {
-            // Update active button
             const sortControls = document.querySelector('.sidebar-header .sort-controls');
             sortControls.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
@@ -215,7 +762,7 @@
                 const res = await fetch('/api/refresh_watchlist');
                 const data = await res.json();
                 if (data.success) {
-                    location.reload(); // Quick way to update everything on admin side
+                    location.reload();
                 } else {
                     alert('Error refreshing: ' + data.error);
                 }
@@ -268,31 +815,27 @@
                 if (category === 'ALL') {
                     item.style.display = 'flex';
                 } else if (category === 'STRONG') {
-                    if (qscore >= 6.0) {
-                        item.style.display = 'flex';
-                    } else {
-                        item.style.display = 'none';
-                    }
+                    item.style.display = qscore >= 6.0 ? 'flex' : 'none';
                 } else if (category === 'VALUE') {
-                    if (vscore >= 6.0) {
-                        item.style.display = 'flex';
-                    } else {
-                        item.style.display = 'none';
-                    }
+                    item.style.display = vscore >= 6.0 ? 'flex' : 'none';
                 } else if (category === 'CAUTION') {
-                    if (qscore <= 3.0 || vscore <= 3.0 || qscore === -1) {
-                        item.style.display = 'flex';
-                    } else {
-                        item.style.display = 'none';
-                    }
+                    item.style.display = (qscore <= 3.0 || vscore <= 3.0 || qscore === -1) ? 'flex' : 'none';
                 }
             });
             
-            // Update active filter button state
             const filterControls = btn.parentElement;
             filterControls.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
         }
+
+        // ========== INITIALIZE ==========
+        // Enable audio on first click (browser autoplay policy)
+        document.addEventListener('click', () => ensureAudioCtx(), { once: true });
+
+        // Start polling
+        fetchScannerStatus();
+        setInterval(fetchScannerStatus, 30000);   // Scanner status every 30s
+        setInterval(pollNotifications, 15000);     // Notifications every 15s
     </script>
 </body>
 </html>

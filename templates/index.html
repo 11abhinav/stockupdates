@@ -1067,6 +1067,61 @@
             }
         }
 
+        // ========== NOTIFICATION SYSTEM ==========
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        function ensureAudioCtx() { if (!audioCtx) audioCtx = new AudioCtx(); if (audioCtx.state === 'suspended') audioCtx.resume(); }
+        document.addEventListener('click', () => ensureAudioCtx(), { once: true });
+
+        function playAlertTone() {
+            ensureAudioCtx();
+            [523.25, 659.25, 783.99].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.type = 'sine'; osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime + i*0.15);
+                gain.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + i*0.15 + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i*0.15 + 0.4);
+                osc.start(audioCtx.currentTime + i*0.15); osc.stop(audioCtx.currentTime + i*0.15 + 0.5);
+            });
+        }
+
+        const _toastContainer = document.createElement('div');
+        _toastContainer.style.cssText = 'position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;max-width:380px;';
+        document.body.appendChild(_toastContainer);
+        const _shownToasts = new Set();
+
+        function showUserToast(title, message, key) {
+            if (key && _shownToasts.has(key)) return;
+            if (key) _shownToasts.add(key);
+            playAlertTone();
+            const t = document.createElement('div');
+            t.style.cssText = 'padding:14px 18px;border-radius:14px;backdrop-filter:blur(20px);font-size:0.82rem;font-weight:500;color:var(--text-main);box-shadow:0 8px 32px rgba(0,0,0,0.3);display:flex;align-items:flex-start;gap:10px;animation:toastIn 0.4s ease;cursor:pointer;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);font-family:Inter,sans-serif;';
+            t.innerHTML = `<span style="font-size:1.2rem;">🚨</span><div style="flex:1;"><div style="font-weight:700;font-size:0.82rem;margin-bottom:2px;">${title}</div><div style="font-size:0.75rem;color:var(--text-muted);">${message}</div></div><button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem;padding:0;opacity:0.5;">×</button>`;
+            _toastContainer.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(100px)'; t.style.transition = 'all 0.3s'; setTimeout(() => t.remove(), 400); }, 10000);
+        }
+
+        let _lastNotifTime = Date.now() / 1000;
+        async function pollUserNotifications() {
+            try {
+                const res = await fetch(`/api/notifications?since=${_lastNotifTime}`);
+                const data = await res.json();
+                if (data.server_time) _lastNotifTime = data.server_time;
+                for (const n of data.notifications || []) {
+                    if (n.type === 'new_alert') {
+                        showUserToast(`${n.alert_type} Alert`, n.message, `alert-${n.symbol}-${n.timestamp}`);
+                    }
+                }
+            } catch (e) {}
+        }
+        setInterval(pollUserNotifications, 15000);
+
+        // Add CSS animation
+        const _toastStyle = document.createElement('style');
+        _toastStyle.textContent = '@keyframes toastIn { from { opacity:0; transform:translateX(100px); } to { opacity:1; transform:translateX(0); } }';
+        document.head.appendChild(_toastStyle);
+
         window.onload = () => {
             calculateAlertStats();
             const params = new URLSearchParams(window.location.search);
@@ -1086,3 +1141,4 @@
     </script>
 </body>
 </html>
+

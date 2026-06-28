@@ -1065,6 +1065,88 @@ def admin():
     return render_template('admin.html', watchlist=prices)
 
 
+@app.route('/api/admin/scanner_status', methods=['GET'])
+def api_scanner_status():
+    """Return health status for all scanners."""
+    from scanners.health import get_all_status
+    return jsonify(get_all_status())
+
+@app.route('/api/admin/run_scanner/<name>', methods=['POST'])
+def api_run_scanner(name):
+    """Manually trigger a scanner run in the background."""
+    name = name.upper()
+    if name == 'MF':
+        threading.Thread(target=scanners.mf.run, daemon=True).start()
+        return jsonify({"status": "success", "message": "MF Scanner started in background."})
+    elif name == 'MOMENTUM':
+        threading.Thread(target=scanners.momentum.run, daemon=True).start()
+        return jsonify({"status": "success", "message": "Momentum Scanner started in background."})
+    else:
+        return jsonify({"status": "error", "message": f"Unknown scanner: {name}"}), 400
+
+@app.route('/api/admin/acknowledge_error', methods=['POST'])
+def api_acknowledge_error():
+    """Acknowledge and remove a non-critical error from the dashboard."""
+    from scanners.health import acknowledge_error
+    data = request.get_json()
+    scanner = data.get('scanner')
+    error_key = data.get('error_key')
+    if not scanner or not error_key:
+        return jsonify({"status": "error", "message": "Missing scanner or error_key"}), 400
+    acknowledge_error(scanner, error_key)
+    return jsonify({"status": "success"})
+
+@app.route('/api/admin/clear_errors', methods=['POST'])
+def api_clear_errors():
+    """Clear all non-critical errors for a scanner."""
+    from scanners.health import clear_all_errors
+    data = request.get_json()
+    scanner = data.get('scanner')
+    if not scanner:
+        return jsonify({"status": "error", "message": "Missing scanner"}), 400
+    clear_all_errors(scanner)
+    return jsonify({"status": "success"})
+
+@app.route('/api/notifications', methods=['GET'])
+def api_notifications():
+    """Poll for new alerts and scanner status changes for toast notifications."""
+    from scanners.health import get_all_status
+    since = request.args.get('since', '0')
+    try:
+        since_ts = float(since)
+    except ValueError:
+        since_ts = 0
+    
+    notifications = []
+    
+    # Check for scanner DOWN/DATA_STALE
+    statuses = get_all_status()
+    for name, s in statuses.items():
+        if s['status'] in ('DOWN', 'DATA_STALE'):
+            notifications.append({
+                'type': 'scanner_down',
+                'scanner': name,
+                'status': s['status'],
+                'message': s['critical_error'] or f'{name} scanner is {s["status"]}',
+            })
+    
+    # Check for recent alerts
+    recent_alerts = db.get_recent_alerts(10)
+    for a in recent_alerts:
+        created = a.get('created_at')
+        if created:
+            alert_ts = created.timestamp() if hasattr(created, 'timestamp') else 0
+            if alert_ts > since_ts:
+                notifications.append({
+                    'type': 'new_alert',
+                    'symbol': a.get('symbol'),
+                    'alert_type': a.get('alert_type'),
+                    'message': f"{a.get('alert_type', 'ALERT')} | {a.get('symbol', '?')}: New signal detected",
+                    'timestamp': alert_ts,
+                })
+    
+    return jsonify({"notifications": notifications, "server_time": time.time()})
+
 @app.route('/api/admin/force_refresh', methods=['GET'])
 def api_force_refresh():
     """Endpoint to manually trigger a full universe refresh on Railway."""
