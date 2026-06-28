@@ -60,7 +60,7 @@
         /* ── SCANNER CARDS ELITE ── */
         .scanner-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1.25rem;
         }
 
@@ -650,7 +650,7 @@
             </div>
         </div>
         
-        <div class="admin-container" style="max-width: 800px;">
+        <div class="admin-container" style="max-width: 950px; overflow-y: auto;">
             <!-- System Diagnostic Section -->
             <!-- System Diagnostic Section -->
             <div class="admin-card" style="padding: 0; overflow: hidden; margin-bottom: 32px;">
@@ -670,17 +670,6 @@
                 </div>
                 
                 <div id="diagnostics-body" style="display: block; padding: 20px; background: var(--bg-base);">
-                    <div style="margin-bottom: 24px; border: 1px solid var(--glass-border); border-radius: 8px; background: var(--bg-surface); padding: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">🌐 Global System Errors</span>
-                            <button onclick="clearGlobalErrors()" style="background: none; border: none; font-size: 0.8rem; cursor: pointer; color: var(--accent); font-weight: 600;">Clear All</button>
-                        </div>
-                        <div id="global-errors-container" style="max-height: 200px; overflow-y: auto;">
-                            <!-- Global errors injected here -->
-                            <div style="color: var(--success); font-size: 0.85rem; padding: 8px; background: rgba(16,185,129,0.05); border-radius: 6px; border: 1px solid rgba(16,185,129,0.2);">✅ No global system errors detected.</div>
-                        </div>
-                    </div>
-
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">Scanner Health & Errors</span>
                         <button onclick="fetchScannerStatus()" style="background: var(--bg-surface-hover); border: 1px solid var(--glass-border); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; color: var(--text-main); font-family: inherit;">🔄 Refresh</button>
@@ -752,6 +741,17 @@
                             </div>
                             <div id="critical-error-MOMENTUM"></div>
                             <div id="noncritical-section-MOMENTUM"></div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 24px; border: 1px solid var(--glass-border); border-radius: 8px; background: var(--bg-surface); padding: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">🌐 Global System Errors</span>
+                            <button onclick="clearGlobalErrors()" style="background: none; border: none; font-size: 0.8rem; cursor: pointer; color: var(--accent); font-weight: 600;">Clear All</button>
+                        </div>
+                        <div id="global-errors-container" style="max-height: 200px; overflow-y: auto;">
+                            <!-- Global errors injected here -->
+                            <div style="color: var(--success); font-size: 0.85rem; padding: 8px; background: rgba(16,185,129,0.05); border-radius: 6px; border: 1px solid rgba(16,185,129,0.2);">✅ No global system errors detected.</div>
                         </div>
                     </div>
                 </div>
