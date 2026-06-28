@@ -580,6 +580,11 @@
                     ✎ Edit Stocks
                 </button>
             </div>
+            <div style="margin-top: 0.5rem;">
+                <button class="nav-btn" style="width: 100%; font-size: 0.8rem; padding: 0.5rem; justify-content: center; background: rgba(37,99,235,0.05); color: var(--accent); border: 1px solid rgba(37,99,235,0.2);" onclick="forceRefreshFundamentals(this)">
+                    ⚡ Force Refresh Fundamentals
+                </button>
+            </div>
         </div>
         <div class="watchlist" id="watchlist-container">
             {% for item in watchlist %}
@@ -665,6 +670,17 @@
                 </div>
                 
                 <div id="diagnostics-body" style="display: block; padding: 20px; background: var(--bg-base);">
+                    <div style="margin-bottom: 24px; border: 1px solid var(--glass-border); border-radius: 8px; background: var(--bg-surface); padding: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">🌐 Global System Errors</span>
+                            <button onclick="clearGlobalErrors()" style="background: none; border: none; font-size: 0.8rem; cursor: pointer; color: var(--accent); font-weight: 600;">Clear All</button>
+                        </div>
+                        <div id="global-errors-container" style="max-height: 200px; overflow-y: auto;">
+                            <!-- Global errors injected here -->
+                            <div style="color: var(--success); font-size: 0.85rem; padding: 8px; background: rgba(16,185,129,0.05); border-radius: 6px; border: 1px solid rgba(16,185,129,0.2);">✅ No global system errors detected.</div>
+                        </div>
+                    </div>
+
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">Scanner Health & Errors</span>
                         <button onclick="fetchScannerStatus()" style="background: var(--bg-surface-hover); border: 1px solid var(--glass-border); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; color: var(--text-main); font-family: inherit;">🔄 Refresh</button>
@@ -1029,6 +1045,51 @@
             } catch (e) {
                 console.error('Failed to fetch scanner status:', e);
             }
+            fetchGlobalErrors();
+        }
+
+        async function fetchGlobalErrors() {
+            try {
+                const res = await fetch('/api/admin/system_errors');
+                const errors = await res.json();
+                const container = document.getElementById('global-errors-container');
+                if (errors && errors.length > 0) {
+                    container.innerHTML = errors.map(e => {
+                        const d = new Date(e.time * 1000);
+                        const timeStr = `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                        return `
+                            <div style="padding: 8px; border-bottom: 1px solid var(--glass-border); font-family: var(--font-mono); font-size: 0.75rem; color: var(--warning); display: flex; gap: 10px;">
+                                <span style="color: var(--text-muted); white-space: nowrap;">[${timeStr}]</span>
+                                <span>${e.message}</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    container.innerHTML = '<div style="color: var(--success); font-size: 0.85rem; padding: 8px; background: rgba(16,185,129,0.05); border-radius: 6px; border: 1px solid rgba(16,185,129,0.2);">✅ No global system errors detected.</div>';
+                }
+            } catch (e) {}
+        }
+
+        async function clearGlobalErrors() {
+            try {
+                await fetch('/api/admin/clear_system_errors', { method: 'POST' });
+                fetchGlobalErrors();
+            } catch (e) {}
+        }
+
+        async function forceRefreshFundamentals(btn) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⚡ Refreshing...';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/admin/force_refresh', { method: 'POST' });
+                const data = await res.json();
+                showToast('alert', 'Refresh Triggered', data.message || 'Background process started.', `force-refresh-${Date.now()}`);
+            } catch (e) {
+                alert('Failed to trigger refresh');
+            }
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
 
         async function runScanner(name, btn) {

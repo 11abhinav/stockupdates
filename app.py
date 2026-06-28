@@ -9,12 +9,32 @@ import time
 import threading
 import db
 
+from collections import deque
+
 _alerts_cache = {"data": [], "timestamp": 0}
 _cache_lock = threading.Lock()
 
+# Global system errors storage
+global_system_errors = deque(maxlen=50)
+
+class GlobalErrorHandler(logging.Handler):
+    def emit(self, record):
+        if record.levelno >= logging.ERROR:
+            msg = self.format(record)
+            global_system_errors.appendleft({
+                "time": time.time(),
+                "message": msg
+            })
+
 # Initialize logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 log = logging.getLogger("app")
+error_handler = GlobalErrorHandler()
+error_handler.setFormatter(logging.Formatter('%(message)s'))
+log.addHandler(error_handler)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
@@ -1196,7 +1216,16 @@ def api_notifications():
     
     return jsonify({"notifications": notifications, "server_time": time.time()})
 
-@app.route('/api/admin/force_refresh', methods=['GET'])
+@app.route('/api/admin/system_errors')
+def api_system_errors():
+    return jsonify(list(global_system_errors))
+
+@app.route('/api/admin/clear_system_errors', methods=['POST'])
+def api_clear_system_errors():
+    global_system_errors.clear()
+    return jsonify({"status": "success"})
+
+@app.route('/api/admin/force_refresh', methods=['GET', 'POST'])
 def api_force_refresh():
     """Endpoint to manually trigger a full universe refresh on Railway."""
     def run_refresh_background():
