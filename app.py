@@ -933,8 +933,17 @@ def get_prices():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+_refresh_watchlist_lock = threading.Lock()
+_is_refreshing_watchlist = False
+
 @app.route('/api/refresh_watchlist')
 def api_refresh_watchlist():
+    global _is_refreshing_watchlist
+    with _refresh_watchlist_lock:
+        if _is_refreshing_watchlist:
+            return jsonify({'success': False, 'error': 'A watchlist refresh is already in progress. Please wait.'})
+        _is_refreshing_watchlist = True
+
     try:
         watchlist = db.get_watchlist()
         symbols = [w['symbol'] for w in watchlist]
@@ -962,6 +971,9 @@ def api_refresh_watchlist():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+    finally:
+        with _refresh_watchlist_lock:
+            _is_refreshing_watchlist = False
 
 @app.route('/api/search')
 def api_search():
