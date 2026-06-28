@@ -1292,10 +1292,25 @@ def api_clear_system_errors():
     global_system_errors.clear()
     return jsonify({"status": "success"})
 
+import threading
+_force_refresh_lock = threading.Lock()
+_is_refreshing = False
+
 @app.route('/api/admin/force_refresh', methods=['GET', 'POST'])
 def api_force_refresh():
     """Endpoint to manually trigger a full universe refresh on Railway."""
+    global _is_refreshing
+    
+    with _force_refresh_lock:
+        if _is_refreshing:
+            return jsonify({
+                "status": "error",
+                "message": "A fundamental refresh is already currently running. Please wait for it to finish."
+            }), 429
+        _is_refreshing = True
+
     def run_refresh_background():
+        global _is_refreshing
         try:
             import time
             log.info("Force refresh triggered via API...")
@@ -1306,8 +1321,10 @@ def api_force_refresh():
                 log.info(f"Force refresh complete for {len(symbols)} symbols.")
         except Exception as e:
             log.error(f"Error in force refresh background thread: {e}")
+        finally:
+            with _force_refresh_lock:
+                _is_refreshing = False
             
-    import threading
     threading.Thread(target=run_refresh_background, daemon=True).start()
     
     return jsonify({

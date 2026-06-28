@@ -561,6 +561,9 @@
         <div class="sidebar-header">
             <h1 class="sidebar-title">Admin Panel</h1>
             <div class="sidebar-subtitle">Active Watchlist ({{ watchlist|length }})</div>
+            <div style="margin-top: 1rem;">
+                <input type="text" id="watchlist-search" oninput="applyFilters()" placeholder="Search symbol or BSE code..." style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--text); font-family: var(--font-sans); font-size: 0.85rem;" autocomplete="off">
+            </div>
             <div class="sort-controls" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
                 <button class="sort-btn active" onclick="sortWatchlist('name', this)">Name</button>
                 <button class="sort-btn" onclick="sortWatchlist('price', this)">Price</button>
@@ -1296,22 +1299,38 @@
         }
 
         let watchlistFilter = 'ALL';
-        function filterWatchlist(category, btn) {
-            watchlistFilter = category;
+        
+        function applyFilters() {
+            const query = document.getElementById('watchlist-search')?.value.toLowerCase() || '';
             const items = document.querySelectorAll('.watchlist-item');
             items.forEach(item => {
+                const symbol = item.dataset.symbol.toLowerCase();
+                const bseCode = item.querySelector('.item-bse').textContent.toLowerCase();
+                const matchesSearch = symbol.includes(query) || bseCode.includes(query);
+                
                 const qscore = parseFloat(item.dataset.qscore);
                 const vscore = parseFloat(item.dataset.vscore);
-                if (category === 'ALL') {
+                let matchesFilter = true;
+                
+                if (watchlistFilter === 'STRONG') {
+                    matchesFilter = qscore >= 6.0;
+                } else if (watchlistFilter === 'VALUE') {
+                    matchesFilter = vscore >= 6.0;
+                } else if (watchlistFilter === 'CAUTION') {
+                    matchesFilter = (qscore <= 3.0 || vscore <= 3.0 || qscore === -1);
+                }
+                
+                if (matchesFilter && matchesSearch) {
                     item.style.display = 'flex';
-                } else if (category === 'STRONG') {
-                    item.style.display = qscore >= 6.0 ? 'flex' : 'none';
-                } else if (category === 'VALUE') {
-                    item.style.display = vscore >= 6.0 ? 'flex' : 'none';
-                } else if (category === 'CAUTION') {
-                    item.style.display = (qscore <= 3.0 || vscore <= 3.0 || qscore === -1) ? 'flex' : 'none';
+                } else {
+                    item.style.display = 'none';
                 }
             });
+        }
+        
+        function filterWatchlist(category, btn) {
+            watchlistFilter = category;
+            applyFilters();
             
             const filterControls = btn.parentElement;
             filterControls.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
