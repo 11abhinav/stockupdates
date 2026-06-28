@@ -6,7 +6,7 @@
     <title>StockUpdates Intelligence</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
     <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}?v=6">
-    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
 </head>
 <body>
     <div class="ambient-orb"></div>
@@ -213,18 +213,16 @@
                     </div>
                     <div class="stock-meta" id="detail-meta">Last Fetched: -</div>
                 </div>
-                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                    <button class="nav-btn" id="draw-line-btn" onclick="toggleDrawingMode()" style="font-size: 0.8rem; padding: 8px 12px; height: 38px;">✏️ Draw Line</button>
-                    <button class="nav-btn" onclick="clearDrawings()" style="font-size: 0.8rem; padding: 8px 12px; height: 38px;">🗑️ Clear</button>
-                    <a href="#" target="_blank" class="tv-btn" id="tv-link" style="padding: 8px 12px; display: inline-flex; align-items: center; justify-content: center; height: 38px; font-size: 0.8rem;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                <div>
+                    <a href="#" target="_blank" class="tv-btn" id="tv-link" style="padding: 8px 16px; display: inline-flex; align-items: center; justify-content: center; height: 38px; font-size: 0.85rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                         TradingView
                     </a>
                 </div>
             </div>
 
             <!-- TradingView Candlestick Chart -->
-            <div id="tv-chart" style="width: 100%; height: 320px; border-radius: 20px; border: 1px solid var(--glass-border); overflow: hidden; margin-bottom: 2.5rem; background: var(--bg-surface); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);"></div>
+            <div id="tv-chart" style="width: 100%; height: 480px; border-radius: 20px; border: 1px solid var(--glass-border); overflow: hidden; margin-bottom: 2.5rem; background: var(--bg-surface); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);"></div>
 
             <!-- Collapsible Scorecard Accordion -->
             <div class="accordion" id="fscore-checklist-accordion" style="margin-bottom: 2.5rem; border: 1px solid var(--glass-border); border-radius: 16px; overflow: hidden; background: var(--bg-surface); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);">
@@ -800,190 +798,26 @@
             }
         }
 
-        let currentTVChart = null;
-        let isDrawingMode = false;
-        let firstClickedPoint = null;
-        let activeLineSeries = [];
-
-        function toggleDrawingMode() {
-            const drawBtn = document.getElementById('draw-line-btn');
-            if (!drawBtn) return;
-            
-            isDrawingMode = !isDrawingMode;
-            firstClickedPoint = null;
-            
-            if (isDrawingMode) {
-                drawBtn.classList.add('active');
-                drawBtn.textContent = '📍 Click Point 1...';
-                drawBtn.style.background = 'rgba(59, 130, 246, 0.2)';
-                drawBtn.style.borderColor = '#3b82f6';
-            } else {
-                drawBtn.classList.remove('active');
-                drawBtn.textContent = '✏️ Draw Line';
-                drawBtn.style.background = '';
-                drawBtn.style.borderColor = '';
-            }
-        }
-
-        function clearDrawings() {
-            if (currentTVChart && activeLineSeries.length > 0) {
-                activeLineSeries.forEach(series => {
-                    currentTVChart.removeSeries(series);
-                });
-                activeLineSeries = [];
-            }
-            firstClickedPoint = null;
-            isDrawingMode = false;
-            const drawBtn = document.getElementById('draw-line-btn');
-            if (drawBtn) {
-                drawBtn.textContent = '✏️ Draw Line';
-                drawBtn.classList.remove('active');
-                drawBtn.style.background = '';
-                drawBtn.style.borderColor = '';
-            }
-        }
-
         function renderTradingViewChart(data) {
+            const symbol = data.symbol;
             const chartDiv = document.getElementById('tv-chart');
-            chartDiv.innerHTML = '';
+            chartDiv.innerHTML = `<div id="tradingview-widget-container" style="height: 100%; width: 100%;"></div>`;
             
-            // Reset drawing states for new stock chart
-            isDrawingMode = false;
-            firstClickedPoint = null;
-            activeLineSeries = [];
-            const drawBtn = document.getElementById('draw-line-btn');
-            if (drawBtn) {
-                drawBtn.textContent = '✏️ Draw Line';
-                drawBtn.classList.remove('active');
-                drawBtn.style.background = '';
-                drawBtn.style.borderColor = '';
-            }
-            
-            if (data.chart_data && data.chart_data.length > 0) {
-                const chart = LightweightCharts.createChart(chartDiv, {
-                    width: chartDiv.clientWidth,
-                    height: 320,
-                    layout: {
-                        background: { type: 'solid', color: 'transparent' },
-                        textColor: '#9ca3af',
-                        fontSize: 11,
-                        fontFamily: 'Inter'
-                    },
-                    grid: {
-                        vertLines: { color: 'rgba(255,255,255,0.02)' },
-                        horzLines: { color: 'rgba(255,255,255,0.02)' }
-                    },
-                    crosshair: {
-                        mode: LightweightCharts.CrosshairMode.Normal
-                    },
-                    rightPriceScale: {
-                        borderColor: 'rgba(255,255,255,0.08)'
-                    },
-                    timeScale: {
-                        borderColor: 'rgba(255,255,255,0.08)',
-                        timeVisible: false
-                    }
-                });
-
-                const candlestickSeries = chart.addCandlestickSeries({
-                    upColor: '#10b981',
-                    downColor: '#f43f5e',
-                    borderUpColor: '#10b981',
-                    borderDownColor: '#f43f5e',
-                    wickUpColor: '#10b981',
-                    wickDownColor: '#f43f5e'
-                });
-
-                candlestickSeries.setData(data.chart_data);
-
-                // Add active price setup lines
-                if (data.alerts && data.alerts.length > 0) {
-                    const alert = data.alerts[0];
-                    if (alert.entry_price) {
-                        candlestickSeries.createPriceLine({
-                            price: parseFloat(alert.entry_price),
-                            color: '#3b82f6',
-                            lineWidth: 2,
-                            lineStyle: LightweightCharts.LineStyle.Dashed,
-                            axisLabelVisible: true,
-                            title: 'ENTRY'
-                        });
-                    }
-                    if (alert.stop_loss) {
-                        candlestickSeries.createPriceLine({
-                            price: parseFloat(alert.stop_loss),
-                            color: '#f43f5e',
-                            lineWidth: 2,
-                            lineStyle: LightweightCharts.LineStyle.Dashed,
-                            axisLabelVisible: true,
-                            title: 'STOP LOSS'
-                        });
-                    }
-                    if (alert.t2_price || alert.target_price) {
-                        candlestickSeries.createPriceLine({
-                            price: parseFloat(alert.t2_price || alert.target_price),
-                            color: '#10b981',
-                            lineWidth: 2,
-                            lineStyle: LightweightCharts.LineStyle.Dashed,
-                            axisLabelVisible: true,
-                            title: 'TARGET'
-                        });
-                    }
-                }
-
-                // Click handler for drawing custom trendlines/support lines
-                chart.subscribeClick((param) => {
-                    if (!isDrawingMode || !param.point || !param.time) return;
-                    
-                    const yCoordinate = param.point.y;
-                    const price = candlestickSeries.coordinateToPrice(yCoordinate);
-                    if (!price) return;
-                    
-                    if (!firstClickedPoint) {
-                        // First point selected
-                        firstClickedPoint = { time: param.time, value: price };
-                        const drawBtn = document.getElementById('draw-line-btn');
-                        if (drawBtn) drawBtn.textContent = '📍 Click Point 2...';
-                    } else {
-                        // Second point selected -> draw trend line
-                        const secondClickedPoint = { time: param.time, value: price };
-                        
-                        const lineSeries = chart.addLineSeries({
-                            color: '#e11d48',
-                            lineWidth: 2,
-                            priceLineVisible: false,
-                            lastValueVisible: false,
-                        });
-                        
-                        lineSeries.setData([
-                            firstClickedPoint,
-                            secondClickedPoint
-                        ]);
-                        
-                        activeLineSeries.push(lineSeries);
-                        
-                        // Reset drawing state
-                        firstClickedPoint = null;
-                        isDrawingMode = false;
-                        const drawBtn = document.getElementById('draw-line-btn');
-                        if (drawBtn) {
-                            drawBtn.textContent = '✏️ Draw Line';
-                            drawBtn.classList.remove('active');
-                            drawBtn.style.background = '';
-                            drawBtn.style.borderColor = '';
-                        }
-                    }
-                });
-
-                currentTVChart = chart;
-                window.addEventListener('resize', () => {
-                    if (currentTVChart) {
-                        currentTVChart.resize(chartDiv.clientWidth, 320);
-                    }
-                });
-            } else {
-                chartDiv.innerHTML = '<div style="display:flex; height:100%; align-items:center; justify-content:center; color:var(--text-muted);">No historical candlestick chart data available.</div>';
-            }
+            new TradingView.widget({
+                "width": "100%",
+                "height": "100%",
+                "symbol": `NSE:${symbol}`,
+                "interval": "D",
+                "timezone": "Asia/Kolkata",
+                "theme": "dark",
+                "style": "1",
+                "locale": "in",
+                "toolbar_bg": "rgba(0, 0, 0, 0)",
+                "enable_publishing": false,
+                "hide_side_toolbar": false,
+                "allow_symbol_change": true,
+                "container_id": "tradingview-widget-container"
+            });
         }
 
         function calculateAlertStats() {
