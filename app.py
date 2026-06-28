@@ -374,11 +374,12 @@ def calculate_value_score(stock, sector_medians):
     stock_pe = stock.get('pe')
     stock_roe = stock.get('roe')
     stock_div = stock.get('div_yield')
+    min_peer_count = 8
     
     if is_financial_sector(sector):
         # 1. P/B relative to sector
         if stock_pb is not None and stock_pb > 0:
-            sector_pb = stock.get('tt_indpb') or med.get("median_pb")
+            sector_pb = norm_num(stock.get('tt_indpb')) or (norm_num(med.get("median_pb")) if med.get("peer_count_pb", 0) >= min_peer_count else None)
             if sector_pb is not None:
                 if stock_pb <= sector_pb:
                     score += 5
@@ -394,7 +395,7 @@ def calculate_value_score(stock, sector_medians):
                     
         # 2. ROE relative to sector
         if stock_roe is not None:
-            sector_roe = med.get("median_roe")
+            sector_roe = norm_num(med.get("median_roe")) if med.get("peer_count_roe", 0) >= min_peer_count else None
             if sector_roe is not None:
                 if stock_roe >= sector_roe:
                     score += 5
@@ -410,7 +411,7 @@ def calculate_value_score(stock, sector_medians):
     else:
         # 1. P/E relative to sector
         if stock_pe is not None and stock_pe > 0:
-            sector_pe = stock.get('tt_indpe') or med.get("median_pe")
+            sector_pe = norm_num(stock.get('tt_indpe')) or (norm_num(med.get("median_pe")) if med.get("peer_count_pe", 0) >= min_peer_count else None)
             if sector_pe is not None:
                 if stock_pe <= sector_pe:
                     score += 5
@@ -426,7 +427,7 @@ def calculate_value_score(stock, sector_medians):
                     
         # 2. P/B relative to sector
         if stock_pb is not None and stock_pb > 0:
-            sector_pb = stock.get('tt_indpb') or med.get("median_pb")
+            sector_pb = norm_num(stock.get('tt_indpb')) or (norm_num(med.get("median_pb")) if med.get("peer_count_pb", 0) >= min_peer_count else None)
             if sector_pb is not None:
                 if stock_pb <= sector_pb:
                     score += 4
@@ -456,7 +457,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
         if is_financial_sector(sector):
             current_pb = norm_num(stock.get('pb'))
             bvps = norm_num(stock.get('bvps'))
-            peer_pb = norm_num(stock.get('tt_indpb')) or med.get("median_pb")
+            peer_pb = norm_num(stock.get('tt_indpb')) or norm_num(med.get("median_pb"))
             peer_count = med.get("peer_count_pb")
 
             if bvps and bvps > 0 and peer_pb and peer_count and peer_count >= min_peer_count:
@@ -498,7 +499,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
 
         current_pe = norm_num(stock.get('pe'))
         eps = norm_num(stock.get('eps'))
-        peer_pe = norm_num(stock.get('tt_indpe')) or med.get("median_pe")
+        peer_pe = norm_num(stock.get('tt_indpe')) or norm_num(med.get("median_pe"))
         peer_count = med.get("peer_count_pe")
 
         if eps and eps > 0 and peer_pe and peer_count and peer_count >= min_peer_count:
@@ -674,6 +675,7 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
         revenue_growth = norm_pct(info.get('revenueGrowth'))
         
         current_stock = {
+            'symbol': symbol,
             'sector': sector,
             'pe': pe,
             'pb': pb,
@@ -1046,7 +1048,7 @@ def api_stock(symbol):
         value_score = stock_data.get('value_score')
         chart_data = []
         try:
-            q_score, v_score, info = fetch_and_save_fundamentals(symbol, ticker)
+            q_score, v_score, info = fetch_and_save_fundamentals(symbol, ticker=ticker)
             if q_score is not None:
                 quality_score = q_score
                 value_score = v_score

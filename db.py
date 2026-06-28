@@ -274,7 +274,11 @@ def get_all_prices():
             if not conn: return []
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched, p.fundamental_score, p.quality_score, p.value_score
+                    SELECT w.symbol, w.bse_code, p.latest_price, p.change_pct, p.last_fetched, 
+                           p.fundamental_score, p.quality_score, p.value_score,
+                           p.fair_value, p.bear_value, p.bull_value,
+                           p.valuation_mode, p.valuation_confidence, p.valuation_label,
+                           p.peer_count, p.target_multiple, p.current_multiple, p.peer_multiple
                     FROM stockupdates.watchlist w
                     LEFT JOIN stockupdates.prices p ON w.symbol = p.symbol
                     ORDER BY w.symbol;
