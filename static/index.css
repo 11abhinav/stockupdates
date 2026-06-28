@@ -682,20 +682,20 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .form-group input {
     width: 100%;
     padding: 16px;
-    background: rgba(13, 18, 30, 0.6);
+    background: var(--bg-base);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     color: var(--text-main);
     font-size: 1rem;
     transition: all 0.3s ease;
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-body);
 }
 
 .form-group input:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 4px var(--accent-glow);
-    background: rgba(13, 18, 30, 0.85);
+    background: var(--bg-surface);
 }
 
 .suggestions {

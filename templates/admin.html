@@ -562,7 +562,7 @@
             <h1 class="sidebar-title">Admin Panel</h1>
             <div class="sidebar-subtitle">Active Watchlist ({{ watchlist|length }})</div>
             <div style="margin-top: 1rem;">
-                <input type="text" id="watchlist-search" oninput="applyFilters()" placeholder="Search symbol or BSE code..." style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--text); font-family: var(--font-sans); font-size: 0.85rem;" autocomplete="off">
+                <input type="text" id="watchlist-search" oninput="applyFilters()" placeholder="Search symbol or BSE code..." style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--glass-border); background: var(--bg-base); color: var(--text-main); font-family: var(--font-body); font-size: 0.85rem;" autocomplete="off">
             </div>
             <div class="sort-controls" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
                 <button class="sort-btn active" onclick="sortWatchlist('name', this)">Name</button>
