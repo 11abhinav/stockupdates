@@ -172,15 +172,18 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
         return df
         
     # 2. Fallback to BSE using bse_code if provided
+    bse_groups = ['A', 'B', 'M', 'X', 'T']
     if bse_code:
-        df = _fetch_for_fyers_symbol(f"BSE:{bse_code}-A")
-        if df is not None:
-            return df
+        for grp in bse_groups:
+            df = _fetch_for_fyers_symbol(f"BSE:{bse_code}-{grp}")
+            if df is not None:
+                return df
             
     # 3. Fallback to BSE using symbol name
-    df = _fetch_for_fyers_symbol(f"BSE:{symbol}-A")
-    if df is not None:
-        return df
+    for grp in bse_groups:
+        df = _fetch_for_fyers_symbol(f"BSE:{symbol}-{grp}")
+        if df is not None:
+            return df
         
     log.debug(f"Fyers history returned empty or failed for {symbol} on all NSE/BSE variants")
     return None
