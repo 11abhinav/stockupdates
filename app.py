@@ -19,7 +19,7 @@ global_system_errors = deque(maxlen=50)
 
 class GlobalErrorHandler(logging.Handler):
     def emit(self, record):
-        if record.levelno >= logging.ERROR:
+        if record.levelno >= logging.ERROR and record.name != "yfinance":
             msg = self.format(record)
             global_system_errors.appendleft({
                 "time": time.time(),
@@ -35,6 +35,9 @@ log = logging.getLogger("app")
 error_handler = GlobalErrorHandler()
 error_handler.setFormatter(logging.Formatter('%(message)s'))
 log.addHandler(error_handler)
+
+# Silence noisy third-party loggers
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
