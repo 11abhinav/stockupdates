@@ -37,7 +37,7 @@ def get_fyers_instance():
         totp_secret = os.environ.get("FYERS_TOTP_SECRET")
         pin = os.environ.get("FYERS_PIN")
         user_id = os.environ.get("FYERS_USER_ID")
-        redirect_uri = "https://google.com"
+        redirect_uri = os.environ.get("FYERS_REDIRECT_URI", "https://google.com")
         
         if not all([secret_key, totp_secret, pin, user_id]) or not pyotp:
             log.warning("Fyers API enabled but missing TOTP/PIN/UserID or pyotp package in environment.")
