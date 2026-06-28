@@ -1040,7 +1040,22 @@ def admin():
         bse_code = request.form.get('bse_code', '').strip()
         
         if not symbol and bse_code:
-            symbol = str(bse_code)
+            try:
+                import requests, re
+                headers = {'User-Agent': 'Mozilla/5.0'}
+                res = requests.get(f'https://www.screener.in/company/{bse_code}/', headers=headers, timeout=5)
+                if res.status_code == 200:
+                    name_match = re.search(r'<h1[^>]*>([^<]+)</h1>', res.text)
+                    if name_match:
+                        company_name = name_match.group(1).strip()
+                        # Use the first word of the company name as the symbol
+                        symbol = company_name.split()[0].upper()
+                        symbol = re.sub(r'[^A-Z0-9]', '', symbol)
+            except Exception as e:
+                log.error(f"Failed to auto-fetch company name from Screener for {bse_code}: {e}")
+            
+            if not symbol:
+                symbol = str(bse_code)
             
         if not symbol and not bse_code:
             flash("Error: Either NSE Symbol or BSE Code is required.", "error")
