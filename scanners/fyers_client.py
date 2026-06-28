@@ -44,27 +44,43 @@ def get_fyers_instance():
             return None
             
         # Step 1: Send Login OTP Request
+        log.info("Fyers login Step 1: Sending login OTP request...")
         session = requests.Session()
         payload = {"fy_id": base64.b64encode(f"{user_id}".encode()).decode(), "app_id": "2"}
         res = session.post("https://api-t2.fyers.in/vagator/v2/send_login_otp_v2", json=payload).json()
+        log.info(f"Step 1 response: {res}")
+        if 'request_key' not in res:
+            log.error(f"Fyers Step 1 failed: {res}")
+            return None
         request_key = res["request_key"]
         
         # Step 2: Verify TOTP
+        log.info("Fyers login Step 2: Verifying TOTP...")
         totp = pyotp.TOTP(totp_secret).now()
         payload2 = {"request_key": request_key, "otp": totp}
         res2 = session.post("https://api-t2.fyers.in/vagator/v2/verify_otp", json=payload2).json()
+        log.info(f"Step 2 response: {res2}")
+        if 'request_key' not in res2:
+            log.error(f"Fyers Step 2 TOTP verification failed: {res2}")
+            return None
         request_key = res2["request_key"]
         
         # Step 3: Verify PIN
+        log.info("Fyers login Step 3: Verifying PIN...")
         payload3 = {"request_key": request_key, "identity_type": "pin", "identifier": base64.b64encode(f"{pin}".encode()).decode()}
         res3 = session.post("https://api-t2.fyers.in/vagator/v2/verify_pin_v2", json=payload3).json()
+        log.info(f"Step 3 response: {res3}")
+        if 'data' not in res3 or 'access_token' not in res3.get('data', {}):
+            log.error(f"Fyers Step 3 PIN verification failed: {res3}")
+            return None
         auth_token = res3["data"]["access_token"]
         
         # Step 4: Get Auth Code
+        log.info("Fyers login Step 4: Getting auth code...")
         headers = {"Authorization": f"Bearer {auth_token}"}
         payload4 = {
             "fyers_id": user_id,
-            "app_id": client_id[:-4], # App ID without the "-100" type suffix
+            "app_id": client_id[:-4],
             "redirect_uri": redirect_uri,
             "appType": "100",
             "code_challenge": "",
@@ -75,11 +91,16 @@ def get_fyers_instance():
             "create_cookie": True
         }
         res4 = session.post("https://api.fyers.in/api/v2/token", json=payload4, headers=headers).json()
+        log.info(f"Step 4 response: {res4}")
+        if 'Url' not in res4:
+            log.error(f"Fyers Step 4 auth code failed: {res4}")
+            return None
         
         parsed = urllib.parse.urlparse(res4['Url'])
         auth_code = urllib.parse.parse_qs(parsed.query)['auth_code'][0]
         
         # Step 5: Get Access Token
+        log.info("Fyers login Step 5: Generating access token...")
         sess_model = fyersModel.SessionModel(
             client_id=client_id,
             secret_key=secret_key,
@@ -89,6 +110,10 @@ def get_fyers_instance():
         )
         sess_model.set_token(auth_code)
         response = sess_model.generate_token()
+        log.info(f"Step 5 response keys: {list(response.keys()) if isinstance(response, dict) else response}")
+        if 'access_token' not in response:
+            log.error(f"Fyers Step 5 token generation failed: {response}")
+            return None
         access_token = response["access_token"]
         
         # Initialize Fyers Model
@@ -99,7 +124,7 @@ def get_fyers_instance():
         return fyers
         
     except Exception as e:
-        log.error(f"Fyers headless login failed: {e}")
+        log.error(f"Fyers headless login failed at unexpected point: {e}", exc_info=True)
         return None
 
 def get_fyers_history(symbol, resolution, days=5):
