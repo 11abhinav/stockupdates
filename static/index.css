@@ -1,33 +1,33 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-    /* Super Premium Light Palette (Fintech/Banking style) */
-    --bg-base: #f0f2f5;
-    --bg-surface: rgba(255, 255, 255, 0.85);
-    --bg-surface-hover: rgba(255, 255, 255, 1);
+    /* Sleek Dark Fintech Palette (High-end trading look) */
+    --bg-base: #060913;
+    --bg-surface: rgba(13, 18, 30, 0.7);
+    --bg-surface-hover: rgba(21, 30, 50, 0.85);
     
-    --glass-border: rgba(0, 0, 0, 0.06);
-    --glass-highlight: rgba(0, 0, 0, 0.12);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-highlight: rgba(255, 255, 255, 0.14);
     
-    --text-main: #0f172a;
-    --text-muted: #64748b;
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
     
-    --accent: #2563eb;
-    --accent-hover: #1d4ed8;
-    --accent-glow: rgba(37, 99, 235, 0.2);
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-glow: rgba(59, 130, 246, 0.15);
     
-    --success: #059669;
-    --success-glow: rgba(5, 150, 105, 0.15);
+    --success: #10b981;
+    --success-glow: rgba(16, 185, 129, 0.15);
     
-    --warning: #e11d48;
-    --warning-glow: rgba(225, 29, 72, 0.15);
+    --warning: #f43f5e;
+    --warning-glow: rgba(244, 63, 94, 0.15);
 
-    --gradient-primary: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-    --gradient-text: linear-gradient(to right, #1e3a8a, #3b82f6);
-    --gradient-header: linear-gradient(to right, #0f172a, #334155);
+    --gradient-primary: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+    --gradient-text: linear-gradient(to right, #60a5fa, #a78bfa);
+    --gradient-header: linear-gradient(to right, #f3f4f6, #e5e7eb);
     
-    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.08);
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.3);
     --shadow-glow: 0 0 20px var(--accent-glow);
 }
 
@@ -60,23 +60,23 @@ body::before, body::after, .ambient-orb {
 }
 
 body::before {
-    width: 80vw; height: 80vw;
-    top: -20%; left: -10%;
-    background: radial-gradient(circle, #bfdbfe 0%, transparent 60%);
+    width: 60vw; height: 60vw;
+    top: -10%; left: -10%;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 65%);
     animation: float 25s infinite ease-in-out alternate;
 }
 
 body::after {
-    width: 80vw; height: 80vw;
-    bottom: -20%; right: -10%;
-    background: radial-gradient(circle, #ddd6fe 0%, transparent 60%);
+    width: 60vw; height: 60vw;
+    bottom: -10%; right: -10%;
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, transparent 65%);
     animation: float 20s infinite ease-in-out alternate-reverse;
 }
 
 .ambient-orb {
-    width: 60vw; height: 60vw;
-    top: 20%; left: 20%;
-    background: radial-gradient(circle, #93c5fd 0%, transparent 60%);
+    width: 50vw; height: 50vw;
+    top: 20%; left: 30%;
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 65%);
     animation: floatOrb 30s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -101,14 +101,14 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .sidebar {
     width: 360px;
     min-width: 360px;
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    background: rgba(9, 13, 24, 0.75);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
     border-right: 1px solid var(--glass-border);
     display: flex;
     flex-direction: column;
     z-index: 10;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.03);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.2);
 }
 
 .main-content {
@@ -186,8 +186,9 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 /* Buttons */
 .nav-btn {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(21, 30, 50, 0.6);
     backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     color: var(--text-main);
     border: 1px solid var(--glass-border);
     padding: 10px 18px;
@@ -204,10 +205,10 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .nav-btn:hover {
-    background: rgba(255, 255, 255, 1);
-    border-color: rgba(0,0,0,0.15);
+    background: rgba(31, 41, 55, 0.85);
+    border-color: var(--glass-highlight);
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
 }
 
 .btn-primary {
@@ -713,7 +714,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 .form-group input {
     width: 100%;
     padding: 16px;
-    background: #ffffff;
+    background: rgba(13, 18, 30, 0.6);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     color: var(--text-main);
@@ -726,7 +727,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 4px var(--accent-glow);
-    background: #ffffff;
+    background: rgba(13, 18, 30, 0.85);
 }
 
 .suggestions {
@@ -734,7 +735,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     top: calc(100% + 8px);
     left: 0;
     right: 0;
-    background: rgba(255, 255, 255, 0.95);
+    background: rgba(13, 18, 30, 0.95);
     backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
@@ -751,12 +752,12 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
+    border-bottom: 1px solid var(--glass-border);
     transition: background 0.2s;
 }
 
 .suggestion-item:last-child { border-bottom: none; }
-.suggestion-item:hover { background: rgba(0,0,0,0.02); }
+.suggestion-item:hover { background: rgba(255, 255, 255, 0.05); }
 
 .sugg-symbol { font-weight: 700; color: var(--text-main); font-family: 'Outfit', sans-serif; }
 .sugg-name { color: var(--text-muted); font-size: 0.85rem; }
