@@ -1115,7 +1115,31 @@
                 }
             } catch (e) {}
         }
-        setInterval(pollUserNotifications, 15000);
+
+        function getUserPollingInterval() {
+            const now = new Date();
+            const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+            const day = istTime.getDay();
+            
+            if (day === 0 || day === 6) {
+                return 600000; // 10 minutes on weekends
+            }
+            
+            const timeInMinutes = istTime.getHours() * 60 + istTime.getMinutes();
+            if (timeInMinutes >= 555 && timeInMinutes <= 930) {
+                return 60000; // 1 min during market hours
+            }
+            return 900000; // 15 min during non-market hours
+        }
+
+        function scheduleUserPolling() {
+            setTimeout(async () => {
+                await pollUserNotifications();
+                scheduleUserPolling();
+            }, getUserPollingInterval());
+        }
+
+        scheduleUserPolling();
 
         // Add CSS animation
         const _toastStyle = document.createElement('style');

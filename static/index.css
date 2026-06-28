@@ -1,34 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
 
 :root {
-    /* Sleek Dark Fintech Palette (High-end trading look) */
-    --bg-base: #060913;
-    --bg-surface: rgba(13, 18, 30, 0.7);
-    --bg-surface-hover: rgba(21, 30, 50, 0.85);
+    /* Sleek Light Fintech Palette (Elite Look) */
+    --bg-base: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f1f5f9;
     
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-highlight: rgba(255, 255, 255, 0.14);
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --glass-highlight: rgba(0, 0, 0, 0.15);
     
-    --text-main: #f3f4f6;
-    --text-muted: #9ca3af;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
     
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --accent-glow: rgba(59, 130, 246, 0.15);
+    --accent: #059669;
+    --accent-hover: #047857;
+    --accent-glow: rgba(5, 150, 105, 0.15);
     
-    --success: #10b981;
-    --success-glow: rgba(16, 185, 129, 0.15);
+    --success: #059669;
+    --success-glow: rgba(5, 150, 105, 0.15);
     
-    --warning: #f43f5e;
-    --warning-glow: rgba(244, 63, 94, 0.15);
+    --warning: #e11d48;
+    --warning-glow: rgba(225, 29, 72, 0.15);
 
-    --gradient-primary: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
-    --gradient-text: linear-gradient(to right, #60a5fa, #a78bfa);
-    --gradient-header: linear-gradient(to right, #f3f4f6, #e5e7eb);
+    --gradient-primary: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    --gradient-text: linear-gradient(to right, #059669, #047857);
+    --gradient-header: linear-gradient(to right, #0f172a, #334155);
     
-    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.15);
-    --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.3);
-    --shadow-glow: 0 0 20px var(--accent-glow);
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.1);
+    --shadow-glow: 0 0 20px rgba(5, 150, 105, 0.15);
+    
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 * {

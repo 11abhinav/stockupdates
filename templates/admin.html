@@ -8,138 +8,207 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}?v=7">
     <style>
-        .scanner-health-section {
-            margin-bottom: 1.5rem;
-        }
-        .scanner-health-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .scanner-card {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
+        /* ── SYSTEM DIAGNOSTIC COLLAPSIBLE ── */
+        .system-diagnostic-wrapper {
+            background: var(--bg-surface);
+            border: 1px solid var(--glass-border);
             border-radius: 16px;
-            padding: 1.25rem;
-            margin-bottom: 1rem;
-            backdrop-filter: blur(20px);
-            transition: border-color 0.3s ease;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
         }
-        .scanner-card.status-down {
-            border-color: #ef4444;
-            box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
-        }
-        .scanner-card.status-data_stale {
-            border-color: #f59e0b;
-            box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
-        }
-        .scanner-card.status-up {
-            border-color: #22c55e;
-        }
-        .scanner-header {
+        
+        .system-diagnostic-header {
+            padding: 1.25rem 1.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 0.75rem;
+            cursor: pointer;
+            background: var(--bg-surface-hover);
+            border-bottom: 1px solid var(--glass-border);
+            user-select: none;
+            transition: background 0.2s;
         }
+
+        .system-diagnostic-header:hover {
+            background: rgba(0,0,0,0.03);
+        }
+
+        .system-diagnostic-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .system-diagnostic-icon {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        details.system-diagnostic[open] .system-diagnostic-icon {
+            transform: rotate(180deg);
+        }
+
+        .system-diagnostic-content {
+            padding: 1.5rem;
+            background: var(--bg-surface);
+        }
+
+        /* ── SCANNER CARDS ELITE ── */
+        .scanner-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .scanner-card {
+            background: #ffffff;
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.2s;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .scanner-card:hover {
+            border-color: var(--glass-highlight);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .scanner-card.status-up { border-left: 4px solid var(--success); }
+        .scanner-card.status-down { 
+            border-left: 4px solid var(--warning); 
+            background: linear-gradient(135deg, #ffffff, var(--warning-glow));
+        }
+        .scanner-card.status-data_stale { border-left: 4px solid #f59e0b; }
+        .scanner-card.status-idle { border-left: 4px solid var(--text-muted); }
+
+        .scanner-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
         .scanner-name {
-            font-size: 1rem;
+            font-family: var(--font-mono);
+            font-size: 1.1rem;
             font-weight: 700;
             color: var(--text-main);
         }
+
+        .scanner-schedule {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+            font-family: 'Inter', sans-serif;
+        }
+
         .status-badge {
-            padding: 4px 12px;
+            padding: 4px 10px;
             border-radius: 20px;
             font-size: 0.7rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-family: var(--font-mono);
         }
-        .status-badge.up { background: rgba(34,197,94,0.15); color: #22c55e; }
-        .status-badge.down { background: rgba(239,68,68,0.15); color: #ef4444; animation: pulse-red 1.5s infinite; }
-        .status-badge.data_stale { background: rgba(245,158,11,0.15); color: #f59e0b; animation: pulse-orange 2s infinite; }
-        .status-badge.idle { background: rgba(148,163,184,0.15); color: #94a3b8; }
+
+        .status-badge.up { background: var(--success-glow); color: var(--success); border: 1px solid rgba(5, 150, 105, 0.25); }
+        .status-badge.down { background: var(--warning-glow); color: var(--warning); border: 1px solid rgba(225, 29, 72, 0.25); animation: pulse-red 1.5s infinite; }
+        .status-badge.data_stale { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
+        .status-badge.idle { background: rgba(100,116,139,0.15); color: var(--text-muted); border: 1px solid rgba(100, 116, 139, 0.25); }
 
         @keyframes pulse-red {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
-            50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
-        }
-        @keyframes pulse-orange {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.3); }
-            50% { box-shadow: 0 0 0 6px rgba(245,158,11,0); }
+            0%, 100% { box-shadow: 0 0 0 0 rgba(225,29,72,0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(225,29,72,0); }
         }
 
         .scanner-meta {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            margin-bottom: 0.75rem;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
         }
+
         .meta-item {
-            font-size: 0.75rem;
-            color: var(--text-muted);
+            background: var(--bg-surface-hover);
+            border-radius: 8px;
+            padding: 0.75rem;
+            border: 1px solid rgba(0,0,0,0.03);
         }
-        .meta-item .meta-value {
-            color: var(--text-main);
-            font-weight: 600;
-        }
-        .scanner-schedule {
+
+        .meta-label {
             font-size: 0.7rem;
             color: var(--text-muted);
-            background: rgba(148,163,184,0.08);
-            padding: 6px 10px;
-            border-radius: 8px;
-            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+            font-weight: 600;
         }
+
+        .meta-value {
+            font-family: var(--font-mono);
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
         .scanner-actions {
             display: flex;
             gap: 0.5rem;
             margin-bottom: 0.75rem;
         }
+
         .run-btn {
             flex: 1;
             padding: 8px 14px;
-            border-radius: 10px;
-            border: 1px solid var(--card-border);
-            background: rgba(59,130,246,0.1);
+            border-radius: 8px;
+            border: 1px solid var(--glass-border);
+            background: var(--bg-surface-hover);
             color: var(--accent);
-            font-size: 0.78rem;
+            font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
             font-family: 'Inter', sans-serif;
         }
-        .run-btn:hover { background: rgba(59,130,246,0.2); transform: translateY(-1px); }
-        .run-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .run-btn.running {
-            background: rgba(245,158,11,0.15);
-            color: #f59e0b;
-            border-color: rgba(245,158,11,0.3);
+
+        .run-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent-hover);
+            box-shadow: var(--shadow-sm);
         }
 
+        .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
         .critical-error-box {
-            background: rgba(239,68,68,0.08);
-            border: 1px solid rgba(239,68,68,0.25);
-            border-radius: 10px;
-            padding: 10px 14px;
+            background: var(--warning-glow);
+            border: 1px solid rgba(225, 29, 72, 0.3);
+            border-radius: 8px;
+            padding: 10px 12px;
             margin-bottom: 0.75rem;
-            font-size: 0.78rem;
-            color: #ef4444;
+            font-size: 0.8rem;
+            color: var(--warning);
             font-weight: 500;
             display: flex;
             align-items: flex-start;
             gap: 8px;
+            font-family: var(--font-mono);
         }
-        .critical-error-box .err-icon { font-size: 1rem; flex-shrink: 0; }
 
         .noncritical-section {
-            border-top: 1px solid var(--card-border);
+            border-top: 1px solid var(--glass-border);
             padding-top: 0.75rem;
+            margin-top: 0.5rem;
         }
+
         .noncritical-header {
             display: flex;
             justify-content: space-between;
@@ -147,70 +216,255 @@
             margin-bottom: 0.5rem;
             cursor: pointer;
         }
-        .noncritical-header .nc-title {
-            font-size: 0.78rem;
+
+        .nc-title {
+            font-size: 0.8rem;
             font-weight: 600;
             color: var(--text-muted);
         }
-        .noncritical-header .nc-count {
+
+        .nc-count {
             font-size: 0.7rem;
             background: rgba(245,158,11,0.15);
-            color: #f59e0b;
+            color: #d97706;
             padding: 2px 8px;
             border-radius: 10px;
             font-weight: 700;
+            font-family: var(--font-mono);
         }
+
         .nc-clear-btn {
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             color: var(--accent);
             background: none;
             border: none;
             cursor: pointer;
             font-weight: 600;
-            padding: 2px 6px;
-            font-family: 'Inter', sans-serif;
         }
-        .nc-clear-btn:hover { text-decoration: underline; }
+
         .noncritical-list { max-height: 200px; overflow-y: auto; }
         .nc-error-item {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            padding: 6px 0;
-            border-bottom: 1px solid rgba(148,163,184,0.08);
-            font-size: 0.72rem;
+            padding: 8px 0;
+            border-bottom: 1px dashed var(--glass-border);
+            font-size: 0.75rem;
         }
+        .nc-error-item:last-child { border-bottom: none; }
+        
         .nc-error-msg {
             color: var(--text-muted);
             flex: 1;
             word-break: break-word;
+            font-family: var(--font-mono);
         }
+
         .nc-error-meta {
             display: flex;
             align-items: center;
             gap: 6px;
-            flex-shrink: 0;
             margin-left: 8px;
         }
+
         .nc-error-count {
-            background: rgba(148,163,184,0.12);
+            background: var(--bg-surface-hover);
             color: var(--text-muted);
-            padding: 1px 6px;
-            border-radius: 8px;
-            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 0.7rem;
             font-weight: 700;
+            font-family: var(--font-mono);
         }
+
         .nc-ack-btn {
             background: none;
             border: none;
-            color: #ef4444;
+            color: var(--warning);
             cursor: pointer;
-            font-size: 0.85rem;
-            padding: 0 2px;
-            opacity: 0.6;
+            font-size: 0.9rem;
+            padding: 0 4px;
+            opacity: 0.7;
             transition: opacity 0.2s;
         }
         .nc-ack-btn:hover { opacity: 1; }
+        
+        /* ── NOTIFICATION BELL ── */
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            position: relative;
+        }
+        
+        .notification-bell {
+            position: relative;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+        }
+        
+        .notification-bell:hover {
+            background: rgba(0,0,0,0.05);
+            color: var(--text-main);
+        }
+        
+        .notification-bell svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: var(--warning);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 700;
+            min-width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid var(--bg-base);
+            font-family: var(--font-mono);
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .notification-badge.show {
+            opacity: 1;
+            transform: scale(1);
+        }
+        
+        /* ── NOTIFICATION PANEL ── */
+        .notification-panel {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 380px;
+            background: var(--bg-surface);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: var(--shadow-md);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow: hidden;
+        }
+        
+        .notification-panel.open {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        
+        .notif-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-surface-hover);
+        }
+        
+        .notif-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+        }
+        
+        .notif-clear {
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+        
+        .notif-clear:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+        
+        .notif-body {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .notif-item {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--glass-border);
+            transition: background 0.2s;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .notif-item:hover {
+            background: var(--bg-surface-hover);
+        }
+        
+        .notif-item.unread::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--accent);
+        }
+        
+        .notif-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .notif-type {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        
+        .notif-type.alert { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+        .notif-type.error { background: var(--warning-glow); color: var(--warning); }
+        .notif-type.system { background: rgba(100, 116, 139, 0.1); color: var(--text-muted); }
+        
+        .notif-time {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+        
+        .notif-content {
+            font-size: 0.85rem;
+            color: var(--text-main);
+            line-height: 1.5;
+        }
+        
+        .notif-empty {
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
 
         /* Toast Notification System */
         .toast-container {
@@ -340,58 +594,111 @@
     <div class="main-content">
         <div class="top-nav">
             <a href="/" class="nav-btn">← Back to Dashboard</a>
-        </div>
-        
-        <div class="admin-container">
-            <!-- Scanner Health Section -->
-            <div class="scanner-health-section">
-                <div class="scanner-health-title">🩺 Scanner Health Monitor</div>
-                <div id="scanner-cards-container">
-                    <!-- MF Scanner Card -->
-                    <div class="scanner-card" id="scanner-card-MF">
-                        <div class="scanner-header">
-                            <span class="scanner-name">📊 MF Breakout Scanner</span>
-                            <span class="status-badge idle" id="status-badge-MF">IDLE</span>
-                        </div>
-                        <div class="scanner-schedule">
-                            ⏰ Schedule: Mon-Fri 9:15, 9:45, 10:15, 10:45 ... 15:15 IST (every 30 min)
-                        </div>
-                        <div class="scanner-meta" id="scanner-meta-MF">
-                            <div class="meta-item">Last Run: <span class="meta-value" id="last-run-MF">Never</span></div>
-                            <div class="meta-item">Data Source: <span class="meta-value" id="data-source-MF">-</span></div>
-                            <div class="meta-item">Stocks Scanned: <span class="meta-value" id="stocks-scanned-MF">0</span></div>
-                            <div class="meta-item">Alerts: <span class="meta-value" id="alerts-MF">0</span></div>
-                        </div>
-                        <div class="scanner-actions">
-                            <button class="run-btn" id="run-btn-MF" onclick="runScanner('MF', this)">▶ Run Now</button>
-                        </div>
-                        <div id="critical-error-MF"></div>
-                        <div id="noncritical-section-MF"></div>
+            
+            <div class="nav-actions">
+                <div class="notification-bell" id="notif-bell" onclick="toggleNotifPanel(event)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <div class="notification-badge" id="notif-badge">0</div>
+                </div>
+                
+                <div class="notification-panel" id="notif-panel">
+                    <div class="notif-header">
+                        <div class="notif-title">Notifications</div>
+                        <button class="notif-clear" onclick="clearAllNotifications(event)">Clear All</button>
                     </div>
-
-                    <!-- Momentum Scanner Card -->
-                    <div class="scanner-card" id="scanner-card-MOMENTUM">
-                        <div class="scanner-header">
-                            <span class="scanner-name">⚡ Momentum Scanner</span>
-                            <span class="status-badge idle" id="status-badge-MOMENTUM">IDLE</span>
-                        </div>
-                        <div class="scanner-schedule">
-                            ⏰ Schedule: Mon-Fri 9:15-15:30 IST (every 5 min)
-                        </div>
-                        <div class="scanner-meta" id="scanner-meta-MOMENTUM">
-                            <div class="meta-item">Last Run: <span class="meta-value" id="last-run-MOMENTUM">Never</span></div>
-                            <div class="meta-item">Data Source: <span class="meta-value" id="data-source-MOMENTUM">-</span></div>
-                            <div class="meta-item">Stocks Scanned: <span class="meta-value" id="stocks-scanned-MOMENTUM">0</span></div>
-                            <div class="meta-item">Alerts: <span class="meta-value" id="alerts-MOMENTUM">0</span></div>
-                        </div>
-                        <div class="scanner-actions">
-                            <button class="run-btn" id="run-btn-MOMENTUM" onclick="runScanner('MOMENTUM', this)">▶ Run Now</button>
-                        </div>
-                        <div id="critical-error-MOMENTUM"></div>
-                        <div id="noncritical-section-MOMENTUM"></div>
+                    <div class="notif-body" id="notif-list">
+                        <div class="notif-empty">No new notifications</div>
                     </div>
                 </div>
             </div>
+        </div>
+        
+        <div class="admin-container" style="max-width: 800px;">
+            <!-- System Diagnostic Section -->
+            <details class="system-diagnostic-wrapper system-diagnostic" open>
+                <summary class="system-diagnostic-header">
+                    <div class="system-diagnostic-title">
+                        🩺 System Diagnostic
+                    </div>
+                    <svg class="system-diagnostic-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M6 9l6 6 6-6"/>
+                    </svg>
+                </summary>
+                
+                <div class="system-diagnostic-content">
+                    <div class="scanner-grid" id="scanner-cards-container">
+                        <!-- MF Scanner Card -->
+                        <div class="scanner-card" id="scanner-card-MF">
+                            <div class="scanner-header">
+                                <span class="scanner-name">📊 MF Breakout Scanner</span>
+                                <span class="status-badge idle" id="status-badge-MF">IDLE</span>
+                            </div>
+                            <div class="scanner-schedule">
+                                ⏰ Mon-Fri 9:15, 9:45, 10:15... 15:15 IST (every 30 min)
+                            </div>
+                            <div class="scanner-meta" id="scanner-meta-MF">
+                                <div class="meta-item">
+                                    <div class="meta-label">Last Run</div>
+                                    <div class="meta-value" id="last-run-MF">Never</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Stocks Scanned</div>
+                                    <div class="meta-value" id="stocks-scanned-MF">0</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Data Source</div>
+                                    <div class="meta-value" id="data-source-MF">-</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Alerts</div>
+                                    <div class="meta-value" id="alerts-MF">0</div>
+                                </div>
+                            </div>
+                            <div class="scanner-actions">
+                                <button class="run-btn" id="run-btn-MF" onclick="runScanner('MF', this)">▶ Run Now</button>
+                            </div>
+                            <div id="critical-error-MF"></div>
+                            <div id="noncritical-section-MF"></div>
+                        </div>
+
+                        <!-- Momentum Scanner Card -->
+                        <div class="scanner-card" id="scanner-card-MOMENTUM">
+                            <div class="scanner-header">
+                                <span class="scanner-name">⚡ Momentum Scanner</span>
+                                <span class="status-badge idle" id="status-badge-MOMENTUM">IDLE</span>
+                            </div>
+                            <div class="scanner-schedule">
+                                ⏰ Mon-Fri 9:15-15:30 IST (every 5 min)
+                            </div>
+                            <div class="scanner-meta" id="scanner-meta-MOMENTUM">
+                                <div class="meta-item">
+                                    <div class="meta-label">Last Run</div>
+                                    <div class="meta-value" id="last-run-MOMENTUM">Never</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Stocks Scanned</div>
+                                    <div class="meta-value" id="stocks-scanned-MOMENTUM">0</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Data Source</div>
+                                    <div class="meta-value" id="data-source-MOMENTUM">-</div>
+                                </div>
+                                <div class="meta-item">
+                                    <div class="meta-label">Alerts</div>
+                                    <div class="meta-value" id="alerts-MOMENTUM">0</div>
+                                </div>
+                            </div>
+                            <div class="scanner-actions">
+                                <button class="run-btn" id="run-btn-MOMENTUM" onclick="runScanner('MOMENTUM', this)">▶ Run Now</button>
+                            </div>
+                            <div id="critical-error-MOMENTUM"></div>
+                            <div id="noncritical-section-MOMENTUM"></div>
+                        </div>
+                    </div>
+                </div>
+            </details>
 
             <!-- Add Stock Card -->
             <div class="admin-card">
@@ -473,6 +780,76 @@
             });
         }
 
+        // ========== NOTIFICATION LOGIC ==========
+        let notifications = [];
+        const notifBadge = document.getElementById('notif-badge');
+        const notifList = document.getElementById('notif-list');
+        const notifPanel = document.getElementById('notif-panel');
+
+        function addNotification(type, title, message) {
+            notifications.unshift({
+                id: Date.now() + Math.random().toString(36).substr(2, 9),
+                type: type,
+                title: title,
+                message: message,
+                time: new Date(),
+                read: false
+            });
+            updateNotificationUI();
+        }
+
+        function updateNotificationUI() {
+            const unreadCount = notifications.filter(n => !n.read).length;
+            if (unreadCount > 0) {
+                notifBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+                notifBadge.classList.add('show');
+            } else {
+                notifBadge.classList.remove('show');
+            }
+
+            if (notifications.length === 0) {
+                notifList.innerHTML = '<div class="notif-empty">No new notifications</div>';
+                return;
+            }
+
+            notifList.innerHTML = notifications.map(n => `
+                <div class="notif-item ${n.read ? '' : 'unread'}" onclick="markAsRead('${n.id}')">
+                    <div class="notif-item-header">
+                        <span class="notif-type ${n.type}">${n.type}</span>
+                        <span class="notif-time">${timeAgo(n.time.toISOString())}</span>
+                    </div>
+                    <div class="notif-title" style="font-size:0.85rem; margin-bottom: 2px;">${n.title}</div>
+                    <div class="notif-content">${n.message}</div>
+                </div>
+            `).join('');
+        }
+
+        function toggleNotifPanel(e) {
+            e.stopPropagation();
+            notifPanel.classList.toggle('open');
+        }
+
+        function markAsRead(id) {
+            const notif = notifications.find(n => n.id === id);
+            if (notif && !notif.read) {
+                notif.read = true;
+                updateNotificationUI();
+            }
+        }
+
+        function clearAllNotifications(e) {
+            e.stopPropagation();
+            notifications = [];
+            updateNotificationUI();
+            notifPanel.classList.remove('open');
+        }
+
+        document.addEventListener('click', (e) => {
+            if (notifPanel && !notifPanel.contains(e.target) && !e.target.closest('.notification-bell')) {
+                notifPanel.classList.remove('open');
+            }
+        });
+
         // ========== TOAST NOTIFICATIONS ==========
         const toastContainer = document.getElementById('toast-container');
         const shownToastKeys = new Set();
@@ -480,6 +857,9 @@
         function showToast(type, title, message, key) {
             if (key && shownToastKeys.has(key)) return;
             if (key) shownToastKeys.add(key);
+
+            // Add to notification panel
+            addNotification(type === 'alert' ? 'alert' : 'error', title, message);
 
             const toast = document.createElement('div');
             toast.className = `toast ${type === 'alert' ? 'toast-alert' : 'toast-scanner-down'}`;
@@ -832,10 +1212,31 @@
         // Enable audio on first click (browser autoplay policy)
         document.addEventListener('click', () => ensureAudioCtx(), { once: true });
 
-        // Start polling
+        // Dynamic polling interval based on market hours
+        function isMarketHours() {
+            const now = new Date();
+            const istTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+            const day = istTime.getDay();
+            if (day === 0 || day === 6) return false; // Weekend
+            
+            const timeInMinutes = istTime.getHours() * 60 + istTime.getMinutes();
+            return timeInMinutes >= 555 && timeInMinutes <= 930; // 9:15 to 15:30
+        }
+
+        function schedulePolling() {
+            const intervalMs = isMarketHours() ? 60000 : 900000; // 1 min vs 15 min
+            setTimeout(async () => {
+                await Promise.all([
+                    fetchScannerStatus(),
+                    pollNotifications()
+                ]);
+                schedulePolling();
+            }, intervalMs);
+        }
+
+        // Start initial data load and polling
         fetchScannerStatus();
-        setInterval(fetchScannerStatus, 30000);   // Scanner status every 30s
-        setInterval(pollNotifications, 15000);     // Notifications every 15s
+        schedulePolling();
     </script>
 </body>
 </html>
