@@ -57,7 +57,7 @@
                                 {{ '+' if stock['change_pct'] > 0 else '' }}{{ "%.2f"|format(stock['change_pct']) }}%
                             </div>
                         {% endif %}
-                        <div class="price-time">
+                        <div class="price-time" id="price-time-{{ stock['symbol'] }}">
                             {{ stock['last_fetched'].strftime('%m-%d %H:%M') if stock['last_fetched'] else '' }}
                         </div>
                     {% else %}
@@ -1152,6 +1152,15 @@
                     if (changeEl && data.change_pct !== null) {
                         changeEl.textContent = `${data.change_pct > 0 ? '+' : ''}${data.change_pct.toFixed(2)}%`;
                         changeEl.style.color = data.change_pct > 0 ? 'var(--success)' : (data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)');
+                    }
+                    const timeEl = document.getElementById(`price-time-${symbol}`);
+                    if (timeEl && data.last_fetched) {
+                        const d = new Date(data.last_fetched);
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        const hh = String(d.getHours()).padStart(2, '0');
+                        const mn = String(d.getMinutes()).padStart(2, '0');
+                        timeEl.textContent = `${mm}-${dd} ${hh}:${mn}`;
                     }
                 }
             } catch (e) {}
