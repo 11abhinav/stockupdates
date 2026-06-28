@@ -1,36 +1,63 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
 
 :root {
-    /* Sleek Light Fintech Palette (Elite Look) */
-    --bg-base: #f8fafc;
-    --bg-surface: #ffffff;
-    --bg-surface-hover: #f1f5f9;
-    
-    --glass-border: rgba(0, 0, 0, 0.08);
-    --glass-highlight: rgba(0, 0, 0, 0.15);
-    
-    --text-main: #0f172a;
-    --text-muted: #64748b;
-    
+    /* Base Elite Variables */
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --card: #ffffff;
+    --card2: #f1f5f9;
+    --border: rgba(0, 0, 0, .08);
+    --border2: rgba(0, 0, 0, .15);
     --accent: #059669;
-    --accent-hover: #047857;
-    --accent-glow: rgba(5, 150, 105, 0.15);
-    
-    --success: #059669;
-    --success-glow: rgba(5, 150, 105, 0.15);
-    
-    --warning: #e11d48;
-    --warning-glow: rgba(225, 29, 72, 0.15);
-
-    --gradient-primary: linear-gradient(135deg, #059669 0%, #10b981 100%);
-    --gradient-text: linear-gradient(to right, #059669, #047857);
-    --gradient-header: linear-gradient(to right, #0f172a, #334155);
-    
-    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.1);
-    --shadow-glow: 0 0 20px rgba(5, 150, 105, 0.15);
-    
+    --accent-dim: rgba(5, 150, 105, .12);
+    --accent2: #2563eb;
+    --warn: #e11d48;
+    --warn-dim: rgba(225, 29, 72, .12);
+    --amber: #d97706;
+    --amber-dim: rgba(217, 119, 6, .12);
+    --text: #0f172a;
+    --muted: #64748b;
+    --muted2: #94a3b8;
+    --win: #059669;
+    --loss: #e11d48;
+    --open: #2563eb;
+    --neutral: #64748b;
+    --down: #e11d48;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-body: 'Inter', system-ui, sans-serif;
+    --radius: 10px;
+    --shadow: 0 4px 20px rgba(0, 0, 0, .06);
+    --glow: 0 0 15px rgba(5, 150, 105, .2);
+
+    /* Mappings for stockupdates custom classes */
+    --bg-base: var(--bg);
+    --bg-surface: var(--card);
+    --bg-surface-hover: var(--card2);
+    --glass-border: var(--border);
+    --glass-highlight: var(--border2);
+    --text-main: var(--text);
+    --text-muted: var(--muted);
+    --accent-hover: #047857;
+    --accent-glow: var(--accent-dim);
+    --success: var(--win);
+    --success-glow: var(--accent-dim);
+    --warning: var(--warn);
+    --warning-glow: var(--warn-dim);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, .04);
+    --shadow-md: var(--shadow);
+}
+
+[data-theme="dark"] {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --card: #1e293b;
+    --card2: #334155;
+    --border: rgba(255, 255, 255, .08);
+    --border2: rgba(255, 255, 255, .15);
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --muted2: #cbd5e1;
+    --shadow: 0 4px 20px rgba(0, 0, 0, .2);
 }
 
 * {
@@ -40,59 +67,18 @@
 }
 
 body {
-    font-family: 'Inter', -apple-system, sans-serif;
-    background-color: var(--bg-base);
-    color: var(--text-main);
+    font-family: var(--font-body);
+    background-color: var(--bg);
+    color: var(--text);
     display: flex;
     height: 100vh;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
+    font-size: 14px;
     position: relative;
 }
 
-/* Animated Ambient Background */
-body::before, body::after, .ambient-orb {
-    content: '';
-    position: fixed;
-    border-radius: 50%;
-    filter: blur(140px);
-    opacity: 0.35;
-    z-index: -1;
-    pointer-events: none;
-}
 
-body::before {
-    width: 60vw; height: 60vw;
-    top: -10%; left: -10%;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 65%);
-    animation: float 25s infinite ease-in-out alternate;
-}
-
-body::after {
-    width: 60vw; height: 60vw;
-    bottom: -10%; right: -10%;
-    background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, transparent 65%);
-    animation: float 20s infinite ease-in-out alternate-reverse;
-}
-
-.ambient-orb {
-    width: 50vw; height: 50vw;
-    top: 20%; left: 30%;
-    background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 65%);
-    animation: floatOrb 30s infinite cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes float {
-    0% { transform: translate(0, 0) scale(1); }
-    100% { transform: translate(8%, 12%) scale(1.15); }
-}
-
-@keyframes floatOrb {
-    0% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(20vw, 10vh) scale(1.2); }
-    66% { transform: translate(-10vw, 30vh) scale(0.9); }
-    100% { transform: translate(0, 0) scale(1); }
-}
 
 /* Typography Overrides */
 h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .sidebar-title {

@@ -617,17 +617,24 @@
         
         <div class="admin-container" style="max-width: 800px;">
             <!-- System Diagnostic Section -->
-            <details class="system-diagnostic-wrapper system-diagnostic" open>
-                <summary class="system-diagnostic-header">
-                    <div class="system-diagnostic-title">
-                        🩺 System Diagnostic
+            <!-- System Diagnostic Section -->
+            <div class="admin-card" style="padding: 0; overflow: hidden; margin-bottom: 32px;">
+                <div id="diagnostics-header"
+                    style="padding: 16px 20px; background: var(--bg-surface-hover); cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid transparent; transition: background 0.2s;"
+                    onclick="toggleDiagnostics()">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-weight: 600; color: var(--text-main); font-size:16px;">⚕️ System Health & Diagnostics</span>
                     </div>
-                    <svg class="system-diagnostic-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M6 9l6 6 6-6"/>
-                    </svg>
-                </summary>
+                    <div style="color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                        <span id="diagnostics-status">Active</span>
+                        <svg id="diagnostics-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" style="transition: transform 0.2s; transform: rotate(180deg);">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </div>
+                </div>
                 
-                <div class="system-diagnostic-content">
+                <div id="diagnostics-body" style="display: block; padding: 20px; background: var(--bg-base);">
                     <div class="scanner-grid" id="scanner-cards-container">
                         <!-- MF Scanner Card -->
                         <div class="scanner-card" id="scanner-card-MF">
@@ -698,7 +705,7 @@
                         </div>
                     </div>
                 </div>
-            </details>
+            </div>
 
             <!-- Add Stock Card -->
             <div class="admin-card">
@@ -1232,6 +1239,22 @@
                 ]);
                 schedulePolling();
             }, intervalMs);
+        }
+
+        function toggleDiagnostics() {
+            const body = document.getElementById('diagnostics-body');
+            const icon = document.getElementById('diagnostics-icon');
+            const status = document.getElementById('diagnostics-status');
+
+            if (body.style.display === 'none') {
+                body.style.display = 'block';
+                icon.style.transform = 'rotate(180deg)';
+                status.textContent = 'Active';
+            } else {
+                body.style.display = 'none';
+                icon.style.transform = 'rotate(0deg)';
+                status.textContent = 'Click to load';
+            }
         }
 
         // Start initial data load and polling
