@@ -1095,8 +1095,11 @@ def admin():
                 log.error(f"Error validating {symbol}: {e}")
 
             if not valid_nse and not valid_bse:
-                flash(f"Error: {symbol} is invalid on NSE, and no valid BSE data was found (tried {bse_code}.BO).", "error")
-                return redirect(url_for('admin'))
+                if bse_code and len(bse_code) == 6 and bse_code.isdigit():
+                    log.info(f"Bypassing Yahoo validation for {symbol} because valid BSE code {bse_code} was provided.")
+                else:
+                    flash(f"Error: {symbol} is invalid on NSE, and no valid BSE data was found (tried {bse_code}.BO).", "error")
+                    return redirect(url_for('admin'))
 
             db.add_stock(symbol, bse_code)
             try:
