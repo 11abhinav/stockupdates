@@ -373,7 +373,7 @@ def calculate_value_score(stock, sector_medians):
     stock_pe = stock.get('pe')
     stock_roe = stock.get('roe')
     stock_div = stock.get('div_yield')
-    min_peer_count = 8
+    min_peer_count = 5
     
     if is_financial_sector(sector):
         # 1. P/B relative to sector
@@ -450,16 +450,20 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
     sector = stock.get('sector')
     med = sector_medians.get(sector, {}) if sector else {}
 
-    min_peer_count = 8
+    min_peer_count = 5
 
     try:
         if is_financial_sector(sector):
             current_pb = norm_num(stock.get('pb'))
             bvps = norm_num(stock.get('bvps'))
-            peer_pb = norm_num(stock.get('tt_indpb')) or norm_num(med.get("median_pb"))
-            peer_count = med.get("peer_count_pb")
+            
+            peer_pb = norm_num(stock.get('tt_indpb'))
+            peer_count = med.get("peer_count_pb", 0)
+            
+            if not peer_pb:
+                peer_pb = norm_num(med.get("median_pb")) if peer_count >= min_peer_count else None
 
-            if bvps and bvps > 0 and peer_pb and peer_count and peer_count >= min_peer_count:
+            if bvps and bvps > 0 and peer_pb:
                 raw_target_pb = (0.65 * float(peer_pb)) + (0.35 * current_pb if current_pb else 0.0)
                 target_pb = clamp(raw_target_pb, 0.8, 1.5 * float(peer_pb))
 
@@ -489,7 +493,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
                 bull_value=round(fallback * 1.08, 2) if fallback else None,
                 valuation_method="FALLBACK_PRICE_ANCHORED_PB",
                 valuation_confidence="LOW",
-                peer_count=peer_count,
+                peer_count=peer_count if peer_count is not None else 0,
                 target_multiple=None,
                 current_multiple=current_pb,
                 peer_multiple=float(peer_pb) if peer_pb else None,
@@ -498,10 +502,14 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
 
         current_pe = norm_num(stock.get('pe'))
         eps = norm_num(stock.get('eps'))
-        peer_pe = norm_num(stock.get('tt_indpe')) or norm_num(med.get("median_pe"))
-        peer_count = med.get("peer_count_pe")
+        
+        peer_pe = norm_num(stock.get('tt_indpe'))
+        peer_count = med.get("peer_count_pe", 0)
+        
+        if not peer_pe:
+            peer_pe = norm_num(med.get("median_pe")) if peer_count >= min_peer_count else None
 
-        if eps and eps > 0 and peer_pe and peer_count and peer_count >= min_peer_count:
+        if eps and eps > 0 and peer_pe:
             peer_pe = float(peer_pe)
 
             raw_target_pe = (0.60 * peer_pe) + (0.40 * current_pe if current_pe else 0.0)
@@ -549,7 +557,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
                 bull_value=round(fair_value * 1.10, 2),
                 valuation_method="CURRENT_PE_FALLBACK",
                 valuation_confidence="LOW",
-                peer_count=peer_count,
+                peer_count=peer_count if peer_count is not None else 0,
                 target_multiple=round(target_pe, 2),
                 current_multiple=round(current_pe, 2),
                 peer_multiple=float(peer_pe) if peer_pe else None,
@@ -566,7 +574,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
         bull_value=round(fallback * 1.08, 2) if fallback else None,
         valuation_method="PRICE_FALLBACK" if fallback else "UNAVAILABLE",
         valuation_confidence="LOW" if fallback else "NONE",
-        peer_count=None,
+        peer_count=0,
         target_multiple=None,
         current_multiple=norm_num(stock.get('pe')) or norm_num(stock.get('pb')),
         peer_multiple=None,
