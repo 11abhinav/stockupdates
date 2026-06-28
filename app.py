@@ -1141,7 +1141,8 @@ def admin():
                 log.error(f"Error setting initial price for {symbol}: {e}")
 
             try:
-                fetch_and_save_fundamentals(symbol, bse_code, ticker)
+                import threading
+                threading.Thread(target=fetch_and_save_fundamentals, args=(symbol, bse_code, None)).start()
             except Exception as e:
                 log.error(f"Error calculating fundamental score on addition of {symbol}: {e}")
             flash(f"Success: {symbol} added to watchlist.", "success")
