@@ -65,7 +65,7 @@
         }
 
         .scanner-card {
-            background: #ffffff;
+            background: var(--bg-surface);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
             padding: 1.25rem;
@@ -84,7 +84,7 @@
         .scanner-card.status-up { border-left: 4px solid var(--success); }
         .scanner-card.status-down { 
             border-left: 4px solid var(--warning); 
-            background: linear-gradient(135deg, #ffffff, var(--warning-glow));
+            background: linear-gradient(135deg, var(--bg-surface), var(--warning-glow));
         }
         .scanner-card.status-data_stale { border-left: 4px solid #f59e0b; }
         .scanner-card.status-idle { border-left: 4px solid var(--text-muted); }
@@ -141,7 +141,7 @@
             background: var(--bg-surface-hover);
             border-radius: 8px;
             padding: 0.75rem;
-            border: 1px solid rgba(0,0,0,0.03);
+            border: 1px solid var(--glass-border);
         }
 
         .meta-label {
@@ -369,6 +369,36 @@
             transform: translateY(0);
         }
         
+        .term-container {
+            background: #000000;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+        }
+
+        .term-header {
+            background: #111111;
+            padding: 10px 16px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .term-title {
+            color: #888;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         .notif-header {
             padding: 1rem 1.25rem;
             border-bottom: 1px solid var(--glass-border);
