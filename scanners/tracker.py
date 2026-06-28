@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from db import get_open_alerts, update_alert_status
-from scanners.core import fetch_yfinance_cached, send_telegram
+from scanners.core import fetch_intraday_cached, send_telegram
 
 log = logging.getLogger("scanners.tracker")
 IST = ZoneInfo("Asia/Kolkata")
@@ -30,7 +30,7 @@ def resolve_open_alerts():
             
         try:
             # Fetch 5m data. Use ttl_minutes=5 so we hit cache if momentum scanner just ran it
-            df = fetch_yfinance_cached(symbol, period="5d", interval="5m", ttl_minutes=5)
+            df = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5)
             if df is None or df.empty:
                 continue
                 
