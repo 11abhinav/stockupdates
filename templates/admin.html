@@ -977,8 +977,10 @@
             // Non-critical errors
             const ncEl = document.getElementById(`noncritical-section-${name}`);
             const errors = data.non_critical_errors || [];
+            
+            let errorsHtml = '';
             if (errors.length > 0) {
-                let errorsHtml = errors.map(e => `
+                errorsHtml = errors.map(e => `
                     <div class="nc-error-item">
                         <span class="nc-error-msg">[${e.symbol}] ${e.message}</span>
                         <div class="nc-error-meta">
@@ -987,22 +989,22 @@
                         </div>
                     </div>
                 `).join('');
-
-                ncEl.innerHTML = `
-                    <div class="noncritical-section">
-                        <div class="noncritical-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
-                            <span class="nc-title">⚠️ Non-Critical Errors</span>
-                            <div style="display:flex;align-items:center;gap:6px;">
-                                <span class="nc-count">${errors.length}</span>
-                                <button class="nc-clear-btn" onclick="event.stopPropagation(); clearErrors('${name}')">Clear All</button>
-                            </div>
-                        </div>
-                        <div class="noncritical-list">${errorsHtml}</div>
-                    </div>
-                `;
             } else {
-                ncEl.innerHTML = '';
+                errorsHtml = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.8rem; font-style: italic;">No single-stock errors reported</div>';
             }
+
+            ncEl.innerHTML = `
+                <div class="noncritical-section">
+                    <div class="noncritical-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+                        <span class="nc-title">⚠️ Single-Stock Errors</span>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <span class="nc-count" style="${errors.length === 0 ? 'background: rgba(16,185,129,0.1); color: var(--success);' : ''}">${errors.length}</span>
+                            ${errors.length > 0 ? `<button class="nc-clear-btn" onclick="event.stopPropagation(); clearErrors('${name}')">Clear All</button>` : ''}
+                        </div>
+                    </div>
+                    <div class="noncritical-list" style="${errors.length === 0 ? 'display: none;' : ''}">${errorsHtml}</div>
+                </div>
+            `;
 
             // Detect status changes and fire toasts
             const prev = previousStatuses[name];
