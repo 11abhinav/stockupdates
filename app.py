@@ -1115,6 +1115,16 @@ def admin():
                     return redirect(url_for('admin'))
 
             db.add_stock(symbol, bse_code)
+            
+            # Immediately populate the price so it doesn't show 'No Data'
+            try:
+                if 'df_fyers' in locals() and df_fyers is not None and not df_fyers.empty:
+                    db.update_price(symbol, float(df_fyers['Close'].iloc[-1]))
+                elif 'hist' in locals() and hist is not None and not hist.empty:
+                    db.update_price(symbol, float(hist['Close'].iloc[-1]))
+            except Exception as e:
+                log.error(f"Error setting initial price for {symbol}: {e}")
+
             try:
                 fetch_and_save_fundamentals(symbol, bse_code, ticker)
             except Exception as e:
