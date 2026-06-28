@@ -27,10 +27,7 @@
             </div>
             <div class="sort-controls" style="margin-top: 1rem;">
                 <button class="nav-btn" style="flex: 1; font-size: 0.8rem; padding: 0.5rem;" onclick="refreshWatchlist(this)">
-                    ↻ Refresh
-                </button>
-                <button class="nav-btn" style="flex: 1; font-size: 0.8rem; padding: 0.5rem;" onclick="toggleEditMode(this)">
-                    ✎ Edit Stocks
+                    ↻ Refresh Watchlist
                 </button>
             </div>
         </div>
@@ -39,7 +36,6 @@
             <div class="watchlist-item {% if stock['quality_score'] != None %}{% if stock['quality_score'] <= 3 or stock['value_score'] <= 3 %}fscore-low{% elif stock['quality_score'] >= 7 %}fscore-high{% else %}fscore-med{% endif %}{% endif %}" data-symbol="{{ stock['symbol'] }}" data-price="{{ stock['latest_price'] or 0 }}" data-moved="{{ stock['change_pct'] or 0 }}" data-qscore="{{ stock['quality_score'] if stock['quality_score'] != None else -1 }}" data-vscore="{{ stock['value_score'] if stock['value_score'] != None else -1 }}" data-has-alert="{{ stock['has_alert'] }}" onclick="loadStock('{{ stock['symbol'] }}', this)">
                 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
                     <div class="item-symbol">
-                        <button class="delete-btn" title="Remove Stock" onclick="removeStock('{{ stock['symbol'] }}', event)">×</button>
                         {{ stock['symbol'] }}
                         {% if stock['has_alert'] %}
                             <span class="alert-dot" title="Recent Alert"></span>
@@ -692,36 +688,7 @@
             btn.disabled = false;
         }
 
-        async function removeStock(symbol, event) {
-            event.stopPropagation();
-            if (!confirm(`Are you sure you want to remove ${symbol} from the watchlist?`)) return;
-            
-            try {
-                const res = await fetch(`/api/remove_stock/${symbol}`, { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Error removing stock: ' + data.error);
-                }
-            } catch (e) {
-                alert('Request failed');
-            }
-        }
-        
-        function toggleEditMode(btn) {
-            const container = document.getElementById('watchlist-container');
-            container.classList.toggle('edit-mode');
-            if (container.classList.contains('edit-mode')) {
-                btn.innerHTML = 'Done Editing';
-                btn.style.background = 'rgba(59, 130, 246, 0.2)';
-                btn.style.borderColor = 'var(--accent)';
-            } else {
-                btn.innerHTML = '✎ Edit Stocks';
-                btn.style.background = '';
-                btn.style.borderColor = '';
-            }
-        }
+
 
         let watchlistFilter = 'ALL';
         function filterWatchlist(category, btn) {
