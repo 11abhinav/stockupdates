@@ -77,7 +77,16 @@ def init_db():
                 cur.execute("""
                     ALTER TABLE stockupdates.prices 
                     ADD COLUMN IF NOT EXISTS quality_score NUMERIC(4, 1),
-                    ADD COLUMN IF NOT EXISTS value_score NUMERIC(4, 1);
+                    ADD COLUMN IF NOT EXISTS value_score NUMERIC(4, 1),
+                    ADD COLUMN IF NOT EXISTS sector VARCHAR(100),
+                    ADD COLUMN IF NOT EXISTS pe NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS pb NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS roe NUMERIC(10, 4),
+                    ADD COLUMN IF NOT EXISTS eps NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS bvps NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS div_yield NUMERIC(10, 4),
+                    ADD COLUMN IF NOT EXISTS fair_value NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS valuation_label VARCHAR(50);
                 """)
                 
                 # Create alerts table
@@ -171,6 +180,21 @@ def get_fundamental_scores(symbol):
     except Exception as e:
         log.error(f"Error fetching fundamental scores for {symbol}: {e}")
     return None, None
+
+def get_valuation_details(symbol):
+    if not DATABASE_URL:
+        return None, None, None, None
+    try:
+        with get_db_connection() as conn:
+            if not conn: return None, None, None, None
+            with conn.cursor() as cur:
+                cur.execute("SELECT quality_score, value_score, fair_value, valuation_label FROM stockupdates.prices WHERE symbol = %s;", (symbol.upper(),))
+                row = cur.fetchone()
+                if row:
+                    return row[0], row[1], row[2], row[3]
+    except Exception as e:
+        log.error(f"Error fetching valuation details for {symbol}: {e}")
+    return None, None, None, None
 
 def add_stock(symbol, bse_code=None):
     if not DATABASE_URL:
@@ -281,6 +305,69 @@ def update_fundamental_scores(symbol, quality_score, value_score):
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating fundamental scores for {symbol}: {e}")
+
+def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield):
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stockupdates.prices (
+                        symbol, sector, pe, pb, roe, eps, bvps, div_yield, last_fetched
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (symbol) DO UPDATE 
+                    SET sector = EXCLUDED.sector,
+                        pe = EXCLUDED.pe,
+                        pb = EXCLUDED.pb,
+                        roe = EXCLUDED.roe,
+                        eps = EXCLUDED.eps,
+                        bvps = EXCLUDED.bvps,
+                        div_yield = EXCLUDED.div_yield,
+                        last_fetched = CURRENT_TIMESTAMP;
+                """, (symbol.upper(), sector, pe, pb, roe, eps, bvps, div_yield))
+                conn.commit()
+    except Exception as e:
+        log.error(f"Error updating fundamental metrics for {symbol}: {e}")
+
+def update_valuation_fields(symbol, value_score, fair_value, valuation_label):
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stockupdates.prices (
+                        symbol, value_score, fair_value, valuation_label, last_fetched
+                    ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (symbol) DO UPDATE 
+                    SET value_score = EXCLUDED.value_score,
+                        fair_value = EXCLUDED.fair_value,
+                        valuation_label = EXCLUDED.valuation_label,
+                        last_fetched = CURRENT_TIMESTAMP;
+                """, (symbol.upper(), value_score, fair_value, valuation_label))
+                conn.commit()
+    except Exception as e:
+        log.error(f"Error updating valuation fields for {symbol}: {e}")
+
+def get_all_fundamentals():
+    if not DATABASE_URL:
+        return []
+    try:
+        with get_db_connection() as conn:
+            if not conn: return []
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT symbol, sector, pe, pb, roe, eps, bvps, div_yield
+                    FROM stockupdates.prices;
+                """)
+                return cur.fetchall()
+    except Exception as e:
+        log.error(f"Error fetching fundamentals: {e}")
+        return []
+
 
 def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, 
                confidence=None, trigger_type=None, tags=None,

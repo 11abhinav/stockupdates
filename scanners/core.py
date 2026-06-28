@@ -79,8 +79,8 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
         return
 
     # Fetch dynamic CQS / PAS from DB
-    from db import get_fundamental_scores
-    q_score, v_score = get_fundamental_scores(symbol)
+    from db import get_valuation_details
+    q_score, v_score, fair_value, db_v_label = get_valuation_details(symbol)
     
     # Calculate bonuses/penalties
     q_bonus = 0.0
@@ -104,17 +104,29 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
             
     if v_score is not None:
         v_score = float(v_score)
-        if v_score >= 8.0:
-            v_bonus = 1.0
-            v_label = "Attractive Buy Zone"
-        elif v_score >= 6.0:
-            v_label = "Fairly Priced"
-        elif v_score >= 4.0:
-            v_bonus = -1.0
-            v_label = "Expensive / Limited Margin of Safety"
+        if db_v_label:
+            if db_v_label == "UNDERVALUED":
+                v_bonus = 1.0
+                v_label = "Attractive Buy Zone"
+            elif db_v_label == "FAIR":
+                v_label = "Fairly Priced"
+            elif db_v_label == "OVERVALUED":
+                v_bonus = -1.0
+                v_label = "Expensive / Limited Margin of Safety"
+            else:
+                v_label = db_v_label
         else:
-            v_bonus = -1.0
-            v_label = "Avoid at current price"
+            if v_score >= 8.0:
+                v_bonus = 1.0
+                v_label = "Attractive Buy Zone"
+            elif v_score >= 6.0:
+                v_label = "Fairly Priced"
+            elif v_score >= 4.0:
+                v_bonus = -1.0
+                v_label = "Expensive / Limited Margin of Safety"
+            else:
+                v_bonus = -1.0
+                v_label = "Avoid at current price"
 
     # Overlay math onto technical score (technical score defaults to passed-in confidence)
     tech_score = float(confidence) if confidence is not None else 7.5
@@ -138,7 +150,10 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     if q_score is not None:
         overlay_details.append(f"Quality: {q_score}/10 ({q_label})")
     if v_score is not None:
-        overlay_details.append(f"Valuation: {v_score}/10 ({v_label})")
+        v_text = f"Valuation: {v_score}/10 ({v_label})"
+        if fair_value:
+            v_text += f" [FV: ₹{float(fair_value):.1f}]"
+        overlay_details.append(v_text)
         
     full_message = f"[{rating_label}]\n{message}"
     if overlay_details:
@@ -184,7 +199,10 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
         msg += f"• Company Quality: <i>Pending calculation</i>\n"
         
     if v_score is not None:
-        msg += f"• Price Valuation: <b>{v_score}/10</b> ({v_label})\n"
+        v_text = f"• Price Valuation: <b>{v_score}/10</b> ({v_label})"
+        if fair_value:
+            v_text += f" [FV: ₹{float(fair_value):.1f}]"
+        msg += v_text + "\n"
     else:
         msg += f"• Price Valuation: <i>Pending calculation</i>\n"
         

@@ -22,236 +22,533 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
 # Initialize DB on startup
 db.init_db()
 
-def calculate_quality_score(info, financials):
-    """
-    Calculate a Company Quality Score (CQS) out of 10 points:
-    - ROE/ROCE (Weight: 2): >=15% (2 pts), 10-15% (1 pt), <10% (0 pts)
-    - Debt/Equity (Weight: 2): <=0.5 (2 pts), 0.5-1.0 (1 pt), >1.0 (0 pts)
-    - 3Y Sales CAGR (Weight: 2): >=10% (2 pts), 5-10% (1 pt), <5% (0 pts)
-    - 3Y Profit CAGR (Weight: 2): >=10% (2 pts), 5-10% (1 pt), <5% (0 pts)
-    - Operating Cash Flow (Weight: 1): Positive (1 pt), otherwise (0 pts)
-    - Operating Margin (Weight: 1): >=15% (1 pt), 8-15% (0.5 pt), <8% (0 pts)
-    """
-    if not info:
-        return 0.0
+def norm_pct(x):
+    if x is None:
+        return None
+    try:
+        x = float(x)
+        return x / 100.0 if abs(x) > 1 else x
+    except Exception as e:
+        log.warning(f"norm_pct failed for {x}: {e}")
+        return None
+
+def norm_num(x):
+    if x is None:
+        return None
+    try:
+        return float(x)
+    except Exception as e:
+        log.warning(f"norm_num failed for {x}: {e}")
+        return None
+
+def norm_de_ratio(x):
+    x = norm_num(x)
+    if x is None:
+        return None
+    return x / 100.0 if x > 10 else x
+
+def score_financial_quality(info, financials):
     score = 0.0
+    fields_found = 0
     
     # 1. ROE / ROCE Proxy (Weight: 2)
-    roe = info.get('returnOnEquity')
+    roe = norm_pct(info.get('returnOnEquity'))
     if roe is not None:
-        try:
-            roe_val = float(roe)
-            if roe_val >= 0.15:
-                score += 2.0
-            elif roe_val >= 0.10:
-                score += 1.0
-        except:
-            pass
-            
-    # 2. Debt/Equity (Weight: 2)
-    de = info.get('debtToEquity')
-    if de is not None:
-        try:
-            de_val = float(de)
-            if de_val <= 50.0:
-                score += 2.0
-            elif de_val <= 100.0:
-                score += 1.0
-        except:
-            pass
-    else:
-        score += 2.0 # No debt is strong
+        fields_found += 1
+        if roe >= 0.15:
+            score += 2.0
+        elif roe >= 0.10:
+            score += 1.0
 
-    # 3Y Sales CAGR & Profit CAGR Calculations
-    sales_cagr = 0.0
-    profit_cagr = 0.0
-    has_financials = False
-    
+    # 2. Revenue Growth (Weight: 2)
+    sales_cagr = None
     if financials is not None and not financials.empty:
         try:
             if 'Total Revenue' in financials.index and len(financials.columns) >= 4:
-                rev_latest = financials.loc['Total Revenue'].iloc[0]
-                rev_3y = financials.loc['Total Revenue'].iloc[3]
-                if rev_3y > 0:
+                rev_latest = norm_num(financials.loc['Total Revenue'].iloc[0])
+                rev_3y = norm_num(financials.loc['Total Revenue'].iloc[3])
+                if rev_3y and rev_latest and rev_3y > 0:
                     sales_cagr = ((rev_latest / rev_3y) ** (1/3)) - 1
-                    has_financials = True
-            if 'Net Income' in financials.index and len(financials.columns) >= 4:
-                prof_latest = financials.loc['Net Income'].iloc[0]
-                prof_3y = financials.loc['Net Income'].iloc[3]
-                if prof_3y > 0:
-                    profit_cagr = ((prof_latest / prof_3y) ** (1/3)) - 1
-                    has_financials = True
-        except:
-            pass
-
-    # 3. 3Y Sales CAGR (Weight: 2)
-    if has_financials:
+        except Exception as e:
+            sym = info.get('symbol', 'Unknown')
+            log.warning(f"Failed to calculate revenue CAGR for {sym}: {e}")
+            
+    if sales_cagr is not None:
+        fields_found += 1
         if sales_cagr >= 0.10:
             score += 2.0
         elif sales_cagr >= 0.05:
             score += 1.0
     else:
-        rev_growth = info.get('revenueGrowth')
-        if rev_growth is not None:
-            try:
-                rg_val = float(rev_growth)
-                if rg_val >= 0.10:
-                    score += 2.0
-                elif rg_val >= 0.05:
-                    score += 1.0
-            except:
-                pass
+        rg = norm_pct(info.get('revenueGrowth'))
+        if rg is not None:
+            fields_found += 1
+            if rg >= 0.10:
+                score += 2.0
+            elif rg >= 0.05:
+                score += 1.0
 
-    # 4. 3Y Profit CAGR (Weight: 2)
-    if has_financials:
+    # 3. Earnings Growth (Weight: 2)
+    profit_cagr = None
+    if financials is not None and not financials.empty:
+        try:
+            if 'Net Income' in financials.index and len(financials.columns) >= 4:
+                prof_latest = norm_num(financials.loc['Net Income'].iloc[0])
+                prof_3y = norm_num(financials.loc['Net Income'].iloc[3])
+                if prof_3y and prof_latest and prof_3y > 0:
+                    profit_cagr = ((prof_latest / prof_3y) ** (1/3)) - 1
+        except Exception as e:
+            sym = info.get('symbol', 'Unknown')
+            log.warning(f"Failed to calculate earnings CAGR for {sym}: {e}")
+            
+    if profit_cagr is not None:
+        fields_found += 1
         if profit_cagr >= 0.10:
             score += 2.0
         elif profit_cagr >= 0.05:
             score += 1.0
     else:
-        earn_growth = info.get('earningsGrowth')
-        if earn_growth is not None:
-            try:
-                eg_val = float(earn_growth)
-                if eg_val >= 0.10:
-                    score += 2.0
-                elif eg_val >= 0.05:
-                    score += 1.0
-            except:
-                pass
+        eg = norm_pct(info.get('earningsGrowth'))
+        if eg is not None:
+            fields_found += 1
+            if eg >= 0.10:
+                score += 2.0
+            elif eg >= 0.05:
+                score += 1.0
 
-    # 5. Operating Cash Flow (Weight: 1)
-    ocf = info.get('operatingCashflow')
+    # 4. Operating Margin (Weight: 1)
+    opm = norm_pct(info.get('operatingMargins'))
+    if opm is not None:
+        fields_found += 1
+        if opm >= 0.15:
+            score += 1.0
+        elif opm >= 0.08:
+            score += 0.5
+
+    # 5. Financial Leverage Proxy (Weight: 2) - ROA
+    roa = norm_pct(info.get('returnOnAssets'))
+    if roa is not None:
+        fields_found += 1
+        if roa >= 0.015:
+            score += 2.0
+        elif roa >= 0.005:
+            score += 1.0
+
+    # 6. Financial Cash Flow Proxy (Weight: 1) - Positive EPS
+    eps = norm_num(info.get('trailingEps') or info.get('forwardEps'))
+    if eps is not None:
+        fields_found += 1
+        if eps > 0:
+            score += 1.0
+            
+    return score, fields_found, None
+
+
+def score_nonfinancial_quality(info, financials):
+    score = 0.0
+    fields_found = 0
+    hard_cap = None
+    
+    # 1. ROE / ROCE Proxy (Weight: 2)
+    roe = norm_pct(info.get('returnOnEquity'))
+    if roe is not None:
+        fields_found += 1
+        if roe >= 0.15:
+            score += 2.0
+        elif roe >= 0.10:
+            score += 1.0
+
+    # 2. Revenue Growth (Weight: 2)
+    sales_cagr = None
+    if financials is not None and not financials.empty:
+        try:
+            if 'Total Revenue' in financials.index and len(financials.columns) >= 4:
+                rev_latest = norm_num(financials.loc['Total Revenue'].iloc[0])
+                rev_3y = norm_num(financials.loc['Total Revenue'].iloc[3])
+                if rev_3y and rev_latest and rev_3y > 0:
+                    sales_cagr = ((rev_latest / rev_3y) ** (1/3)) - 1
+        except Exception as e:
+            sym = info.get('symbol', 'Unknown')
+            log.warning(f"Failed to calculate revenue CAGR for {sym}: {e}")
+            
+    if sales_cagr is not None:
+        fields_found += 1
+        if sales_cagr >= 0.10:
+            score += 2.0
+        elif sales_cagr >= 0.05:
+            score += 1.0
+    else:
+        rg = norm_pct(info.get('revenueGrowth'))
+        if rg is not None:
+            fields_found += 1
+            if rg >= 0.10:
+                score += 2.0
+            elif rg >= 0.05:
+                score += 1.0
+
+    # 3. Earnings Growth (Weight: 2)
+    profit_cagr = None
+    if financials is not None and not financials.empty:
+        try:
+            if 'Net Income' in financials.index and len(financials.columns) >= 4:
+                prof_latest = norm_num(financials.loc['Net Income'].iloc[0])
+                prof_3y = norm_num(financials.loc['Net Income'].iloc[3])
+                if prof_3y and prof_latest and prof_3y > 0:
+                    profit_cagr = ((prof_latest / prof_3y) ** (1/3)) - 1
+        except Exception as e:
+            sym = info.get('symbol', 'Unknown')
+            log.warning(f"Failed to calculate earnings CAGR for {sym}: {e}")
+            
+    if profit_cagr is not None:
+        fields_found += 1
+        if profit_cagr >= 0.10:
+            score += 2.0
+        elif profit_cagr >= 0.05:
+            score += 1.0
+    else:
+        eg = norm_pct(info.get('earningsGrowth'))
+        if eg is not None:
+            fields_found += 1
+            if eg >= 0.10:
+                score += 2.0
+            elif eg >= 0.05:
+                score += 1.0
+
+    # 4. Operating Margin (Weight: 1)
+    opm = norm_pct(info.get('operatingMargins'))
+    if opm is not None:
+        fields_found += 1
+        if opm >= 0.15:
+            score += 1.0
+        elif opm >= 0.08:
+            score += 0.5
+
+    # 5. Non-Financial Leverage (Weight: 2) - Debt/Equity
+    de = norm_de_ratio(info.get('debtToEquity'))
+    if de is not None:
+        fields_found += 1
+        if de <= 0.50:
+            score += 2.0
+        elif de <= 1.00:
+            score += 1.0
+        elif de > 2.00:
+            hard_cap = 4.0
+            
+    # 6. Non-Financial Cash Flow (Weight: 1) - OCF
+    ocf = norm_num(info.get('operatingCashflow'))
     if ocf is not None:
-        try:
-            if float(ocf) > 0:
-                score += 1.0
-        except:
-            pass
+        fields_found += 1
+        if ocf > 0:
+            score += 1.0
+        elif ocf < 0:
+            score -= 1.0
+            
+    return score, fields_found, hard_cap
 
-    # 6. Operating Margin (Weight: 1)
-    op_margin = info.get('operatingMargins')
-    if op_margin is not None:
-        try:
-            opm_val = float(op_margin)
-            if opm_val >= 0.15:
-                score += 1.0
-            elif opm_val >= 0.08:
-                score += 0.5
-        except:
-            pass
 
-    return round(score, 1)
-
-def calculate_value_score(info):
-    """
-    Calculate a Price Attractiveness Score (PAS) out of 10 points:
-    - Trailing P/E (Weight: 3): <20 (3 pts), 20-35 (1.5 pts), >35 (0 pts)
-    - P/B (Weight: 2): <3 (2 pts), 3-5 (1 pt), >5 (0 pts)
-    - EV/EBITDA (Weight: 2): <10 (2 pts), 10-18 (1 pt), >18 (0 pts)
-    - EV/Revenue or P/S (Weight: 1): <3 (1 pt), 3-6 (0.5 pt), >6 (0 pts)
-    - Dividend Yield (Weight: 1): >=2% (1 pt), 0.5-2% (0.5 pt), <0.5% (0 pts)
-    - Margin of Safety (Weight: 1): Price is >=20% below 52W High (1 pt), otherwise (0 pts)
-    """
+def calculate_quality_score(info, financials):
     if not info:
         return 0.0
-    score = 0.0
-    
-    # 1. Trailing P/E (Weight: 3)
-    pe = info.get('trailingPE') or info.get('peRatio')
-    if pe is not None:
-        try:
-            pe_val = float(pe)
-            if 0 < pe_val < 20.0:
-                score += 3.0
-            elif 0 < pe_val <= 35.0:
-                score += 1.5
-        except:
-            pass
-            
-    # 2. P/B (Weight: 2)
-    pb = info.get('priceToBook') or info.get('pbRatio')
-    if pb is not None:
-        try:
-            pb_val = float(pb)
-            if 0 < pb_val < 3.0:
-                score += 2.0
-            elif 0 < pb_val <= 5.0:
-                score += 1.0
-        except:
-            pass
-            
-    # 3. EV / EBITDA (Weight: 2)
-    ev_ebitda = info.get('enterpriseToEbitda')
-    if ev_ebitda is not None:
-        try:
-            eve_val = float(ev_ebitda)
-            if 0 < eve_val < 10.0:
-                score += 2.0
-            elif 0 < eve_val <= 18.0:
-                score += 1.0
-        except:
-            pass
-            
-    # 4. EV / Revenue or P/S (Weight: 1)
-    ev_rev = info.get('enterpriseToRevenue')
-    ps = info.get('priceToSalesTrailing12Months')
-    val_mult = ev_rev if ev_rev is not None else ps
-    if val_mult is not None:
-        try:
-            mult_val = float(val_mult)
-            if 0 < mult_val < 3.0:
-                score += 1.0
-            elif 0 < mult_val <= 6.0:
-                score += 0.5
-        except:
-            pass
-            
-    # 5. Dividend Yield (Weight: 1)
-    div = info.get('dividendYield') or info.get('divYield')
-    if div is not None:
-        try:
-            div_val = float(div)
-            if div_val < 1.0:
-                div_val = div_val * 100
-            if div_val >= 2.0:
-                score += 1.0
-            elif div_val >= 0.5:
-                score += 0.5
-        except:
-            pass
+        
+    is_fin = is_financial_sector(info.get('sector'))
+    if is_fin:
+        score, fields_found, hard_cap = score_financial_quality(info, financials)
+    else:
+        score, fields_found, hard_cap = score_nonfinancial_quality(info, financials)
+        
+    if hard_cap is not None and score > hard_cap:
+        score = hard_cap
+        
+    completeness = fields_found / 6.0
+    if completeness >= 0.8:
+        info['quality_confidence'] = "High"
+    elif completeness >= 0.5:
+        info['quality_confidence'] = "Medium"
+    else:
+        info['quality_confidence'] = "Low"
+        score = min(score, 5.0)
 
-    # 6. Margin of Safety flag (Weight: 1)
-    high_52 = info.get('fiftyTwoWeekHigh')
-    current = info.get('currentPrice') or info.get('regularMarketPrice')
-    if high_52 is not None and current is not None:
-        try:
-            if float(current) < float(high_52) * 0.80:
-                score += 1.0
-        except:
-            pass
-            
+    score = max(0.0, score)
     return round(score, 1)
 
-def fetch_and_save_fundamentals(symbol, ticker=None):
+def is_financial_sector(sector):
+    if sector is None:
+        return False
+    s = str(sector).lower()
+    if "financial" in s or "bank" in s or "insurance" in s or "nbfc" in s:
+        return True
+    return False
+
+def compute_sector_medians(all_stocks):
+    import statistics
+    sector_data = {}
+    for stock in all_stocks:
+        sector = stock.get('sector')
+        if not sector or sector == "Unknown":
+            continue
+            
+        if sector not in sector_data:
+            sector_data[sector] = {"pe_list": [], "pb_list": [], "roe_list": []}
+            
+        pe = norm_num(stock.get('pe'))
+        if pe is not None and pe > 0:
+            sector_data[sector]["pe_list"].append(pe)
+            
+        pb = norm_num(stock.get('pb'))
+        if pb is not None and pb > 0:
+            sector_data[sector]["pb_list"].append(pb)
+            
+        roe = norm_pct(stock.get('roe'))
+        if roe is not None and roe > 0:
+            sector_data[sector]["roe_list"].append(roe)
+            
+    medians = {}
+    for sector, data in sector_data.items():
+        pe_list = data["pe_list"]
+        pb_list = data["pb_list"]
+        roe_list = data["roe_list"]
+        
+        medians[sector] = {
+            "median_pe": statistics.median(pe_list) if len(pe_list) >= 3 else None,
+            "median_pb": statistics.median(pb_list) if len(pb_list) >= 3 else None,
+            "median_roe": statistics.median(roe_list) if len(roe_list) >= 3 else None
+        }
+    return medians
+
+def calculate_value_score(stock, sector_medians):
+    score = 0
+    confidence = "HIGH"
+    sector = stock.get('sector')
+    med = sector_medians.get(sector)
+    
+    if not med:
+        confidence = "LOW"
+        med = {}
+    
+    stock_pb = stock.get('pb')
+    stock_pe = stock.get('pe')
+    stock_roe = stock.get('roe')
+    stock_div = stock.get('div_yield')
+    
+    if is_financial_sector(sector):
+        # 1. P/B relative to sector
+        if stock_pb is not None and stock_pb > 0:
+            sector_pb = med.get("median_pb")
+            if sector_pb is not None:
+                if stock_pb <= sector_pb:
+                    score += 5
+                elif stock_pb <= sector_pb * 1.2:
+                    score += 3
+            else:
+                if stock_pb <= 2.0:
+                    score += 5
+                elif stock_pb <= 3.5:
+                    score += 3
+        else:
+            confidence = "LOW"
+                    
+        # 2. ROE relative to sector
+        if stock_roe is not None:
+            sector_roe = med.get("median_roe")
+            if sector_roe is not None:
+                if stock_roe >= sector_roe:
+                    score += 5
+                elif stock_roe >= sector_roe * 0.8:
+                    score += 3
+            else:
+                if stock_roe >= 0.16:
+                    score += 5
+                elif stock_roe >= 0.12:
+                    score += 3
+        else:
+            confidence = "LOW"
+    else:
+        # 1. P/E relative to sector
+        if stock_pe is not None and stock_pe > 0:
+            sector_pe = med.get("median_pe")
+            if sector_pe is not None:
+                if stock_pe <= sector_pe:
+                    score += 5
+                elif stock_pe <= sector_pe * 1.2:
+                    score += 3
+            else:
+                if stock_pe <= 20:
+                    score += 5
+                elif stock_pe <= 35:
+                    score += 3
+        else:
+            confidence = "LOW"
+                    
+        # 2. P/B relative to sector
+        if stock_pb is not None and stock_pb > 0:
+            sector_pb = med.get("median_pb")
+            if sector_pb is not None:
+                if stock_pb <= sector_pb:
+                    score += 4
+                elif stock_pb <= sector_pb * 1.2:
+                    score += 2
+            else:
+                if stock_pb <= 2.5:
+                    score += 4
+                elif stock_pb <= 4.5:
+                    score += 2
+        else:
+            confidence = "LOW"
+                    
+        # 3. Dividend yield
+        if stock_div is not None and stock_div >= 0.005:
+            score += 1
+            
+    return round(score, 1), confidence
+
+def calculate_fair_value(stock, current_price, sector_medians):
+    sector = stock.get('sector')
+    med = sector_medians.get(sector, {})
+    
+    if is_financial_sector(sector):
+        sector_pb = med.get("median_pb")
+        stock_bvps = norm_num(stock.get('bvps'))
+        if sector_pb is not None and stock_bvps is not None and stock_bvps > 0:
+            fair_value = sector_pb * stock_bvps
+            return fair_value, "SECTOR_PB"
+    else:
+        sector_pe = med.get("median_pe")
+        stock_eps = norm_num(stock.get('eps'))
+        if sector_pe is not None and stock_eps is not None and stock_eps > 0:
+            fair_value = sector_pe * stock_eps
+            return fair_value, "SECTOR_PE"
+            
+    if current_price is not None:
+        fallback_value = current_price * 0.90
+        return fallback_value, "FALLBACK"
+        
+    return None, "UNAVAILABLE"
+
+def build_valuation_output(stock, current_price, sector_medians):
+    value_score, val_confidence = calculate_value_score(stock, sector_medians)
+    fair_value, mode = calculate_fair_value(stock, current_price, sector_medians)
+    
+    valuation_label = "UNKNOWN"
+    if fair_value is not None and current_price is not None and current_price > 0:
+        if mode == "FALLBACK":
+            valuation_label = "LOW_CONFIDENCE"
+        else:
+            upside_pct = ((fair_value - current_price) / current_price) * 100
+            if upside_pct >= 20:
+                valuation_label = "UNDERVALUED"
+            elif upside_pct >= 0:
+                valuation_label = "FAIR"
+            else:
+                valuation_label = "OVERVALUED"
+                
+    if val_confidence == "LOW" and valuation_label not in ["LOW_CONFIDENCE", "UNKNOWN"]:
+        valuation_label = f"{valuation_label} (LOW CONFIDENCE)"
+            
+    absolute_warning = None
+    if not is_financial_sector(stock.get('sector')):
+        pe = stock.get('pe')
+        if pe is not None and pe > 60:
+            absolute_warning = "ABSOLUTE_PE_TOO_HIGH"
+            
+    return {
+        "value_score": value_score,
+        "fair_value": fair_value,
+        "valuation_mode": mode,
+        "valuation_label": valuation_label,
+        "absolute_warning": absolute_warning,
+        "valuation_confidence": val_confidence
+    }
+
+def fetch_and_save_raw_metrics(symbol, ticker=None):
     try:
         import yfinance as yf
         if not ticker:
             ticker = yf.Ticker(f"{symbol}.NS")
         info = ticker.info
         financials = ticker.financials
-        q_score = calculate_quality_score(info, financials)
-        v_score = calculate_value_score(info)
-        db.update_fundamental_scores(symbol, q_score, v_score)
         
-        # Calculate legacy score for backward compatibility
-        legacy_score = int((q_score + v_score) / 2)
+        q_score = calculate_quality_score(info, financials)
+        
+        sector = info.get('sector')
+        pe = norm_num(info.get('trailingPE') or info.get('peRatio'))
+        pb = norm_num(info.get('priceToBook') or info.get('pbRatio'))
+        roe = norm_pct(info.get('returnOnEquity'))
+        eps = norm_num(info.get('trailingEps') or info.get('forwardEps'))
+        bvps = norm_num(info.get('bookValue'))
+        div_yield = norm_pct(info.get('dividendYield') or info.get('divYield'))
+        current_price = norm_num(info.get('currentPrice') or info.get('regularMarketPrice'))
+        
+        db.update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield)
+        
+        current_stock = {
+            'sector': sector,
+            'pe': pe,
+            'pb': pb,
+            'roe': roe,
+            'eps': eps,
+            'bvps': bvps,
+            'div_yield': div_yield
+        }
+        return q_score, current_stock, current_price, info
+    except Exception as e:
+        log.warning(f"Failed to fetch raw metrics for {symbol}: {e}")
+        return None, None, None, None
+
+def refresh_universe(symbols):
+    all_rows = []
+    for sym in symbols:
+        q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(sym)
+        if current_stock:
+            all_rows.append((sym, q_score, current_stock, current_price, info))
+        time.sleep(2) # rate limit protection
+        
+    all_stocks = db.get_all_fundamentals()
+    sector_medians = compute_sector_medians(all_stocks)
+    
+    results = []
+    for sym, q_score, current_stock, current_price, info in all_rows:
+        val_output = build_valuation_output(current_stock, current_price, sector_medians)
+        v_score = val_output["value_score"]
+        
+        db.update_fundamental_scores(sym, q_score, v_score)
+        db.update_valuation_fields(sym, v_score, val_output["fair_value"], val_output["valuation_label"])
+        
+        legacy_score = int((q_score + v_score) / 2) if q_score is not None and v_score is not None else None
+        if legacy_score is not None:
+            db.update_fundamental_score(sym, legacy_score)
+            
+        results.append((sym, q_score, v_score, info))
+    
+    return results, sector_medians
+
+def fetch_and_save_fundamentals(symbol, ticker=None):
+    q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(symbol, ticker)
+    if not current_stock:
+        return None, None, None
+        
+    # Single fetch: compute against existing full database medians
+    all_stocks = db.get_all_fundamentals()
+    sector_medians = compute_sector_medians(all_stocks)
+    
+    val_output = build_valuation_output(current_stock, current_price, sector_medians)
+    v_score = val_output["value_score"]
+    fair_value = val_output["fair_value"]
+    valuation_label = val_output["valuation_label"]
+    
+    db.update_fundamental_scores(symbol, q_score, v_score)
+    db.update_valuation_fields(symbol, v_score, fair_value, valuation_label)
+    
+    legacy_score = int((q_score + v_score) / 2) if q_score is not None and v_score is not None else None
+    if legacy_score is not None:
         db.update_fundamental_score(symbol, legacy_score)
         
-        return q_score, v_score, info
-    except Exception as e:
-        log.warning(f"Failed to fetch/save fundamentals for {symbol}: {e}")
-        return None, None, None
+    info['valuation_label'] = valuation_label
+    info['fair_value'] = fair_value
+    info['valuation_mode'] = val_output["valuation_mode"]
+    info['absolute_warning'] = val_output["absolute_warning"]
+    info['valuation_confidence'] = val_output["valuation_confidence"]
+    
+    return q_score, v_score, info
 
 def backfill_missing_fundamental_scores():
     # Wait a brief moment to let the server start up
@@ -259,16 +556,25 @@ def backfill_missing_fundamental_scores():
     log.info("Starting background backfill of missing fundamental scores...")
     try:
         prices = db.get_all_prices()
-        for p in prices:
-            symbol = p['symbol']
-            if p.get('quality_score') is None or p.get('value_score') is None:
-                log.info(f"Backfilling fundamental score for {symbol}...")
-                fetch_and_save_fundamentals(symbol)
-                # Rate limit protection (2s between requests)
-                time.sleep(2)
+        symbols_to_fetch = [p['symbol'] for p in prices if p.get('quality_score') is None or p.get('value_score') is None]
+        if symbols_to_fetch:
+            log.info(f"Backfilling {len(symbols_to_fetch)} symbols...")
+            refresh_universe(symbols_to_fetch)
         log.info("Background fundamental score backfill complete.")
     except Exception as e:
         log.error(f"Error in backfill_missing_fundamental_scores background thread: {e}")
+
+def scheduled_universe_refresh():
+    """Runs nightly to refresh ALL fundamentals and medians."""
+    log.info("Starting scheduled nightly universe refresh...")
+    try:
+        prices = db.get_all_prices()
+        symbols = [p['symbol'] for p in prices]
+        if symbols:
+            refresh_universe(symbols)
+            log.info(f"Nightly refresh complete for {len(symbols)} symbols.")
+    except Exception as e:
+        log.error(f"Error in scheduled nightly refresh: {e}")
 
 # Setup APScheduler
 # Register Dual Scanners (IST Native)
@@ -281,7 +587,8 @@ import scanners.tracker
 ist_tz = ZoneInfo("Asia/Kolkata")
 job_defaults = {
     'misfire_grace_time': 120,
-    'max_instances': 1
+    'max_instances': 1,
+    'coalesce': True
 }
 scheduler = BackgroundScheduler(timezone=ist_tz, job_defaults=job_defaults)
 
@@ -317,6 +624,12 @@ scheduler.add_job(
 scheduler.add_job(
     scanners.news.run_bse_scan, CronTrigger(day_of_week='mon-fri', hour='9-15', minute='15,45', timezone=ist_tz),
     id='news_9_15', replace_existing=True
+)
+
+# Nightly Fundamentals Refresh (1:00 AM IST)
+scheduler.add_job(
+    scheduled_universe_refresh, CronTrigger(hour='1', minute='0', timezone=ist_tz),
+    id='nightly_fundamentals', replace_existing=True
 )
 
 # Tracker Scanner (Let it run until 15:55 to catch post-market closures)
@@ -498,7 +811,8 @@ def api_stock(symbol):
                 try:
                     dt = dateutil.parser.parse(entry.get("published", ""))
                     time_val = dt.timestamp()
-                except:
+                except Exception as e:
+                    log.warning(f"News date parsing failed for {symbol}: {e}")
                     time_val = None
                     
                 news.append({
@@ -537,6 +851,12 @@ def api_stock(symbol):
                     'earningsGrowth': info.get('earningsGrowth'),
                     'enterpriseToEbitda': info.get('enterpriseToEbitda'),
                     'enterpriseToRevenue': info.get('enterpriseToRevenue') or info.get('priceToSalesTrailing12Months'),
+                    'quality_confidence': info.get('quality_confidence', 'Unknown'),
+                    'fairValue': info.get('fair_value'),
+                    'valuationLabel': info.get('valuation_label'),
+                    'valuationMode': info.get('valuation_mode'),
+                    'valuationConfidence': info.get('valuation_confidence'),
+                    'absoluteWarning': info.get('absolute_warning')
                 }
             
             # Fetch daily candlestick history for interactive charts (5 years)
@@ -745,6 +1065,39 @@ def admin():
     return render_template('admin.html', watchlist=prices)
 
 
+@app.route('/api/admin/force_refresh', methods=['GET'])
+def api_force_refresh():
+    """Endpoint to manually trigger a full universe refresh on Railway."""
+    def run_refresh_background():
+        try:
+            import time
+            log.info("Force refresh triggered via API...")
+            prices = db.get_all_prices()
+            symbols = [p['symbol'] for p in prices]
+            if symbols:
+                refresh_universe(symbols)
+                log.info(f"Force refresh complete for {len(symbols)} symbols.")
+        except Exception as e:
+            log.error(f"Error in force refresh background thread: {e}")
+            
+    import threading
+    threading.Thread(target=run_refresh_background, daemon=True).start()
+    
+    return jsonify({
+        "status": "success",
+        "message": "Full fundamentals and valuation refresh started in the background. Please wait a few minutes for it to complete."
+    })
+
+
+def _shutdown_scheduler():
+    try:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+    except Exception as e:
+        log.warning(f"Scheduler shutdown skipped: {e}")
+
+import atexit
+atexit.register(_shutdown_scheduler)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
