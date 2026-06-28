@@ -452,8 +452,8 @@ def api_stock(symbol):
                     'enterpriseToRevenue': info.get('enterpriseToRevenue') or info.get('priceToSalesTrailing12Months'),
                 }
             
-            # Fetch daily candlestick history for interactive charts
-            hist_daily = ticker.history(period="3mo", interval="1d")
+            # Fetch daily candlestick history for interactive charts (5 years)
+            hist_daily = ticker.history(period="5y", interval="1d")
             for index, row in hist_daily.iterrows():
                 chart_data.append({
                     'time': index.strftime('%Y-%m-%d'),

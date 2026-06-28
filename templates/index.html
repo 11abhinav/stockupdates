@@ -214,9 +214,11 @@
                     </div>
                     <div class="stock-meta" id="detail-meta">Last Fetched: -</div>
                 </div>
-                <div>
-                    <a href="#" target="_blank" class="tv-btn" id="tv-link">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <button class="nav-btn" id="draw-line-btn" onclick="toggleDrawingMode()" style="font-size: 0.8rem; padding: 8px 12px; height: 38px;">✏️ Draw Line</button>
+                    <button class="nav-btn" onclick="clearDrawings()" style="font-size: 0.8rem; padding: 8px 12px; height: 38px;">🗑️ Clear</button>
+                    <a href="#" target="_blank" class="tv-btn" id="tv-link" style="padding: 8px 12px; display: inline-flex; align-items: center; justify-content: center; height: 38px; font-size: 0.8rem;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                         TradingView
                     </a>
                 </div>
@@ -821,9 +823,63 @@
         }
 
         let currentTVChart = null;
+        let isDrawingMode = false;
+        let firstClickedPoint = null;
+        let activeLineSeries = [];
+
+        function toggleDrawingMode() {
+            const drawBtn = document.getElementById('draw-line-btn');
+            if (!drawBtn) return;
+            
+            isDrawingMode = !isDrawingMode;
+            firstClickedPoint = null;
+            
+            if (isDrawingMode) {
+                drawBtn.classList.add('active');
+                drawBtn.textContent = '📍 Click Point 1...';
+                drawBtn.style.background = 'rgba(59, 130, 246, 0.2)';
+                drawBtn.style.borderColor = '#3b82f6';
+            } else {
+                drawBtn.classList.remove('active');
+                drawBtn.textContent = '✏️ Draw Line';
+                drawBtn.style.background = '';
+                drawBtn.style.borderColor = '';
+            }
+        }
+
+        function clearDrawings() {
+            if (currentTVChart && activeLineSeries.length > 0) {
+                activeLineSeries.forEach(series => {
+                    currentTVChart.removeSeries(series);
+                });
+                activeLineSeries = [];
+            }
+            firstClickedPoint = null;
+            isDrawingMode = false;
+            const drawBtn = document.getElementById('draw-line-btn');
+            if (drawBtn) {
+                drawBtn.textContent = '✏️ Draw Line';
+                drawBtn.classList.remove('active');
+                drawBtn.style.background = '';
+                drawBtn.style.borderColor = '';
+            }
+        }
+
         function renderTradingViewChart(data) {
             const chartDiv = document.getElementById('tv-chart');
             chartDiv.innerHTML = '';
+            
+            // Reset drawing states for new stock chart
+            isDrawingMode = false;
+            firstClickedPoint = null;
+            activeLineSeries = [];
+            const drawBtn = document.getElementById('draw-line-btn');
+            if (drawBtn) {
+                drawBtn.textContent = '✏️ Draw Line';
+                drawBtn.classList.remove('active');
+                drawBtn.style.background = '';
+                drawBtn.style.borderColor = '';
+            }
             
             if (data.chart_data && data.chart_data.length > 0) {
                 const chart = LightweightCharts.createChart(chartDiv, {
@@ -862,6 +918,7 @@
 
                 candlestickSeries.setData(data.chart_data);
 
+                // Add active price setup lines
                 if (data.alerts && data.alerts.length > 0) {
                     const alert = data.alerts[0];
                     if (alert.entry_price) {
@@ -895,6 +952,50 @@
                         });
                     }
                 }
+
+                // Click handler for drawing custom trendlines/support lines
+                chart.subscribeClick((param) => {
+                    if (!isDrawingMode || !param.point || !param.time) return;
+                    
+                    const yCoordinate = param.point.y;
+                    const price = candlestickSeries.coordinateToPrice(yCoordinate);
+                    if (!price) return;
+                    
+                    if (!firstClickedPoint) {
+                        // First point selected
+                        firstClickedPoint = { time: param.time, value: price };
+                        const drawBtn = document.getElementById('draw-line-btn');
+                        if (drawBtn) drawBtn.textContent = '📍 Click Point 2...';
+                    } else {
+                        // Second point selected -> draw trend line
+                        const secondClickedPoint = { time: param.time, value: price };
+                        
+                        const lineSeries = chart.addLineSeries({
+                            color: '#e11d48',
+                            lineWidth: 2,
+                            priceLineVisible: false,
+                            lastValueVisible: false,
+                        });
+                        
+                        lineSeries.setData([
+                            firstClickedPoint,
+                            secondClickedPoint
+                        ]);
+                        
+                        activeLineSeries.push(lineSeries);
+                        
+                        // Reset drawing state
+                        firstClickedPoint = null;
+                        isDrawingMode = false;
+                        const drawBtn = document.getElementById('draw-line-btn');
+                        if (drawBtn) {
+                            drawBtn.textContent = '✏️ Draw Line';
+                            drawBtn.classList.remove('active');
+                            drawBtn.style.background = '';
+                            drawBtn.style.borderColor = '';
+                        }
+                    }
+                });
 
                 currentTVChart = chart;
                 window.addEventListener('resize', () => {
