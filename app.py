@@ -425,6 +425,7 @@ def api_stock(symbol):
             
         quality_score = stock_data.get('quality_score')
         value_score = stock_data.get('value_score')
+        chart_data = []
         try:
             q_score, v_score, info = fetch_and_save_fundamentals(symbol, ticker)
             if q_score is not None:
@@ -433,16 +434,36 @@ def api_stock(symbol):
             if info:
                 fundamentals = {
                     'marketCap': info.get('marketCap'),
-                    'peRatio': info.get('trailingPE'),
-                    'pbRatio': info.get('priceToBook'),
+                    'peRatio': info.get('trailingPE') or info.get('peRatio'),
+                    'pbRatio': info.get('priceToBook') or info.get('pbRatio'),
                     'divYield': info.get('dividendYield', 0) * 100 if info.get('dividendYield') else None,
                     'high52': info.get('fiftyTwoWeekHigh'),
                     'low52': info.get('fiftyTwoWeekLow'),
                     'sector': info.get('sector'),
-                    'industry': info.get('industry')
+                    'industry': info.get('industry'),
+                    # Score card checklist fields:
+                    'roe': info.get('returnOnEquity'),
+                    'debtToEquity': info.get('debtToEquity'),
+                    'operatingMargins': info.get('operatingMargins'),
+                    'operatingCashflow': info.get('operatingCashflow'),
+                    'revenueGrowth': info.get('revenueGrowth'),
+                    'earningsGrowth': info.get('earningsGrowth'),
+                    'enterpriseToEbitda': info.get('enterpriseToEbitda'),
+                    'enterpriseToRevenue': info.get('enterpriseToRevenue') or info.get('priceToSalesTrailing12Months'),
                 }
+            
+            # Fetch daily candlestick history for interactive charts
+            hist_daily = ticker.history(period="3mo", interval="1d")
+            for index, row in hist_daily.iterrows():
+                chart_data.append({
+                    'time': index.strftime('%Y-%m-%d'),
+                    'open': float(row['Open']),
+                    'high': float(row['High']),
+                    'low': float(row['Low']),
+                    'close': float(row['Close']),
+                })
         except Exception as e:
-            log.warning(f"Failed to fetch news/fundamentals for {symbol}: {e}")
+            log.warning(f"Failed to fetch news/fundamentals/charts for {symbol}: {e}")
 
         return jsonify({
             'symbol': symbol,
@@ -453,7 +474,8 @@ def api_stock(symbol):
             'news': news,
             'fundamentals': fundamentals,
             'quality_score': quality_score,
-            'value_score': value_score
+            'value_score': value_score,
+            'chart_data': chart_data
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -634,6 +656,89 @@ def admin():
     prices.sort(key=lambda x: (not x.get('has_alert', False), x['symbol']))
         
     return render_template('admin.html', watchlist=prices)
+
+@app.route('/api/paper_trade/add', methods=['POST'])
+def api_add_paper_trade():
+    try:
+        data = request.get_json() or {}
+        symbol = data.get('symbol', '').strip().upper()
+        entry = float(data.get('entry', 0))
+        sl = float(data.get('sl', 0))
+        target = float(data.get('target', 0))
+        qty = int(data.get('qty', 0))
+        
+        if not symbol or entry <= 0 or sl <= 0 or target <= 0 or qty <= 0:
+            return jsonify({'success': False, 'error': 'Invalid trade parameters'})
+            
+        success = db.add_paper_trade(symbol, entry, sl, target, qty)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Database failed to save trade'})
+    except Exception as e:
+        log.error(f"Paper trade add error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/paper_trade/list')
+def api_list_paper_trades():
+    try:
+        trades = db.get_paper_trades()
+        prices = db.get_all_prices()
+        price_map = {p['symbol']: p for p in prices}
+        
+        updated_any = False
+        for t in trades:
+            if t['status'] == 'OPEN' and t['symbol'] in price_map:
+                current_price = price_map[t['symbol']]['latest_price']
+                if current_price:
+                    current_price = float(current_price)
+                    entry_price = float(t['entry_price'])
+                    stop_loss = float(t['stop_loss'])
+                    target = float(t['target'])
+                    qty = int(t['qty'])
+                    
+                    live_pnl = (current_price - entry_price) * qty
+                    
+                    if current_price <= stop_loss:
+                        pnl = (stop_loss - entry_price) * qty
+                        db.update_paper_trade_status(t['id'], 'LOSS', pnl)
+                        t['status'] = 'LOSS'
+                        t['pnl'] = pnl
+                        updated_any = True
+                    elif current_price >= target:
+                        pnl = (target - entry_price) * qty
+                        db.update_paper_trade_status(t['id'], 'WIN', pnl)
+                        t['status'] = 'WIN'
+                        t['pnl'] = pnl
+                        updated_any = True
+                    else:
+                        t['pnl'] = live_pnl
+                        
+        if updated_any:
+            trades = db.get_paper_trades()
+            for t in trades:
+                if t['status'] == 'OPEN' and t['symbol'] in price_map:
+                    current_price = price_map[t['symbol']]['latest_price']
+                    if current_price:
+                        t['pnl'] = (float(current_price) - float(t['entry_price'])) * int(t['qty'])
+        
+        for t in trades:
+            if t.get('created_at'):
+                ist = ZoneInfo("Asia/Kolkata")
+                utc = ZoneInfo("UTC")
+                dt = t['created_at']
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=utc)
+                t['created_at'] = dt.astimezone(ist).strftime('%m-%d %H:%M')
+            t['entry_price'] = float(t['entry_price'])
+            t['stop_loss'] = float(t['stop_loss'])
+            t['target'] = float(t['target'])
+            t['pnl'] = float(t['pnl'])
+            
+        return jsonify(trades)
+    except Exception as e:
+        log.error(f"Paper trade list error: {e}")
+        return jsonify([])
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

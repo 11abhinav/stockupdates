@@ -894,3 +894,38 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     color: #ffffff;
     box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 }
+
+/* Accordion & Calculator details styling */
+.accordion-header:hover {
+    background: var(--bg-surface-hover);
+}
+
+.accordion-header:hover #accordion-arrow {
+    color: var(--text-main);
+}
+
+/* Range input/slider styling overrides */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--glass-highlight);
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+    transition: transform 0.1s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
