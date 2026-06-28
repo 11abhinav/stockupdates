@@ -1092,7 +1092,17 @@ def admin():
                     if not hist.empty:
                         valid_bse = True
             except Exception as e:
-                log.error(f"Error validating {symbol}: {e}")
+                log.error(f"Error validating {symbol} on Yahoo: {e}")
+
+            if not valid_nse and not valid_bse:
+                try:
+                    from scanners.fyers_client import get_fyers_history
+                    df_fyers = get_fyers_history(symbol, resolution="1D", days=5, bse_code=bse_code)
+                    if df_fyers is not None and not df_fyers.empty:
+                        valid_bse = True
+                        log.info(f"Symbol {symbol} validated successfully via Fyers API.")
+                except Exception as e:
+                    log.error(f"Error validating {symbol} on Fyers: {e}")
 
             if not valid_nse and not valid_bse:
                 if bse_code and len(bse_code) == 6 and bse_code.isdigit():
