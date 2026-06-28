@@ -359,12 +359,58 @@ def index():
                     dt = dt.replace(tzinfo=utc)
                 p['last_fetched'] = dt.astimezone(ist)
                 
+        price_map = {p['symbol']: float(p['latest_price']) if p.get('latest_price') else None for p in prices}
+
         for a in recent_alerts:
             if a.get('created_at'):
                 dt = a['created_at']
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=utc)
                 a['created_at'] = dt.astimezone(ist)
+
+            # Dynamic Capital Sizing and PnL calculation
+            # High Setup Score (>=7.5): risk ₹50,000
+            # Med Setup Score (>=5.0): risk ₹25,000
+            # Low/Caution Score (<5.0): risk ₹10,000
+            a['pnl'] = 0.0
+            a['allocated_capital'] = 0.0
+            
+            entry = float(a['entry_price']) if a.get('entry_price') else None
+            sl = float(a['stop_loss']) if a.get('stop_loss') else None
+            conf = float(a['confidence']) if a.get('confidence') else 5.0
+            
+            if conf >= 7.5:
+                allocated_risk = 50000.0
+                a['risk_label'] = "₹50k Risk (High Quality Setup)"
+            elif conf >= 5.0:
+                allocated_risk = 25000.0
+                a['risk_label'] = "₹25k Risk (Medium Quality Setup)"
+            else:
+                allocated_risk = 10000.0
+                a['risk_label'] = "₹10k Risk (Speculative Setup)"
+                
+            risk_per_share = float(a['risk_per_share']) if a.get('risk_per_share') else (entry - sl if entry and sl else 1.0)
+            
+            if entry and sl and risk_per_share > 0:
+                qty = int(allocated_risk / risk_per_share)
+                a['position_size_hint'] = qty # override default flat 10k sized quantity
+                a['allocated_capital'] = entry * qty
+                
+                if a.get('status') == 'CLOSED_WIN':
+                    target = entry
+                    if a.get('highest_hit') == 'T3' and a.get('t3_price'):
+                        target = float(a['t3_price'])
+                    elif a.get('highest_hit') == 'T2' and a.get('t2_price'):
+                        target = float(a['t2_price'])
+                    elif a.get('t1_price'):
+                        target = float(a['t1_price'])
+                    a['pnl'] = (target - entry) * qty
+                elif a.get('status') == 'CLOSED_LOSS':
+                    a['pnl'] = (sl - entry) * qty
+                elif a.get('status') == 'OPEN' or not a.get('status'):
+                    current_price = price_map.get(a['symbol'])
+                    if current_price:
+                        a['pnl'] = (current_price - entry) * qty
             
         # Sort prices: those with alerts first, then alphabetically
         prices.sort(key=lambda x: (not x.get('has_alert', False), x['symbol']))
@@ -396,6 +442,47 @@ def api_stock(symbol):
             return jsonify({'error': 'Stock not found'}), 404
             
         alerts = db.get_stock_alerts(symbol, limit=50)
+        current_price = float(stock_data['latest_price']) if stock_data.get('latest_price') else None
+        
+        for a in alerts:
+            a['pnl'] = 0.0
+            a['allocated_capital'] = 0.0
+            
+            entry = float(a['entry_price']) if a.get('entry_price') else None
+            sl = float(a['stop_loss']) if a.get('stop_loss') else None
+            conf = float(a['confidence']) if a.get('confidence') else 5.0
+            
+            if conf >= 7.5:
+                allocated_risk = 50000.0
+                a['risk_label'] = "₹50k Risk (High Quality Setup)"
+            elif conf >= 5.0:
+                allocated_risk = 25000.0
+                a['risk_label'] = "₹25k Risk (Medium Quality Setup)"
+            else:
+                allocated_risk = 10000.0
+                a['risk_label'] = "₹10k Risk (Speculative Setup)"
+                
+            risk_per_share = float(a['risk_per_share']) if a.get('risk_per_share') else (entry - sl if entry and sl else 1.0)
+            
+            if entry and sl and risk_per_share > 0:
+                qty = int(allocated_risk / risk_per_share)
+                a['position_size_hint'] = qty
+                a['allocated_capital'] = entry * qty
+                
+                if a.get('status') == 'CLOSED_WIN':
+                    target = entry
+                    if a.get('highest_hit') == 'T3' and a.get('t3_price'):
+                        target = float(a['t3_price'])
+                    elif a.get('highest_hit') == 'T2' and a.get('t2_price'):
+                        target = float(a['t2_price'])
+                    elif a.get('t1_price'):
+                        target = float(a['t1_price'])
+                    a['pnl'] = (target - entry) * qty
+                elif a.get('status') == 'CLOSED_LOSS':
+                    a['pnl'] = (sl - entry) * qty
+                elif a.get('status') == 'OPEN' or not a.get('status'):
+                    if current_price:
+                        a['pnl'] = (current_price - entry) * qty
         
         # Fetch news and fundamentals
         news = []
@@ -657,88 +744,7 @@ def admin():
         
     return render_template('admin.html', watchlist=prices)
 
-@app.route('/api/paper_trade/add', methods=['POST'])
-def api_add_paper_trade():
-    try:
-        data = request.get_json() or {}
-        symbol = data.get('symbol', '').strip().upper()
-        entry = float(data.get('entry', 0))
-        sl = float(data.get('sl', 0))
-        target = float(data.get('target', 0))
-        qty = int(data.get('qty', 0))
-        
-        if not symbol or entry <= 0 or sl <= 0 or target <= 0 or qty <= 0:
-            return jsonify({'success': False, 'error': 'Invalid trade parameters'})
-            
-        success = db.add_paper_trade(symbol, entry, sl, target, qty)
-        if success:
-            return jsonify({'success': True})
-        else:
-            return jsonify({'success': False, 'error': 'Database failed to save trade'})
-    except Exception as e:
-        log.error(f"Paper trade add error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/api/paper_trade/list')
-def api_list_paper_trades():
-    try:
-        trades = db.get_paper_trades()
-        prices = db.get_all_prices()
-        price_map = {p['symbol']: p for p in prices}
-        
-        updated_any = False
-        for t in trades:
-            if t['status'] == 'OPEN' and t['symbol'] in price_map:
-                current_price = price_map[t['symbol']]['latest_price']
-                if current_price:
-                    current_price = float(current_price)
-                    entry_price = float(t['entry_price'])
-                    stop_loss = float(t['stop_loss'])
-                    target = float(t['target'])
-                    qty = int(t['qty'])
-                    
-                    live_pnl = (current_price - entry_price) * qty
-                    
-                    if current_price <= stop_loss:
-                        pnl = (stop_loss - entry_price) * qty
-                        db.update_paper_trade_status(t['id'], 'LOSS', pnl)
-                        t['status'] = 'LOSS'
-                        t['pnl'] = pnl
-                        updated_any = True
-                    elif current_price >= target:
-                        pnl = (target - entry_price) * qty
-                        db.update_paper_trade_status(t['id'], 'WIN', pnl)
-                        t['status'] = 'WIN'
-                        t['pnl'] = pnl
-                        updated_any = True
-                    else:
-                        t['pnl'] = live_pnl
-                        
-        if updated_any:
-            trades = db.get_paper_trades()
-            for t in trades:
-                if t['status'] == 'OPEN' and t['symbol'] in price_map:
-                    current_price = price_map[t['symbol']]['latest_price']
-                    if current_price:
-                        t['pnl'] = (float(current_price) - float(t['entry_price'])) * int(t['qty'])
-        
-        for t in trades:
-            if t.get('created_at'):
-                ist = ZoneInfo("Asia/Kolkata")
-                utc = ZoneInfo("UTC")
-                dt = t['created_at']
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=utc)
-                t['created_at'] = dt.astimezone(ist).strftime('%m-%d %H:%M')
-            t['entry_price'] = float(t['entry_price'])
-            t['stop_loss'] = float(t['stop_loss'])
-            t['target'] = float(t['target'])
-            t['pnl'] = float(t['pnl'])
-            
-        return jsonify(trades)
-    except Exception as e:
-        log.error(f"Paper trade list error: {e}")
-        return jsonify([])
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

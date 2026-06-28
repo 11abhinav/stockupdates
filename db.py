@@ -139,21 +139,6 @@ def init_db():
                     END $$;
                 """)
                 
-                # Create paper trades table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS stockupdates.paper_trades (
-                        id SERIAL PRIMARY KEY,
-                        symbol VARCHAR(50),
-                        entry_price NUMERIC(10, 2),
-                        stop_loss NUMERIC(10, 2),
-                        target NUMERIC(10, 2),
-                        qty INTEGER,
-                        status VARCHAR(20) DEFAULT 'OPEN',
-                        pnl NUMERIC(10, 2) DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                
                 conn.commit()
                 log.info("Database initialized successfully.")
     except Exception as e:
@@ -405,58 +390,6 @@ def get_stock_alerts(symbol, limit=50):
     except Exception as e:
         log.error(f"Error fetching stock alerts for {symbol}: {e}")
         return []
-
-def add_paper_trade(symbol, entry, sl, target, qty):
-    if not DATABASE_URL:
-        return False
-    try:
-        with get_db_connection() as conn:
-            if not conn: return False
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO stockupdates.paper_trades (symbol, entry_price, stop_loss, target, qty, status)
-                    VALUES (%s, %s, %s, %s, %s, 'OPEN')
-                """, (symbol.upper(), entry, sl, target, qty))
-                conn.commit()
-                return True
-    except Exception as e:
-        log.error(f"Error adding paper trade for {symbol}: {e}")
-        return False
-
-def get_paper_trades():
-    if not DATABASE_URL:
-        return []
-    try:
-        with get_db_connection() as conn:
-            if not conn: return []
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT id, symbol, entry_price, stop_loss, target, qty, status, pnl, created_at
-                    FROM stockupdates.paper_trades
-                    ORDER BY created_at DESC;
-                """)
-                return cur.fetchall()
-    except Exception as e:
-        log.error(f"Error fetching paper trades: {e}")
-        return []
-
-def update_paper_trade_status(trade_id, status, pnl):
-    if not DATABASE_URL:
-        return False
-    try:
-        with get_db_connection() as conn:
-            if not conn: return False
-            with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE stockupdates.paper_trades
-                    SET status = %s, pnl = %s
-                    WHERE id = %s
-                """, (status, pnl, trade_id))
-                conn.commit()
-                return True
-    except Exception as e:
-        log.error(f"Error updating paper trade {trade_id}: {e}")
-        return False
 
 if __name__ == "__main__":
     init_db()
