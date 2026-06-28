@@ -322,7 +322,6 @@ def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 def compute_sector_medians(all_stocks):
-    import statistics
     sector_data = {}
     for stock in all_stocks:
         sector = stock.get('sector')
