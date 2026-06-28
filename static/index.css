@@ -643,8 +643,10 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 
 /* Admin Container */
 .admin-container {
-    max-width: 500px;
+    width: 100%;
+    max-width: 100%;
     margin: 0 auto;
+    padding: 24px;
 }
 
 .admin-card {
