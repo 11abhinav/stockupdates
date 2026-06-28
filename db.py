@@ -108,6 +108,19 @@ def init_db():
                     );
                 """)
                 
+                # Add new valuation columns to prices table
+                cur.execute("""
+                    ALTER TABLE stockupdates.prices 
+                    ADD COLUMN IF NOT EXISTS bear_value NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS bull_value NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS valuation_mode VARCHAR(50),
+                    ADD COLUMN IF NOT EXISTS valuation_confidence VARCHAR(50),
+                    ADD COLUMN IF NOT EXISTS peer_count INTEGER,
+                    ADD COLUMN IF NOT EXISTS target_multiple NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS current_multiple NUMERIC(10, 2),
+                    ADD COLUMN IF NOT EXISTS peer_multiple NUMERIC(10, 2);
+                """)
+                
                 # Add new columns to existing alerts table just in case it already exists
                 alter_queries = [
                     "ALTER TABLE stockupdates.alerts ADD COLUMN IF NOT EXISTS entry_price NUMERIC(10, 2);",
@@ -335,7 +348,10 @@ def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield
     except Exception as e:
         log.error(f"Error updating fundamental metrics for {symbol}: {e}")
 
-def update_valuation_fields(symbol, value_score, fair_value, valuation_label):
+def update_valuation_fields(symbol, value_score, fair_value, valuation_label,
+                            bear_value=None, bull_value=None, valuation_mode=None,
+                            valuation_confidence=None, peer_count=None, target_multiple=None,
+                            current_multiple=None, peer_multiple=None):
     if not DATABASE_URL:
         return
     try:
@@ -344,14 +360,27 @@ def update_valuation_fields(symbol, value_score, fair_value, valuation_label):
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.prices (
-                        symbol, value_score, fair_value, valuation_label, last_fetched
-                    ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        symbol, value_score, fair_value, valuation_label, 
+                        bear_value, bull_value, valuation_mode, valuation_confidence,
+                        peer_count, target_multiple, current_multiple, peer_multiple,
+                        last_fetched
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (symbol) DO UPDATE 
                     SET value_score = EXCLUDED.value_score,
                         fair_value = EXCLUDED.fair_value,
                         valuation_label = EXCLUDED.valuation_label,
+                        bear_value = EXCLUDED.bear_value,
+                        bull_value = EXCLUDED.bull_value,
+                        valuation_mode = EXCLUDED.valuation_mode,
+                        valuation_confidence = EXCLUDED.valuation_confidence,
+                        peer_count = EXCLUDED.peer_count,
+                        target_multiple = EXCLUDED.target_multiple,
+                        current_multiple = EXCLUDED.current_multiple,
+                        peer_multiple = EXCLUDED.peer_multiple,
                         last_fetched = CURRENT_TIMESTAMP;
-                """, (symbol.upper(), value_score, fair_value, valuation_label))
+                """, (symbol.upper(), value_score, fair_value, valuation_label,
+                        bear_value, bull_value, valuation_mode, valuation_confidence,
+                        peer_count, target_multiple, current_multiple, peer_multiple))
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating valuation fields for {symbol}: {e}")
