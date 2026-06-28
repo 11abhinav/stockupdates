@@ -1039,6 +1039,13 @@ def admin():
         symbol = request.form.get('symbol', '').strip().upper()
         bse_code = request.form.get('bse_code', '').strip()
         
+        if not symbol and bse_code:
+            symbol = str(bse_code)
+            
+        if not symbol and not bse_code:
+            flash("Error: Either NSE Symbol or BSE Code is required.", "error")
+            return redirect(url_for('admin'))
+        
         if symbol:
             # Check for duplicates
             watchlist = db.get_watchlist()

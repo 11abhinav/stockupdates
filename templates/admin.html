@@ -667,8 +667,8 @@
 
                 <form method="POST" action="/admin" id="add-form">
                     <div class="form-group">
-                        <label for="symbol">NSE Symbol *</label>
-                        <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE (Type to search...)" required autocomplete="off">
+                        <label for="symbol">NSE Symbol (Required if BSE Code is empty)</label>
+                        <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE (Type to search...)" autocomplete="off">
                         <div class="suggestions" id="suggestions-box"></div>
                     </div>
                     
@@ -1371,6 +1371,15 @@
         
         pollNotifications();
         scheduleNotifications();
+
+        document.getElementById('add-form').addEventListener('submit', function(e) {
+            const symbol = document.getElementById('symbol').value.trim();
+            const bse_code = document.getElementById('bse_code').value.trim();
+            if (!symbol && !bse_code) {
+                e.preventDefault();
+                alert('Please provide either an NSE Symbol or a BSE Code.');
+            }
+        });
     </script>
 </body>
 </html>
