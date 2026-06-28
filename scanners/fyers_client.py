@@ -90,7 +90,7 @@ def get_fyers_instance():
             "response_type": "code",
             "create_cookie": True
         }
-        res4 = session.post("https://api.fyers.in/api/v2/token", json=payload4, headers=headers).json()
+        res4 = session.post("https://api-t1.fyers.in/api/v3/token", json=payload4, headers=headers).json()
         log.info(f"Step 4 response: {res4}")
         if 'Url' not in res4:
             log.error(f"Fyers Step 4 auth code failed: {res4}")
