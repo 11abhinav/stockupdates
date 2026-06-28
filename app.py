@@ -1071,6 +1071,38 @@ def api_scanner_status():
     from scanners.health import get_all_status
     return jsonify(get_all_status())
 
+@app.route('/api/admin/fyers_status', methods=['GET'])
+def api_fyers_status():
+    """Check if Fyers API is configured and working."""
+    import os
+    client_id = os.environ.get("FYERS_CLIENT_ID")
+    if not client_id:
+        return jsonify({"status": "not_configured", "message": "FYERS_CLIENT_ID not set in environment variables."})
+    
+    missing = []
+    for var in ["FYERS_SECRET_KEY", "FYERS_TOTP_SECRET", "FYERS_PIN", "FYERS_USER_ID"]:
+        if not os.environ.get(var):
+            missing.append(var)
+    if missing:
+        return jsonify({"status": "incomplete", "message": f"Missing variables: {', '.join(missing)}", "client_id": client_id})
+    
+    try:
+        from scanners.fyers_client import get_fyers_instance
+        fyers = get_fyers_instance()
+        if fyers:
+            # Try a simple profile call to verify token works
+            profile = fyers.get_profile()
+            return jsonify({
+                "status": "connected",
+                "message": "Fyers API is authenticated and working!",
+                "client_id": client_id,
+                "profile": profile.get("data", {})
+            })
+        else:
+            return jsonify({"status": "login_failed", "message": "Fyers login failed. Check your TOTP secret and PIN.", "client_id": client_id})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Fyers connection error: {str(e)}", "client_id": client_id})
+
 @app.route('/api/admin/run_scanner/<name>', methods=['POST'])
 def api_run_scanner(name):
     """Manually trigger a scanner run in the background."""
