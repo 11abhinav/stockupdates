@@ -651,7 +651,36 @@
         </div>
         
         <div class="admin-container" style="width: 100%; overflow-y: auto;">
-            <!-- System Diagnostic Section -->
+            <!-- Add Stock Card -->
+            <div class="admin-card" style="margin-bottom: 32px;">
+                <h2>Add New Stock</h2>
+                
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                  {% if messages %}
+                    <div class="flash-messages">
+                    {% for category, message in messages %}
+                      <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                    </div>
+                  {% endif %}
+                {% endwith %}
+
+                <form method="POST" action="/admin" id="add-form">
+                    <div class="form-group">
+                        <label for="symbol">NSE Symbol *</label>
+                        <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE (Type to search...)" required autocomplete="off">
+                        <div class="suggestions" id="suggestions-box"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="bse_code">BSE Code (Optional for Announcements)</label>
+                        <input type="text" id="bse_code" name="bse_code" placeholder="e.g. 500325">
+                    </div>
+
+                    <button type="submit" class="btn-primary">Add to Watchlist</button>
+                </form>
+            </div>
+
             <!-- System Diagnostic Section -->
             <div class="admin-card" style="padding: 0; overflow: hidden; margin-bottom: 32px;">
                 <div id="diagnostics-header"
@@ -756,35 +785,7 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Add Stock Card -->
-            <div class="admin-card">
-                <h2>Add New Stock</h2>
-                
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                  {% if messages %}
-                    <div class="flash-messages">
-                    {% for category, message in messages %}
-                      <div class="flash-message flash-{{ category }}">{{ message }}</div>
-                    {% endfor %}
-                    </div>
-                  {% endif %}
-                {% endwith %}
-
-                <form method="POST" action="/admin" id="add-form">
-                    <div class="form-group">
-                        <label for="symbol">NSE Symbol *</label>
-                        <input type="text" id="symbol" name="symbol" placeholder="e.g. RELIANCE (Type to search...)" required autocomplete="off">
-                        <div class="suggestions" id="suggestions-box"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="bse_code">BSE Code (Optional for Announcements)</label>
-                        <input type="text" id="bse_code" name="bse_code" placeholder="e.g. 500325">
-                    </div>
-
-                    <button type="submit" class="btn-primary">Add to Watchlist</button>
-                </form>
+                </div>
             </div>
         </div>
     </div>
