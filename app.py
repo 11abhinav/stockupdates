@@ -1024,7 +1024,7 @@ if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
     
     # Spawn background thread to backfill missing scores for existing stocks
     threading.Thread(target=backfill_missing_fundamental_scores, daemon=True).start()
-atexit.register(lambda: scheduler.shutdown(wait=False))
+
 
 @app.route('/')
 def index():
