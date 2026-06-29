@@ -1052,8 +1052,9 @@
             cards.forEach(card => {
                 const pnl = parseFloat(card.dataset.pnl || 0);
                 const status = card.dataset.status;
+                const type = card.dataset.type;
                 
-                if (status) {
+                if (status && status !== 'None' && type !== 'NEWS' && type !== 'NOTICE') {
                     total++;
                     if (status === 'CLOSED_WIN') wins++;
                     if (status === 'CLOSED_LOSS') losses++;

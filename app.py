@@ -94,7 +94,11 @@ def score_financial_quality(info, financials):
                 rev_latest = norm_num(financials.loc['Total Revenue'].iloc[0])
                 rev_3y = norm_num(financials.loc['Total Revenue'].iloc[3])
                 if rev_3y and rev_latest and rev_3y > 0:
-                    sales_cagr = ((rev_latest / rev_3y) ** (1/3)) - 1
+                    ratio = rev_latest / rev_3y
+                    if ratio > 0:
+                        sales_cagr = (ratio ** (1/3)) - 1
+                    else:
+                        sales_cagr = -1.0
         except Exception as e:
             sym = info.get('symbol', 'Unknown')
             log.warning(f"Failed to calculate revenue CAGR for {sym}: {e}")
@@ -122,7 +126,11 @@ def score_financial_quality(info, financials):
                 prof_latest = norm_num(financials.loc['Net Income'].iloc[0])
                 prof_3y = norm_num(financials.loc['Net Income'].iloc[3])
                 if prof_3y and prof_latest and prof_3y > 0:
-                    profit_cagr = ((prof_latest / prof_3y) ** (1/3)) - 1
+                    ratio = prof_latest / prof_3y
+                    if ratio > 0:
+                        profit_cagr = (ratio ** (1/3)) - 1
+                    else:
+                        profit_cagr = -1.0
         except Exception as e:
             sym = info.get('symbol', 'Unknown')
             log.warning(f"Failed to calculate earnings CAGR for {sym}: {e}")
@@ -197,7 +205,11 @@ def score_nonfinancial_quality(info, financials):
                 rev_latest = norm_num(financials.loc['Total Revenue'].iloc[0])
                 rev_3y = norm_num(financials.loc['Total Revenue'].iloc[3])
                 if rev_3y and rev_latest and rev_3y > 0:
-                    sales_cagr = ((rev_latest / rev_3y) ** (1/3)) - 1
+                    ratio = rev_latest / rev_3y
+                    if ratio > 0:
+                        sales_cagr = (ratio ** (1/3)) - 1
+                    else:
+                        sales_cagr = -1.0
         except Exception as e:
             sym = info.get('symbol', 'Unknown')
             log.warning(f"Failed to calculate revenue CAGR for {sym}: {e}")
@@ -225,7 +237,11 @@ def score_nonfinancial_quality(info, financials):
                 prof_latest = norm_num(financials.loc['Net Income'].iloc[0])
                 prof_3y = norm_num(financials.loc['Net Income'].iloc[3])
                 if prof_3y and prof_latest and prof_3y > 0:
-                    profit_cagr = ((prof_latest / prof_3y) ** (1/3)) - 1
+                    ratio = prof_latest / prof_3y
+                    if ratio > 0:
+                        profit_cagr = (ratio ** (1/3)) - 1
+                    else:
+                        profit_cagr = -1.0
         except Exception as e:
             sym = info.get('symbol', 'Unknown')
             log.warning(f"Failed to calculate earnings CAGR for {sym}: {e}")
@@ -762,7 +778,9 @@ def refresh_watchlist_fundamentals(symbols):
     watchlist = db.get_watchlist()
     bse_map = {w['symbol']: w['bse_code'] for w in watchlist}
     
-    for sym in symbols:
+    total_syms = len(symbols)
+    for idx, sym in enumerate(symbols):
+        log.info(f"Force Refresh [{idx+1}/{total_syms}]: Fetching metrics for {sym}")
         bse_code = bse_map.get(sym)
         q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(sym, bse_code=bse_code)
         if current_stock:
@@ -773,7 +791,9 @@ def refresh_watchlist_fundamentals(symbols):
     sector_medians = compute_sector_medians(all_stocks)
     
     results = []
-    for sym, q_score, current_stock, current_price, info in all_rows:
+    total_rows = len(all_rows)
+    for idx, (sym, q_score, current_stock, current_price, info) in enumerate(all_rows):
+        log.info(f"Force Refresh [{idx+1}/{total_rows}]: Scoring {sym}")
         val_output = build_valuation_output(current_stock, current_price, sector_medians)
         v_score = val_output["value_score"]
         
@@ -947,7 +967,7 @@ def background_update_all_watchlist_prices():
                         change_pct = ((live_price - prev_close) / prev_close) * 100
                         db.update_price(s, live_price, change_pct)
                 except Exception as e:
-                    pass
+                    log.warning(f"Error updating CMP for {s} in background task: {e}")
     except Exception as e:
         log.error(f"Error in background watchlist CMP update: {e}")
 

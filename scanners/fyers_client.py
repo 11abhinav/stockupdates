@@ -145,6 +145,7 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
         res_code = resolution
         
     def _fetch_for_fyers_symbol(fsym):
+        import time
         data = {
             "symbol": fsym,
             "resolution": str(res_code),
@@ -153,17 +154,32 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
             "range_to": end_date.strftime("%Y-%m-%d"),
             "cont_flag": "1"
         }
-        try:
-            res = fyers.history(data=data)
-            if res.get('s') == 'ok' and res.get('candles'):
-                candles = res['candles']
-                df = pd.DataFrame(candles, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
-                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
-                df.set_index('timestamp', inplace=True)
-                return df
-        except Exception as e:
-            log.error(f"Error fetching Fyers data for {fsym}: {e}")
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = fyers.history(data=data)
+                if res.get('s') == 'ok' and res.get('candles'):
+                    candles = res['candles']
+                    df = pd.DataFrame(candles, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+                    df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Kolkata')
+                    df.set_index('timestamp', inplace=True)
+                    return df
+                elif res.get('s') == 'error':
+                    code = res.get('code')
+                    if code == 429:
+                        sleep_time = (attempt + 1) * 3  # Backoff: 3s, 6s, 9s
+                        log.warning(f"Fyers rate limit (429) for {fsym}. Retrying in {sleep_time}s (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        log.error(f"Fyers API error for {fsym}: code={code}, message={res.get('message')}, full_response={res}")
+                        return None
+            except Exception as e:
+                log.error(f"Error fetching Fyers data for {fsym}: {e}")
+                return None
+                
         return None
 
     # 1. Try NSE

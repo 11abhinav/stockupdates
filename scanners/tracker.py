@@ -33,6 +33,7 @@ def resolve_open_alerts():
             bse = alert.get('bse_code')
             df = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5, bse_code=bse)
             if df is None or df.empty:
+                log.warning(f"Tracker: No 5m data returned for {symbol} (Alert {alert_id})")
                 continue
                 
             # Filter data to only include candles AFTER the alert was created

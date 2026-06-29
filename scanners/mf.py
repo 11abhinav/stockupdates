@@ -27,8 +27,10 @@ def run():
         bse = row.get('bse_code')
         try:
             # 1. Fetch Daily Data (Trend check)
-            daily_df = fetch_intraday_cached(symbol, period="6mo", interval="1d", ttl_minutes=60, bse_code=bse)
+            daily_df = fetch_intraday_cached(symbol, period="1y", interval="1d", ttl_minutes=60, bse_code=bse)
             if daily_df is None or len(daily_df) < 200:
+                reason = "None returned" if daily_df is None else f"only {len(daily_df)} rows"
+                log.warning(f"[{symbol}] Data stale: {reason} (need 200)")
                 health.record_stock_stale("MF", symbol)
                 continue
                 
@@ -46,6 +48,8 @@ def run():
             # 2. Fetch 1H Data (Breakout Structure & Volume)
             hourly_df = fetch_intraday_cached(symbol, period="1mo", interval="1h", ttl_minutes=15, bse_code=bse)
             if hourly_df is None or len(hourly_df) < 20:
+                reason = "None returned" if hourly_df is None else f"only {len(hourly_df)} rows"
+                log.warning(f"[{symbol}] Hourly data stale: {reason} (need 20)")
                 health.record_stock_stale("MF", symbol)
                 continue
                 

@@ -83,5 +83,5 @@ def run_news_scan():
 def run_bse_scan():
     log.info("Running BSE Scanner / News Scanner...")
     # Add BSE logic here. For brevity, using RSS fallback approach for all active symbols.
-    run_news_scan() # Placeholder calling news scan for now, since it covers catalyst checks.
+    pass # Removed run_news_scan() to prevent duplicates as it runs separately.
 
