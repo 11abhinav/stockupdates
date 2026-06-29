@@ -1661,7 +1661,7 @@ _is_refreshing = False
 
 @app.route('/api/admin/force_refresh', methods=['GET', 'POST'])
 def api_force_refresh():
-    """Endpoint to manually trigger a full watchlist fundamental refresh on Railway."""
+    """Endpoint to manually trigger a full watchlist fundamentals and valuation refresh on Railway."""
     global _is_refreshing
     
     with _force_refresh_lock:
@@ -1703,7 +1703,6 @@ def _shutdown_scheduler():
     except Exception as e:
         log.warning(f"Scheduler shutdown skipped: {e}")
 
-import atexit
 atexit.register(_shutdown_scheduler)
 
 if __name__ == "__main__":
