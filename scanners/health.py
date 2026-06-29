@@ -28,7 +28,6 @@ def _get_scanner(name):
             "total_count": 0,
             "critical_error": None,
             "non_critical_errors": {},    # key -> {count, last_occurrence, symbol}
-            "acknowledged_errors": set(),
             "data_source": None,         # "fyers" or "yahoo"
         }
     return _registry[name]
@@ -44,7 +43,7 @@ def begin_run(scanner_name):
         s["stale_count"] = 0
         s["total_count"] = 0
         s["critical_error"] = None
-        # Keep non-critical errors from previous runs (they accumulate until acknowledged)
+        s["non_critical_errors"].clear()  # Clear non-critical errors so we reflect only the latest status
 
 
 def record_stock_scanned(scanner_name):
@@ -77,8 +76,6 @@ def record_stock_error(scanner_name, symbol, error_msg):
         s["total_count"] += 1
         # Truncate error message for grouping
         key = str(error_msg)[:120]
-        if key in s["acknowledged_errors"]:
-            return  # Already acknowledged, don't re-add
         if key in s["non_critical_errors"]:
             s["non_critical_errors"][key]["count"] += 1
             s["non_critical_errors"][key]["last_occurrence"] = _now().isoformat()
@@ -120,7 +117,6 @@ def acknowledge_error(scanner_name, error_key):
     """Admin acknowledges and removes a non-critical error."""
     with _lock:
         s = _get_scanner(scanner_name)
-        s["acknowledged_errors"].add(error_key)
         s["non_critical_errors"].pop(error_key, None)
 
 
@@ -128,10 +124,10 @@ def clear_all_errors(scanner_name):
     """Admin clears all non-critical errors."""
     with _lock:
         s = _get_scanner(scanner_name)
-        keys = list(s["non_critical_errors"].keys())
-        for k in keys:
-            s["acknowledged_errors"].add(k)
         s["non_critical_errors"].clear()
+        if s["status"] in ("DATA_STALE", "DOWN"):
+            s["status"] = "IDLE"
+            s["critical_error"] = None
 
 
 def set_data_source(scanner_name, source):
