@@ -95,6 +95,7 @@ def init_db():
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS stockupdates.universe (
                         symbol VARCHAR(50) PRIMARY KEY,
+                        bse_code VARCHAR(20),
                         sector VARCHAR(100),
                         pe NUMERIC(10, 2),
                         pb NUMERIC(10, 2),
@@ -106,6 +107,7 @@ def init_db():
                         tt_indpb NUMERIC(10, 2),
                         last_refreshed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
+                    ALTER TABLE stockupdates.universe ADD COLUMN IF NOT EXISTS bse_code VARCHAR(20);
                 """)
                 
                 # Create alerts table
@@ -534,7 +536,7 @@ def get_stock_alerts(symbol, limit=50):
         log.error(f"Error fetching stock alerts for {symbol}: {e}")
         return []
 
-def upsert_universe_stock(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb):
+def upsert_universe_stock(symbol, bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb):
     if not DATABASE_URL:
         return
     try:
@@ -543,10 +545,11 @@ def upsert_universe_stock(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO stockupdates.universe (
-                        symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb, last_refreshed
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                        symbol, bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb, last_refreshed
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (symbol) DO UPDATE 
-                    SET sector = EXCLUDED.sector,
+                    SET bse_code = COALESCE(EXCLUDED.bse_code, stockupdates.universe.bse_code),
+                        sector = EXCLUDED.sector,
                         pe = EXCLUDED.pe,
                         pb = EXCLUDED.pb,
                         roe = EXCLUDED.roe,
@@ -556,7 +559,7 @@ def upsert_universe_stock(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_
                         tt_indpe = EXCLUDED.tt_indpe,
                         tt_indpb = EXCLUDED.tt_indpb,
                         last_refreshed = CURRENT_TIMESTAMP;
-                """, (symbol.upper(), sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb))
+                """, (symbol.upper(), bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb))
                 conn.commit()
     except Exception as e:
         log.error(f"Error upserting universe stock {symbol}: {e}")
@@ -585,8 +588,8 @@ def get_universe_symbols():
         with get_db_connection() as conn:
             if not conn: return []
             with conn.cursor() as cur:
-                cur.execute("SELECT symbol FROM stockupdates.universe ORDER BY symbol;")
-                return [row[0] for row in cur.fetchall()]
+                cur.execute("SELECT symbol, bse_code FROM stockupdates.universe ORDER BY symbol;")
+                return cur.fetchall()
     except Exception as e:
         log.error(f"Error fetching universe symbols: {e}")
         return []

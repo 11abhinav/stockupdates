@@ -680,7 +680,7 @@ def fetch_tickertape_industry_metrics(symbol):
         log.warning(f"Failed to fetch Tickertape metrics for {symbol}: {e}")
     return None, None
 
-def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
+def extract_raw_metrics(symbol, bse_code=None, ticker=None):
     try:
         import yfinance as yf
         if not ticker:
@@ -690,8 +690,6 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
         info = ticker.info
         financials = ticker.financials
         
-        q_score = calculate_quality_score(info, financials)
-        
         sector = info.get('sector')
         pe = norm_num(info.get('trailingPE') or info.get('peRatio'))
         pb = norm_num(info.get('priceToBook') or info.get('pbRatio'))
@@ -700,23 +698,20 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
         bvps = norm_num(info.get('bookValue'))
         div_yield = norm_pct(info.get('dividendYield') or info.get('divYield'))
         current_price = norm_num(info.get('currentPrice') or info.get('regularMarketPrice'))
+        revenue_growth = norm_pct(info.get('revenueGrowth'))
         
-        # Yahoo Finance often omits trailingPE, so we can calculate it manually if we have EPS and price
+        # Yahoo Finance fallback calcs
         if pe is None and eps is not None and eps > 0 and current_price is not None:
             pe = current_price / eps
             
-        # Same for Price to Book
         if pb is None and bvps is not None and bvps > 0 and current_price is not None:
             pb = current_price / bvps
             
         tt_indpe, tt_indpb = fetch_tickertape_industry_metrics(symbol)
-            
-        db.update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb)
         
-        revenue_growth = norm_pct(info.get('revenueGrowth'))
-        
-        current_stock = {
-            'symbol': symbol,
+        return {
+            'info': info,
+            'financials': financials,
             'sector': sector,
             'pe': pe,
             'pb': pb,
@@ -724,14 +719,43 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
             'eps': eps,
             'bvps': bvps,
             'div_yield': div_yield,
+            'current_price': current_price,
+            'revenue_growth': revenue_growth,
             'tt_indpe': tt_indpe,
-            'tt_indpb': tt_indpb,
-            'revenue_growth': revenue_growth
+            'tt_indpb': tt_indpb
         }
-        return q_score, current_stock, current_price, info
     except Exception as e:
-        log.warning(f"Failed to fetch raw metrics for {symbol}: {e}")
+        log.warning(f"Failed to extract raw metrics for {symbol}: {e}")
+        return None
+
+def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
+    extracted = extract_raw_metrics(symbol, bse_code, ticker)
+    if not extracted:
         return None, None, None, None
+        
+    q_score = calculate_quality_score(extracted['info'], extracted['financials'])
+    
+    db.update_fundamental_metrics(
+        symbol, extracted['sector'], extracted['pe'], extracted['pb'], 
+        extracted['roe'], extracted['eps'], extracted['bvps'], 
+        extracted['div_yield'], extracted['tt_indpe'], extracted['tt_indpb']
+    )
+    
+    current_stock = {
+        'symbol': symbol,
+        'sector': extracted['sector'],
+        'pe': extracted['pe'],
+        'pb': extracted['pb'],
+        'roe': extracted['roe'],
+        'eps': extracted['eps'],
+        'bvps': extracted['bvps'],
+        'div_yield': extracted['div_yield'],
+        'tt_indpe': extracted['tt_indpe'],
+        'tt_indpb': extracted['tt_indpb'],
+        'revenue_growth': extracted['revenue_growth']
+    }
+    
+    return q_score, current_stock, extracted['current_price'], extracted['info']
 
 def refresh_watchlist_fundamentals(symbols):
     all_rows = []
@@ -841,21 +865,23 @@ def seed_universe():
     import csv
     import os
     try:
-        if db.get_universe_symbols():
-            return
+        if len(db.get_universe_symbols()) > 0:
+            return False
         
         filepath = os.path.join(os.path.dirname(__file__), 'data', 'nifty500.csv')
         if not os.path.exists(filepath):
             log.warning(f"Universe seed file not found: {filepath}")
-            return
+            return False
             
         with open(filepath, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 symbol = row.get('Symbol')
+                bse_code = row.get('BSE_Code')
                 if symbol:
-                    db.upsert_universe_stock(symbol, None, None, None, None, None, None, None, None, None)
+                    db.upsert_universe_stock(symbol, bse_code, None, None, None, None, None, None, None, None, None)
         log.info("Successfully seeded stockupdates.universe table.")
+        return True
     except Exception as e:
         log.error(f"Failed to seed universe table: {e}")
 
@@ -865,33 +891,20 @@ def refresh_universe_benchmarks():
         log.info("Universe table empty, nothing to refresh.")
         return
         
-    for sym in symbols:
+    for row in symbols:
         try:
-            import yfinance as yf
-            ticker = yf.Ticker(f"{sym}.NS")
-            info = ticker.info
-            
-            sector = info.get('sector')
-            pe = norm_num(info.get('trailingPE') or info.get('peRatio'))
-            pb = norm_num(info.get('priceToBook') or info.get('pbRatio'))
-            roe = norm_pct(info.get('returnOnEquity'))
-            eps = norm_num(info.get('trailingEps') or info.get('forwardEps'))
-            bvps = norm_num(info.get('bookValue'))
-            div_yield = norm_pct(info.get('dividendYield') or info.get('divYield'))
-            current_price = norm_num(info.get('currentPrice') or info.get('regularMarketPrice'))
-            
-            if pe is None and eps is not None and eps > 0 and current_price is not None:
-                pe = current_price / eps
-                
-            if pb is None and bvps is not None and bvps > 0 and current_price is not None:
-                pb = current_price / bvps
-                
-            tt_indpe, tt_indpb = fetch_tickertape_industry_metrics(sym)
-            
-            db.upsert_universe_stock(sym, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb)
+            sym = row[0]
+            bse_code = row[1] if len(row) > 1 else None
+            extracted = extract_raw_metrics(sym, bse_code)
+            if extracted:
+                db.upsert_universe_stock(
+                    sym, bse_code, extracted['sector'], extracted['pe'], extracted['pb'],
+                    extracted['roe'], extracted['eps'], extracted['bvps'],
+                    extracted['div_yield'], extracted['tt_indpe'], extracted['tt_indpb']
+                )
             time.sleep(2) # rate limit protection
         except Exception as e:
-            log.warning(f"Failed to refresh universe metrics for {sym}: {e}")
+            log.warning(f"Failed to refresh universe metrics for {row}: {e}")
 
 def scheduled_universe_benchmark_refresh():
     """Runs weekly to refresh ALL universe fundamentals used for sector medians."""
@@ -1005,8 +1018,9 @@ scheduler.add_job(
 if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
     scheduler.start()
     
-    # Seed universe table if empty
-    seed_universe()
+    # Seed universe table if empty, and trigger benchmark refresh if newly seeded
+    if seed_universe():
+        threading.Thread(target=refresh_universe_benchmarks, daemon=True).start()
     
     # Spawn background thread to backfill missing scores for existing stocks
     threading.Thread(target=backfill_missing_fundamental_scores, daemon=True).start()
@@ -1666,7 +1680,7 @@ def api_force_refresh():
             prices = db.get_all_prices()
             symbols = [p['symbol'] for p in prices]
             if symbols:
-                refresh_universe(symbols)
+                refresh_watchlist_fundamentals(symbols)
                 log.info(f"Force refresh complete for {len(symbols)} symbols.")
         except Exception as e:
             log.error(f"Error in force refresh background thread: {e}")
