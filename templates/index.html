@@ -1136,16 +1136,16 @@
             
             const timeInMinutes = istTime.getHours() * 60 + istTime.getMinutes();
             if (timeInMinutes >= 540 && timeInMinutes <= 930) {
-                return 180000; // 3 min during market hours (9:00 to 15:30)
+                return 60000; // 1 min during market hours (9:00 to 15:30)
             }
             return 900000; // 15 min during non-market hours
         }
 
-        async function pollPrices() {
+        async function pollPrices(force = false) {
             // Only update prices if it's market hours (to save bandwidth/processing)
-            if (getUserPollingInterval() > 60000) return;
+            if (!force && getUserPollingInterval() > 60000) return;
             try {
-                const res = await fetch(`/api/prices`);
+                const res = await fetch(`/api/prices?t=` + new Date().getTime());
                 const priceMap = await res.json();
                 for (const symbol in priceMap) {
                     const data = priceMap[symbol];
@@ -1202,13 +1202,15 @@
         }
 
         function scheduleUserPolling() {
-            setTimeout(async () => {
-                await pollUserNotifications();
-                await pollPrices(); // Added price polling alongside notifications
+            setTimeout(() => {
+                pollUserNotifications();
+                pollPrices(); // Added price polling alongside notifications
                 scheduleUserPolling();
             }, getUserPollingInterval());
         }
 
+        pollUserNotifications();
+        pollPrices(true);
         scheduleUserPolling();
 
         // Add CSS animation

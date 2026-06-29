@@ -27,7 +27,7 @@ def is_market_open():
     
     return market_open <= now <= market_close
 
-def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5):
+def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5, bse_code=None):
     """
     Fetch data from Fyers (if available) with fallback to Yahoo Finance.
     Cache it for ttl_minutes to avoid spamming APIs.
@@ -46,7 +46,7 @@ def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5):
     if os.environ.get("FYERS_CLIENT_ID"):
         days = int(period.replace('d', '')) if 'd' in period else 5
         try:
-            df = get_fyers_history(symbol, resolution=interval, days=days)
+            df = get_fyers_history(symbol, resolution=interval, days=days, bse_code=bse_code)
         except Exception as e:
             log.warning(f"Fyers fetch failed for {symbol}, falling back to Yahoo: {e}")
             df = None

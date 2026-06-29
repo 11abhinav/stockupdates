@@ -601,7 +601,7 @@
                         {% endif %}
                     </div>
                     <div class="item-bse">{{ item.bse_code or 'No BSE' }}</div>
-                    <div class="score-badge {% if item['quality_score'] != None %}{% if item['quality_score'] <= 3 or item['value_score'] <= 3 %}score-low{% elif item['quality_score'] >= 7 %}score-high{% else %}score-med{% endif %}{% endif %}" style="align-self: flex-start;">
+                    <div class="score-badge {% if item['quality_score'] != None %}{% if item['quality_score'] <= 3 or item['value_score'] <= 3 %}score-low{% elif item['quality_score'] >= 7 %}score-high{% else %}score-med{% endif %}{% endif %}" id="score-badge-{{ item.symbol }}" style="align-self: flex-start;">
                         {% if item['quality_score'] != None and item['value_score'] != None %}
                             Q: {{ item['quality_score'] }} | V: {{ item['value_score'] }}
                         {% else %}
@@ -611,13 +611,13 @@
                 </div>
                 <div class="item-price {% if not item.latest_price %}no-price{% endif %}">
                     {% if item.latest_price %}
-                        <div class="price-val">₹{{ item.latest_price }}</div>
+                        <div class="price-val" id="price-val-{{ item.symbol }}">₹{{ item.latest_price }}</div>
                         {% if item.change_pct != None %}
-                            <div class="price-change" style="color: {{ 'var(--success)' if item.change_pct > 0 else 'var(--warning)' if item.change_pct < 0 else 'var(--text-muted)' }}">
+                            <div class="price-change" id="price-change-{{ item.symbol }}" style="color: {{ 'var(--success)' if item.change_pct > 0 else 'var(--warning)' if item.change_pct < 0 else 'var(--text-muted)' }}">
                                 {{ '+' if item.change_pct > 0 else '' }}{{ "%.2f"|format(item.change_pct) }}%
                             </div>
                         {% endif %}
-                        <div class="price-time">
+                        <div class="price-time" id="price-time-{{ item.symbol }}">
                             {{ item.last_fetched.strftime('%m-%d %H:%M') if item.last_fetched else '' }}
                         </div>
                     {% else %}
@@ -1155,6 +1155,64 @@
             } catch (e) { console.error(e); }
         }
 
+        async function pollPrices(force = false) {
+            // Only update prices if it's market hours
+            if (!force && getNotificationInterval() > 60000) return;
+            try {
+                const res = await fetch(`/api/prices?t=` + new Date().getTime());
+                const priceMap = await res.json();
+                for (const symbol in priceMap) {
+                    const data = priceMap[symbol];
+                    const valEl = document.getElementById(`price-val-${symbol}`);
+                    if (valEl && data.latest_price !== null) {
+                        valEl.textContent = `₹${data.latest_price}`;
+                        const container = document.querySelector(`.watchlist-item[data-symbol="${symbol}"]`);
+                        if (container) container.dataset.price = data.latest_price;
+                    }
+                    const changeEl = document.getElementById(`price-change-${symbol}`);
+                    if (changeEl && data.change_pct !== null) {
+                        changeEl.textContent = `${data.change_pct > 0 ? '+' : ''}${data.change_pct.toFixed(2)}%`;
+                        changeEl.style.color = data.change_pct > 0 ? 'var(--success)' : (data.change_pct < 0 ? 'var(--warning)' : 'var(--text-muted)');
+                    }
+                    const timeEl = document.getElementById(`price-time-${symbol}`);
+                    if (timeEl && data.last_fetched) {
+                        const d = new Date(data.last_fetched);
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        const hh = String(d.getHours()).padStart(2, '0');
+                        const mn = String(d.getMinutes()).padStart(2, '0');
+                        timeEl.textContent = `${mm}-${dd} ${hh}:${mn}`;
+                    }
+                    const scoreBadge = document.getElementById(`score-badge-${symbol}`);
+                    if (scoreBadge && data.quality_score !== null && data.value_score !== null) {
+                        scoreBadge.className = 'score-badge';
+                        if (data.quality_score <= 3 || data.value_score <= 3) {
+                            scoreBadge.classList.add('score-low');
+                        } else if (data.quality_score >= 7) {
+                            scoreBadge.classList.add('score-high');
+                        } else {
+                            scoreBadge.classList.add('score-med');
+                        }
+                        scoreBadge.textContent = `Q: ${data.quality_score} | V: ${data.value_score}`;
+                        
+                        const container = document.querySelector(`.watchlist-item[data-symbol="${symbol}"]`);
+                        if (container) {
+                            container.dataset.qscore = data.quality_score;
+                            container.dataset.vscore = data.value_score;
+                            container.classList.remove('fscore-high', 'fscore-med', 'fscore-low');
+                            if (data.quality_score <= 3 || data.value_score <= 3) {
+                                container.classList.add('fscore-low');
+                            } else if (data.quality_score >= 7) {
+                                container.classList.add('fscore-high');
+                            } else {
+                                container.classList.add('fscore-med');
+                            }
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
         // ========== WATCHLIST FUNCTIONS ==========
         const symbolInput = document.getElementById('symbol');
         const suggBox = document.getElementById('suggestions-box');
@@ -1354,8 +1412,9 @@
         }
 
         function scheduleNotifications() {
-            setTimeout(async () => {
-                await pollNotifications();
+            setTimeout(() => {
+                pollNotifications();
+                pollPrices(); // Fetch latest prices
                 scheduleNotifications();
             }, getNotificationInterval());
         }
@@ -1389,6 +1448,7 @@
         scheduleScannerStatus();
         
         pollNotifications();
+        pollPrices(true); // Missing initial call for watchlist data
         scheduleNotifications();
 
         document.getElementById('add-form').addEventListener('submit', function(e) {

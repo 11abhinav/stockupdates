@@ -869,13 +869,13 @@ scheduler.add_job(
     id='momentum_15', replace_existing=True
 )
 
-# Watchlist CMP Updater (Every 3 min during market hours)
+# Watchlist CMP Updater (Every 1 min during market hours)
 scheduler.add_job(
-    background_update_all_watchlist_prices, CronTrigger(day_of_week='mon-fri', hour='9-14', minute='*/3', timezone=ist_tz),
+    background_update_all_watchlist_prices, CronTrigger(day_of_week='mon-fri', hour='9-14', minute='*', timezone=ist_tz),
     id='cmp_updater_9_14', replace_existing=True
 )
 scheduler.add_job(
-    background_update_all_watchlist_prices, CronTrigger(day_of_week='mon-fri', hour='15', minute='0,3,6,9,12,15,18,21,24,27,30', timezone=ist_tz),
+    background_update_all_watchlist_prices, CronTrigger(day_of_week='mon-fri', hour='15', minute='0-30', timezone=ist_tz),
     id='cmp_updater_15', replace_existing=True
 )
 
