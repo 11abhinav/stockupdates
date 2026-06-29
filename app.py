@@ -1692,7 +1692,7 @@ def api_force_refresh():
     
     return jsonify({
         "status": "success",
-        "message": "Full fundamentals and valuation refresh started in the background. Please wait a few minutes for it to complete."
+        "message": "Full watchlist fundamentals and valuation refresh started in the background. Please wait a few minutes for it to complete."
     })
 
 
