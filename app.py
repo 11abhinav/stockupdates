@@ -46,6 +46,8 @@ app.secret_key = os.environ.get('SECRET_KEY', 'super-secret-key-123')
 db.init_db()
 
 def norm_pct(x):
+    """Normalize a percentage value to decimal fraction (e.g. 15 → 0.15, 0.15 → 0.15).
+    Returns None if input is None or unparseable."""
     if x is None:
         return None
     try:
@@ -56,6 +58,7 @@ def norm_pct(x):
         return None
 
 def norm_num(x):
+    """Convert input to float. Returns None if input is None or unparseable."""
     if x is None:
         return None
     try:
@@ -157,11 +160,16 @@ def score_financial_quality(info, financials):
         elif roa >= 0.04:
             score += 1.0
 
-    # 6. Financial Cash Flow Proxy (Weight: 1) - EPS with minimum floor
+    # 6. Financial Cash Flow Proxy (Weight: 1) - EPS with quality floor
+    # ₹5+ EPS earns the point outright; ₹1+ EPS earns it only with evidence
+    # of 5%+ earnings growth, preventing tiny-EPS stocks from scoring
     eps = norm_num(info.get('trailingEps') or info.get('forwardEps'))
     if eps is not None:
         fields_found += 1
+        earnings_growth = profit_cagr if profit_cagr is not None else norm_pct(info.get('earningsGrowth'))
         if eps >= 5.0:
+            score += 1.0
+        elif eps >= 1.0 and earnings_growth is not None and earnings_growth >= 0.05:
             score += 1.0
             
     return score, fields_found, None
@@ -465,7 +473,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
 
             if bvps and bvps > 0 and peer_pb:
                 raw_target_pb = (0.65 * float(peer_pb)) + (0.35 * current_pb if current_pb else 0.0)
-                target_pb = clamp(raw_target_pb, 0.8, 1.5 * float(peer_pb))
+                target_pb = clamp(raw_target_pb, 0.8, min(1.5 * float(peer_pb), 5.0))
 
                 fair_value = target_pb * bvps
                 bear_value = max(bvps * max(0.85 * target_pb, 0.8), current_price * 0.85 if current_price else 0)
@@ -486,6 +494,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
                     is_fallback=False
                 )
 
+            log.debug(f"[VALUATION] {stock.get('symbol')}: Financial sector fallback — bvps={bvps}, peer_pb={peer_pb}")
             fallback = current_price * 0.95 if current_price else None
             return FairValueResult(
                 fair_value=round(fallback, 2) if fallback else None,
@@ -505,9 +514,20 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
         
         peer_pe = norm_num(stock.get('tt_indpe'))
         peer_count = med.get("peer_count_pe", 0)
+        pe_source = "tickertape" if peer_pe else None
         
         if not peer_pe:
             peer_pe = norm_num(med.get("median_pe")) if peer_count >= min_peer_count else None
+            if peer_pe:
+                pe_source = "sector_median"
+
+        if not peer_pe:
+            log.debug(f"[VALUATION] {stock.get('symbol')}: No peer PE available (tickertape=None, sector_peers={peer_count}<{min_peer_count})")
+
+        # Guard: tiny EPS makes PE-based valuation unreliable
+        if eps is not None and 0 < eps < 0.5:
+            log.debug(f"[VALUATION] {stock.get('symbol')}: Tiny EPS={eps}, forcing PRICE_FALLBACK")
+            eps = None  # Force fallback path below
 
         if eps and eps > 0 and peer_pe:
             peer_pe = float(peer_pe)
@@ -536,7 +556,8 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
             if current_price and current_pe and fair_value > current_price * 1.50 and growth < 0.15:
                 fair_value = current_price * 1.50
                 bull_value = min(bull_value, current_price * 1.65)
-                confidence = "MEDIUM"
+                if confidence != "LOW":
+                    confidence = "MEDIUM"
 
             # Universal sanity cap: no fair value can exceed 2x CMP
             if current_price and fair_value > current_price * 2.0:
@@ -545,6 +566,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
                 if confidence != "LOW":
                     confidence = "MEDIUM"
 
+            log.debug(f"[VALUATION] {stock.get('symbol')}: BLENDED_SECTOR_PE via {pe_source} — target_pe={target_pe:.1f}, peer_pe={peer_pe:.1f}, confidence={confidence}")
             return FairValueResult(
                 fair_value=round(fair_value, 2),
                 bear_value=round(bear_value, 2),
@@ -558,9 +580,10 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
                 is_fallback=False
             )
 
-        if current_price and current_pe and eps:
+        if current_price and current_pe and current_pe > 0 and eps and eps > 0:
             target_pe = clamp(current_pe * 0.85, 6.0, 30.0)
             fair_value = target_pe * eps
+            log.debug(f"[VALUATION] {stock.get('symbol')}: CURRENT_PE_FALLBACK — target_pe={target_pe:.1f}, eps={eps:.2f}")
             return FairValueResult(
                 fair_value=round(fair_value, 2),
                 bear_value=round(fair_value * 0.90, 2),
@@ -577,6 +600,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
     except Exception as e:
         log.exception(f"calculate_fair_value_v2 failed for {stock.get('symbol', 'Unknown')}")
 
+    log.debug(f"[VALUATION] {stock.get('symbol')}: PRICE_FALLBACK — no viable PE/PB/EPS path")
     fallback = current_price * 0.95 if current_price else None
     return FairValueResult(
         fair_value=round(fallback, 2) if fallback else None,
