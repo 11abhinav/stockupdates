@@ -886,15 +886,15 @@ def seed_universe():
         log.error(f"Failed to seed universe table: {e}")
 
 def refresh_universe_benchmarks():
-    symbols = db.get_universe_symbols()
-    if not symbols:
+    universe_rows = db.get_universe_symbols()
+    if not universe_rows:
         log.info("Universe table empty, nothing to refresh.")
         return
         
-    for row in symbols:
+    for row in universe_rows:
         try:
-            sym = row[0]
-            bse_code = row[1] if len(row) > 1 else None
+            sym = row['symbol']
+            bse_code = row.get('bse_code')
             extracted = extract_raw_metrics(sym, bse_code)
             if extracted:
                 db.upsert_universe_stock(
@@ -1661,7 +1661,7 @@ _is_refreshing = False
 
 @app.route('/api/admin/force_refresh', methods=['GET', 'POST'])
 def api_force_refresh():
-    """Endpoint to manually trigger a full universe refresh on Railway."""
+    """Endpoint to manually trigger a full watchlist fundamental refresh on Railway."""
     global _is_refreshing
     
     with _force_refresh_lock:

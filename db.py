@@ -587,7 +587,7 @@ def get_universe_symbols():
     try:
         with get_db_connection() as conn:
             if not conn: return []
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT symbol, bse_code FROM stockupdates.universe ORDER BY symbol;")
                 return cur.fetchall()
     except Exception as e:
