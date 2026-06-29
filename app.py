@@ -145,23 +145,23 @@ def score_financial_quality(info, financials):
         fields_found += 1
         if opm >= 0.15:
             score += 1.0
-        elif opm >= 0.08:
+        elif opm >= 0.10:
             score += 0.5
 
     # 5. Financial Leverage Proxy (Weight: 2) - ROA
     roa = norm_pct(info.get('returnOnAssets'))
     if roa is not None:
         fields_found += 1
-        if roa >= 0.015:
+        if roa >= 0.08:
             score += 2.0
-        elif roa >= 0.005:
+        elif roa >= 0.04:
             score += 1.0
 
-    # 6. Financial Cash Flow Proxy (Weight: 1) - Positive EPS
+    # 6. Financial Cash Flow Proxy (Weight: 1) - EPS with minimum floor
     eps = norm_num(info.get('trailingEps') or info.get('forwardEps'))
     if eps is not None:
         fields_found += 1
-        if eps > 0:
+        if eps >= 5.0:
             score += 1.0
             
     return score, fields_found, None
@@ -243,7 +243,7 @@ def score_nonfinancial_quality(info, financials):
         fields_found += 1
         if opm >= 0.15:
             score += 1.0
-        elif opm >= 0.08:
+        elif opm >= 0.10:
             score += 0.5
 
     # 5. Non-Financial Leverage (Weight: 2) - Debt/Equity
@@ -373,7 +373,7 @@ def calculate_value_score(stock, sector_medians):
     stock_pe = stock.get('pe')
     stock_roe = stock.get('roe')
     stock_div = stock.get('div_yield')
-    min_peer_count = 5
+    min_peer_count = 8
     
     if is_financial_sector(sector):
         # 1. P/B relative to sector
@@ -450,7 +450,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
     sector = stock.get('sector')
     med = sector_medians.get(sector, {}) if sector else {}
 
-    min_peer_count = 5
+    min_peer_count = 8
 
     try:
         if is_financial_sector(sector):
@@ -515,7 +515,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
             raw_target_pe = (0.60 * peer_pe) + (0.40 * current_pe if current_pe else 0.0)
             sector_cap = 1.35 * peer_pe
             growth = norm_pct(stock.get('revenue_growth')) or 0.0
-            absolute_cap = 25.0 if growth < 0.15 else 35.0
+            absolute_cap = 30.0 if growth < 0.15 else 50.0
             target_pe = clamp(raw_target_pe, 6.0, min(sector_cap, absolute_cap))
 
             fair_value = target_pe * eps
@@ -525,15 +525,25 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
             bear_value = bear_pe * eps
             bull_value = bull_pe * eps
 
-            if current_pe and peer_pe > current_pe * 1.75:
+            if current_pe and current_pe > peer_pe * 2.0:
+                confidence = "LOW"
+            elif current_pe and peer_pe > current_pe * 1.75:
                 confidence = "MEDIUM"
             else:
                 confidence = "HIGH" if peer_count >= 15 else "MEDIUM"
 
+            # Sanity cap: low-growth stocks capped at 1.5x CMP
             if current_price and current_pe and fair_value > current_price * 1.50 and growth < 0.15:
                 fair_value = current_price * 1.50
                 bull_value = min(bull_value, current_price * 1.65)
                 confidence = "MEDIUM"
+
+            # Universal sanity cap: no fair value can exceed 2x CMP
+            if current_price and fair_value > current_price * 2.0:
+                fair_value = current_price * 2.0
+                bull_value = min(bull_value, current_price * 2.2)
+                if confidence != "LOW":
+                    confidence = "MEDIUM"
 
             return FairValueResult(
                 fair_value=round(fair_value, 2),
@@ -549,7 +559,7 @@ def calculate_fair_value_v2(stock, current_price, sector_medians):
             )
 
         if current_price and current_pe and eps:
-            target_pe = clamp(current_pe, 6.0, 20.0)
+            target_pe = clamp(current_pe * 0.85, 6.0, 30.0)
             fair_value = target_pe * eps
             return FairValueResult(
                 fair_value=round(fair_value, 2),
