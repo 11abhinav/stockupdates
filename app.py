@@ -733,7 +733,7 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
         log.warning(f"Failed to fetch raw metrics for {symbol}: {e}")
         return None, None, None, None
 
-def refresh_universe(symbols):
+def refresh_watchlist_fundamentals(symbols):
     all_rows = []
     watchlist = db.get_watchlist()
     bse_map = {w['symbol']: w['bse_code'] for w in watchlist}
@@ -745,7 +745,7 @@ def refresh_universe(symbols):
             all_rows.append((sym, q_score, current_stock, current_price, info))
         time.sleep(2) # rate limit protection
         
-    all_stocks = db.get_all_fundamentals()
+    all_stocks = db.get_all_universe_fundamentals()
     sector_medians = compute_sector_medians(all_stocks)
     
     results = []
@@ -776,7 +776,7 @@ def fetch_and_save_fundamentals(symbol, bse_code=None, ticker=None):
         return None, None, None
         
     # Single fetch: compute against existing full database medians
-    all_stocks = db.get_all_fundamentals()
+    all_stocks = db.get_all_universe_fundamentals()
     sector_medians = compute_sector_medians(all_stocks)
     
     val_output = build_valuation_output(current_stock, current_price, sector_medians)
@@ -820,22 +820,87 @@ def backfill_missing_fundamental_scores():
         symbols_to_fetch = [p['symbol'] for p in prices if p.get('quality_score') is None or p.get('value_score') is None]
         if symbols_to_fetch:
             log.info(f"Backfilling {len(symbols_to_fetch)} symbols...")
-            refresh_universe(symbols_to_fetch)
+            refresh_watchlist_fundamentals(symbols_to_fetch)
         log.info("Background fundamental score backfill complete.")
     except Exception as e:
         log.error(f"Error in backfill_missing_fundamental_scores background thread: {e}")
 
-def scheduled_universe_refresh():
-    """Runs nightly to refresh ALL fundamentals and medians."""
-    log.info("Starting scheduled nightly universe refresh...")
+def scheduled_watchlist_refresh():
+    """Runs nightly to refresh ALL watchlist fundamentals."""
+    log.info("Starting scheduled nightly watchlist refresh...")
     try:
         prices = db.get_all_prices()
         symbols = [p['symbol'] for p in prices]
         if symbols:
-            refresh_universe(symbols)
+            refresh_watchlist_fundamentals(symbols)
             log.info(f"Nightly refresh complete for {len(symbols)} symbols.")
     except Exception as e:
         log.error(f"Error in scheduled nightly refresh: {e}")
+
+def seed_universe():
+    import csv
+    import os
+    try:
+        if db.get_universe_symbols():
+            return
+        
+        filepath = os.path.join(os.path.dirname(__file__), 'data', 'nifty500.csv')
+        if not os.path.exists(filepath):
+            log.warning(f"Universe seed file not found: {filepath}")
+            return
+            
+        with open(filepath, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                symbol = row.get('Symbol')
+                if symbol:
+                    db.upsert_universe_stock(symbol, None, None, None, None, None, None, None, None, None)
+        log.info("Successfully seeded stockupdates.universe table.")
+    except Exception as e:
+        log.error(f"Failed to seed universe table: {e}")
+
+def refresh_universe_benchmarks():
+    symbols = db.get_universe_symbols()
+    if not symbols:
+        log.info("Universe table empty, nothing to refresh.")
+        return
+        
+    for sym in symbols:
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(f"{sym}.NS")
+            info = ticker.info
+            
+            sector = info.get('sector')
+            pe = norm_num(info.get('trailingPE') or info.get('peRatio'))
+            pb = norm_num(info.get('priceToBook') or info.get('pbRatio'))
+            roe = norm_pct(info.get('returnOnEquity'))
+            eps = norm_num(info.get('trailingEps') or info.get('forwardEps'))
+            bvps = norm_num(info.get('bookValue'))
+            div_yield = norm_pct(info.get('dividendYield') or info.get('divYield'))
+            current_price = norm_num(info.get('currentPrice') or info.get('regularMarketPrice'))
+            
+            if pe is None and eps is not None and eps > 0 and current_price is not None:
+                pe = current_price / eps
+                
+            if pb is None and bvps is not None and bvps > 0 and current_price is not None:
+                pb = current_price / bvps
+                
+            tt_indpe, tt_indpb = fetch_tickertape_industry_metrics(sym)
+            
+            db.upsert_universe_stock(sym, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb)
+            time.sleep(2) # rate limit protection
+        except Exception as e:
+            log.warning(f"Failed to refresh universe metrics for {sym}: {e}")
+
+def scheduled_universe_benchmark_refresh():
+    """Runs weekly to refresh ALL universe fundamentals used for sector medians."""
+    log.info("Starting scheduled weekly universe benchmark refresh...")
+    try:
+        refresh_universe_benchmarks()
+        log.info("Weekly universe benchmark refresh complete.")
+    except Exception as e:
+        log.error(f"Error in scheduled weekly benchmark refresh: {e}")
 
 # Setup APScheduler
 # Register Dual Scanners (IST Native)
@@ -921,8 +986,14 @@ scheduler.add_job(
 
 # Nightly Fundamentals Refresh (1:00 AM IST)
 scheduler.add_job(
-    scheduled_universe_refresh, CronTrigger(hour='1', minute='0', timezone=ist_tz),
+    scheduled_watchlist_refresh, CronTrigger(hour='1', minute='0', timezone=ist_tz),
     id='nightly_fundamentals', replace_existing=True
+)
+
+# Weekly Universe Benchmark Refresh (Sunday 2:00 AM IST)
+scheduler.add_job(
+    scheduled_universe_benchmark_refresh, CronTrigger(day_of_week='sun', hour='2', minute='0', timezone=ist_tz),
+    id='weekly_universe_benchmarks', replace_existing=True
 )
 
 # Tracker Scanner (Let it run until 15:55 to catch post-market closures)
@@ -933,6 +1004,9 @@ scheduler.add_job(
 
 if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
     scheduler.start()
+    
+    # Seed universe table if empty
+    seed_universe()
     
     # Spawn background thread to backfill missing scores for existing stocks
     threading.Thread(target=backfill_missing_fundamental_scores, daemon=True).start()
