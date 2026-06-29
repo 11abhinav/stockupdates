@@ -810,6 +810,36 @@ import scanners.momentum
 import scanners.news
 import scanners.tracker
 
+def background_update_all_watchlist_prices():
+    log.info("Running background watchlist CMP update...")
+    try:
+        watchlist = db.get_watchlist()
+        if not watchlist: return
+        symbols = [w['symbol'] for w in watchlist]
+        
+        import yfinance as yf
+        # Batch download all tickers for 5 days to get prev close
+        df = yf.download([f"{s}.NS" for s in symbols], period="5d", progress=False)
+        
+        if not df.empty and len(df) >= 2:
+            for s in symbols:
+                try:
+                    if len(symbols) == 1:
+                        live_price = float(df['Close'].iloc[-1])
+                        prev_close = float(df['Close'].iloc[-2])
+                    else:
+                        live_price = float(df['Close'][f"{s}.NS"].iloc[-1])
+                        prev_close = float(df['Close'][f"{s}.NS"].iloc[-2])
+                        
+                    if not __import__("math").isnan(live_price) and not __import__("math").isnan(prev_close) and prev_close > 0:
+                        change_pct = ((live_price - prev_close) / prev_close) * 100
+                        db.update_price(s, live_price, change_pct)
+                except Exception as e:
+                    pass
+    except Exception as e:
+        log.error(f"Error in background watchlist CMP update: {e}")
+
+
 # Setup APScheduler
 ist_tz = ZoneInfo("Asia/Kolkata")
 job_defaults = {
@@ -821,35 +851,37 @@ scheduler = BackgroundScheduler(timezone=ist_tz, job_defaults=job_defaults)
 
 # MF Breakout Scanner (Every 30 min during market hours)
 scheduler.add_job(
-    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='9', minute='15,45', timezone=ist_tz),
-    id='mf_9', replace_existing=True
+    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='9-14', minute='0,30', timezone=ist_tz),
+    id='mf_9_14', replace_existing=True
 )
 scheduler.add_job(
-    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='10-14', minute='15,45', timezone=ist_tz),
-    id='mf_10_14', replace_existing=True
-)
-scheduler.add_job(
-    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='15', minute='15', timezone=ist_tz),
+    scanners.mf.run, CronTrigger(day_of_week='mon-fri', hour='15', minute='0,30', timezone=ist_tz),
     id='mf_15', replace_existing=True
 )
 
 # Momentum Scanner (Every 5 min during market hours)
 scheduler.add_job(
-    scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='9', minute='15,20,25,30,35,40,45,50,55', timezone=ist_tz),
-    id='momentum_9', replace_existing=True
-)
-scheduler.add_job(
-    scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='10-14', minute='*/5', timezone=ist_tz),
-    id='momentum_10_14', replace_existing=True
+    scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='9-14', minute='*/5', timezone=ist_tz),
+    id='momentum_9_14', replace_existing=True
 )
 scheduler.add_job(
     scanners.momentum.run, CronTrigger(day_of_week='mon-fri', hour='15', minute='0,5,10,15,20,25,30', timezone=ist_tz),
     id='momentum_15', replace_existing=True
 )
 
+# Watchlist CMP Updater (Every 3 min during market hours)
+scheduler.add_job(
+    background_update_all_watchlist_prices, CronTrigger(day_of_week='mon-fri', hour='9-14', minute='*/3', timezone=ist_tz),
+    id='cmp_updater_9_14', replace_existing=True
+)
+scheduler.add_job(
+    background_update_all_watchlist_prices, CronTrigger(day_of_week='mon-fri', hour='15', minute='0,3,6,9,12,15,18,21,24,27,30', timezone=ist_tz),
+    id='cmp_updater_15', replace_existing=True
+)
+
 # News/BSE Scanner
 scheduler.add_job(
-    scanners.news.run_bse_scan, CronTrigger(day_of_week='mon-fri', hour='9-15', minute='15,45', timezone=ist_tz),
+    scanners.news.run_bse_scan, CronTrigger(day_of_week='mon-fri', hour='9-15', minute='0,30', timezone=ist_tz),
     id='news_9_15', replace_existing=True
 )
 
@@ -1105,11 +1137,20 @@ def api_stock(symbol):
         except Exception as e:
             log.warning(f"Failed to fetch news/fundamentals/charts for {symbol}: {e}")
 
+        try:
+            lf = stock_data.get('last_fetched')
+            if lf:
+                if lf.tzinfo is None:
+                    lf = lf.replace(tzinfo=ZoneInfo("UTC"))
+                lf = lf.astimezone(ist_tz)
+        except:
+            lf = stock_data.get('last_fetched')
+            
         return jsonify({
             'symbol': symbol,
             'price': stock_data['latest_price'],
             'change_pct': stock_data['change_pct'],
-            'last_fetched': stock_data['last_fetched'].isoformat() if stock_data.get('last_fetched') else None,
+            'last_fetched': lf.isoformat() if lf else None,
             'alerts': alerts,
             'news': news,
             'fundamentals': fundamentals,
@@ -1126,10 +1167,16 @@ def get_prices():
         prices = db.get_all_prices()
         price_map = {}
         for p in prices:
+            lf = p.get('last_fetched')
+            if lf:
+                if lf.tzinfo is None:
+                    lf = lf.replace(tzinfo=ZoneInfo("UTC"))
+                lf = lf.astimezone(ist_tz)
+                
             price_map[p['symbol']] = {
                 'latest_price': float(p['latest_price']) if p['latest_price'] else None,
                 'change_pct': float(p['change_pct']) if p['change_pct'] else None,
-                'last_fetched': p['last_fetched'].isoformat() if p['last_fetched'] else None,
+                'last_fetched': lf.isoformat() if lf else None,
                 'quality_score': float(p['quality_score']) if p['quality_score'] is not None else None,
                 'value_score': float(p['value_score']) if p['value_score'] is not None else None
             }
@@ -1149,29 +1196,7 @@ def api_refresh_watchlist():
         _is_refreshing_watchlist = True
 
     try:
-        watchlist = db.get_watchlist()
-        symbols = [w['symbol'] for w in watchlist]
-        
-        import yfinance as yf
-        # Batch download all tickers for 5 days to get prev close
-        df = yf.download([f"{s}.NS" for s in symbols], period="5d", progress=False)
-        
-        if not df.empty and len(df) >= 2:
-            for s in symbols:
-                try:
-                    # if only 1 symbol, df structure is different than if multiple
-                    if len(symbols) == 1:
-                        live_price = float(df['Close'].iloc[-1])
-                        prev_close = float(df['Close'].iloc[-2])
-                    else:
-                        live_price = float(df['Close'][f"{s}.NS"].iloc[-1])
-                        prev_close = float(df['Close'][f"{s}.NS"].iloc[-2])
-                        
-                    if not __import__("math").isnan(live_price) and not __import__("math").isnan(prev_close) and prev_close > 0:
-                        change_pct = ((live_price - prev_close) / prev_close) * 100
-                        db.update_price(s, live_price, change_pct)
-                except Exception as e:
-                    pass
+        background_update_all_watchlist_prices()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
