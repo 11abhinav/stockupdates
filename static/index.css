@@ -703,7 +703,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
     top: calc(100% + 8px);
     left: 0;
     right: 0;
-    background: rgba(13, 18, 30, 0.95);
+    background: var(--bg-surface);
     backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
@@ -725,7 +725,7 @@ h1, h2, h3, h4, h5, h6, .price-val, .stock-name-large, .stock-price-large, .side
 }
 
 .suggestion-item:last-child { border-bottom: none; }
-.suggestion-item:hover { background: rgba(255, 255, 255, 0.05); }
+.suggestion-item:hover { background: var(--bg-surface-hover); }
 
 .sugg-symbol { font-weight: 700; color: var(--text-main); font-family: 'Outfit', sans-serif; }
 .sugg-name { color: var(--text-muted); font-size: 0.85rem; }
