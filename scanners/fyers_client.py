@@ -136,11 +136,16 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
     
-    # Map typical resolutions (15m -> 15, 5m -> 5, 1d -> D)
+    # Map typical resolutions (15m -> 15, 5m -> 5, 1d -> 1D, 1h -> 60)
     if resolution.endswith('m'):
         res_code = resolution[:-1]
+    elif resolution.endswith('h'):
+        hours = int(resolution[:-1])
+        res_code = str(hours * 60)
     elif resolution.endswith('d'):
-        res_code = "D"
+        res_code = resolution[:-1] + "D"
+    elif resolution.endswith('w'):
+        res_code = resolution[:-1] + "W"
     else:
         res_code = resolution
         
