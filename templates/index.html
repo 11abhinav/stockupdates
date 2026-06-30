@@ -79,7 +79,6 @@
                 <span class="notif-badge" id="notif-badge" style="display:none; position: absolute; top: -5px; right: -5px; background: var(--warning); color: white; border-radius: 50%; padding: 2px 6px; font-size: 0.7rem; font-weight: bold;">0</span>
             </div>
             <button class="nav-btn active" id="global-alerts-btn" onclick="showGlobalAlerts()">Global Alerts</button>
-            <button class="nav-btn" id="qualifying-stocks-btn" onclick="showQualifyingStocks()">Qualifying Stocks</button>
             <a href="/admin" class="nav-btn">Admin Panel</a>
         </div>
 
@@ -113,6 +112,7 @@
                 <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('NEWS')">News Only</button>
                 <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('MOMENTUM')">Momentum Only</button>
                 <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('MF')">MF Breakouts</button>
+                <button class="sort-btn" id="qualifying-stocks-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="showQualifyingStocks()">Qualifying Stocks</button>
             </div>
             
             <div class="alerts-feed" id="global-alerts-feed">
@@ -200,30 +200,30 @@
                 <div style="color:var(--text-muted)">No recent alerts found in the database.</div>
                 {% endfor %}
             </div>
-        </div>
 
-        <div class="qualifying-stocks" id="qualifying-stocks-container" style="display: none;">
-            <div class="stock-header">
-                <div>
-                    <h2 class="stock-name-large">Qualifying Stocks (Pre-Breakout)</h2>
-                    <div class="stock-meta">Stocks that have triggered higher timeframe criteria but are awaiting volume or lower timeframe confirmation.</div>
+            <div class="qualifying-stocks" id="qualifying-stocks-container" style="display: none;">
+                <div class="stock-header">
+                    <div>
+                        <h2 class="stock-name-large">Qualifying Stocks (Pre-Breakout)</h2>
+                        <div class="stock-meta">Stocks that have triggered higher timeframe criteria but are awaiting volume or lower timeframe confirmation.</div>
+                    </div>
                 </div>
-            </div>
-            
-            <div style="background: var(--bg-surface); border: 1px solid var(--glass-border); border-radius: 16px; overflow: hidden; margin-top: 1rem;">
-                <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                    <thead>
-                        <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--glass-border);">
-                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Symbol</th>
-                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Timeframes Passed</th>
-                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Volume Status</th>
-                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Added</th>
-                        </tr>
-                    </thead>
-                    <tbody id="qualifying-stocks-tbody">
-                        <!-- Loaded dynamically -->
-                    </tbody>
-                </table>
+                
+                <div style="background: var(--bg-surface); border: 1px solid var(--glass-border); border-radius: 16px; overflow: hidden; margin-top: 1rem;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead>
+                            <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--glass-border);">
+                                <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Symbol</th>
+                                <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Timeframes Passed</th>
+                                <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Volume Status</th>
+                                <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Added</th>
+                            </tr>
+                        </thead>
+                        <tbody id="qualifying-stocks-tbody">
+                            <!-- Loaded dynamically -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -350,10 +350,22 @@
                 }
             });
             
+            // Hide qualifying stocks table and show normal feeds
+            const qualContainer = document.getElementById('qualifying-stocks-container');
+            if (qualContainer) qualContainer.style.display = 'none';
+            const statsSummary = document.querySelector('.paper-trades-summary');
+            if (statsSummary) statsSummary.style.display = 'flex';
+            const feed = document.getElementById('global-alerts-feed');
+            if (feed) feed.style.display = 'block';
+
             // Update active button
             const sortControls = document.querySelector('.global-alerts .sort-controls');
             sortControls.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            } else {
+                sortControls.querySelector("button[onclick=\"filterGlobalAlerts('ALL')\"]").classList.add('active');
+            }
         }
         
         function showGlobalAlerts() {
@@ -367,16 +379,31 @@
             
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('stock-details').style.display = 'none';
-            document.getElementById('paper-trades-container')?.style.display = 'none';
-            document.getElementById('qualifying-stocks-container').style.display = 'none';
+            const paperTrades = document.getElementById('paper-trades-container');
+            if (paperTrades) paperTrades.style.display = 'none';
+            const qualContainer = document.getElementById('qualifying-stocks-container');
+            if (qualContainer) qualContainer.style.display = 'none';
+            
             document.getElementById('global-alerts-container').style.display = 'block';
+            const statsSummary = document.querySelector('.paper-trades-summary');
+            if (statsSummary) statsSummary.style.display = 'flex';
+            const feed = document.getElementById('global-alerts-feed');
+            if (feed) feed.style.display = 'block';
 
             // Highlight top nav active state
-            const sortControls = document.querySelector('.top-nav');
-            if (sortControls) {
-                sortControls.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            const topNavControls = document.querySelector('.top-nav');
+            if (topNavControls) {
+                topNavControls.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
                 const globalBtn = document.getElementById('global-alerts-btn');
                 if (globalBtn) globalBtn.classList.add('active');
+            }
+
+            // Reset sort filters to ALL
+            const sortControls = document.querySelector('.global-alerts .sort-controls');
+            if (sortControls) {
+                sortControls.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+                const allBtn = sortControls.querySelector("button[onclick=\"filterGlobalAlerts('ALL')\"]");
+                if (allBtn) allBtn.classList.add('active');
             }
         }
 
@@ -391,15 +418,37 @@
             
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('stock-details').style.display = 'none';
-            document.getElementById('paper-trades-container')?.style.display = 'none';
-            document.getElementById('global-alerts-container').style.display = 'none';
+            
+            const paperTrades = document.getElementById('paper-trades-container');
+            if (paperTrades) paperTrades.style.display = 'none';
+
+            // Make sure global-alerts-container is visible but hide the feed and stats
+            document.getElementById('global-alerts-container').style.display = 'block';
+            const feed = document.getElementById('global-alerts-feed');
+            if (feed) feed.style.display = 'none';
+            const statsSummary = document.querySelector('.paper-trades-summary');
+            if (statsSummary) statsSummary.style.display = 'none';
+            
             document.getElementById('qualifying-stocks-container').style.display = 'block';
 
-            const sortControls = document.querySelector('.top-nav');
+            // Update active state in top-nav
+            const topNavControls = document.querySelector('.top-nav');
+            if (topNavControls) {
+                topNavControls.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+                const globalBtn = document.getElementById('global-alerts-btn');
+                if (globalBtn) globalBtn.classList.add('active');
+            }
+
+            // Update active state in sort controls
+            const sortControls = document.querySelector('.global-alerts .sort-controls');
             if (sortControls) {
-                sortControls.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-                const qualBtn = document.getElementById('qualifying-stocks-btn');
-                if (qualBtn) qualBtn.classList.add('active');
+                sortControls.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+                if (event && event.target) {
+                    event.target.classList.add('active');
+                } else {
+                    const qualBtn = document.getElementById('qualifying-stocks-btn');
+                    if (qualBtn) qualBtn.classList.add('active');
+                }
             }
 
             // Fetch data
