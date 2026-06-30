@@ -1328,10 +1328,10 @@ def api_notifications():
 @app.route('/api/qualifying_stocks', methods=['GET'])
 def api_qualifying_stocks():
     """Return recent MF_QUALIFYING stocks in JSON format for the table UI."""
-    alerts = db.get_qualifying_alerts()
+    alerts = db.get_qualifying_stocks()
     for a in alerts:
-        if a.get('created_at'):
-            a['created_at_iso'] = a['created_at'].isoformat()
+        if a.get('updated_at'):
+            a['created_at_iso'] = a['updated_at'].isoformat()
     return jsonify(alerts)
 
 @app.route('/api/admin/system_errors')

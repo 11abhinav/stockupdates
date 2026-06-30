@@ -196,6 +196,21 @@ def init_db():
                     );
                 """)
                 
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS stockupdates.qualifying_stocks (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(50) UNIQUE NOT NULL,
+                        passed_1d BOOLEAN DEFAULT FALSE,
+                        passed_1h BOOLEAN DEFAULT FALSE,
+                        passed_30m BOOLEAN DEFAULT FALSE,
+                        passed_15m BOOLEAN DEFAULT FALSE,
+                        passed_5m BOOLEAN DEFAULT FALSE,
+                        volume_status VARCHAR(50),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                
                 conn.commit()
                 log.info("Database initialized successfully.")
     except Exception as e:
@@ -606,7 +621,78 @@ def get_recent_alerts(limit=50):
                 """, (limit,))
                 return cur.fetchall()
     except Exception as e:
-        log.error(f"Error fetching alerts: {e}")
+        log.error(f"Error fetching alerts matching tags: {e}")
+        return []
+
+def upsert_qualifying_stock(symbol, timeframes_dict, volume_status):
+    """
+    Upsert a qualifying stock, updating the timeframes that are passed and its volume status.
+    """
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                # Extract boolean values
+                t_1d = timeframes_dict.get('1d', False)
+                t_1h = timeframes_dict.get('1h', False)
+                t_30m = timeframes_dict.get('30m', False)
+                t_15m = timeframes_dict.get('15m', False)
+                t_5m = timeframes_dict.get('5m', False)
+
+                cur.execute('''
+                    INSERT INTO stockupdates.qualifying_stocks 
+                    (symbol, passed_1d, passed_1h, passed_30m, passed_15m, passed_5m, volume_status, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT(symbol) DO UPDATE SET
+                        passed_1d = EXCLUDED.passed_1d,
+                        passed_1h = EXCLUDED.passed_1h,
+                        passed_30m = EXCLUDED.passed_30m,
+                        passed_15m = EXCLUDED.passed_15m,
+                        passed_5m = EXCLUDED.passed_5m,
+                        volume_status = EXCLUDED.volume_status,
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (symbol.upper(), t_1d, t_1h, t_30m, t_15m, t_5m, volume_status))
+                conn.commit()
+                log.info(f"Upserted qualifying stock {symbol}")
+    except Exception as e:
+        log.error(f"Failed to upsert qualifying stock {symbol}: {e}")
+
+def delete_qualifying_stock(symbol):
+    """
+    Remove a stock from qualifying stocks if it completely falls out of structure.
+    """
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM stockupdates.qualifying_stocks WHERE symbol = %s', (symbol.upper(),))
+                if cur.rowcount > 0:
+                    log.info(f"Removed qualifying stock {symbol}")
+                conn.commit()
+    except Exception as e:
+        log.error(f"Failed to delete qualifying stock {symbol}: {e}")
+
+def get_qualifying_stocks():
+    """
+    Fetch all qualifying stocks ordered by recently updated.
+    """
+    if not DATABASE_URL:
+        return []
+    try:
+        with get_db_connection() as conn:
+            if not conn: return []
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute('''
+                    SELECT * FROM stockupdates.qualifying_stocks
+                    ORDER BY updated_at DESC
+                ''')
+                return cur.fetchall()
+    except Exception as e:
+        log.error(f"Failed to fetch qualifying stocks: {e}")
         return []
 
 def get_qualifying_alerts():

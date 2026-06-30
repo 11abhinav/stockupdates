@@ -1,5 +1,5 @@
 import logging
-from db import get_watchlist
+from db import get_watchlist, upsert_qualifying_stock, delete_qualifying_stock
 from scanners.core import fetch_intraday_cached, emit_alert
 from scanners.trade_plan import build_mf_trade_plan, recent_swing_low, consolidation_base_low
 from scanners import health
@@ -43,6 +43,7 @@ def run():
             # Trend Check: Price > 50 EMA > 200 EMA
             if not (current_price > ema50 > ema200):
                 health.record_stock_scanned("MF")
+                delete_qualifying_stock(symbol)
                 continue
                 
             # 2. Fetch 1H Data (Breakout Structure & Volume)
@@ -63,6 +64,7 @@ def run():
             # Breakout Check: Price is within 2% of recent high, OR just broke out
             if current_price < recent_high * 0.98:
                 health.record_stock_scanned("MF")
+                delete_qualifying_stock(symbol)
                 continue
                 
             # Volume Check: Is volume expanding on the breakout?
@@ -97,20 +99,11 @@ def run():
                 )
                 health.record_alert("MF")
             else:
-                emit_alert(
+                upsert_qualifying_stock(
                     symbol=symbol,
-                    scanner_name="MF_QUALIFYING",
-                    message=f"Eligible on 1H structure, waiting for volume expansion to qualify on 30m/5m (currently {last_vol/avg_vol:.1f}x avg vol).",
-                    trade_plan=None,
-                    confidence=6.0,
-                    tags={
-                        "status": "waiting", 
-                        "ladder": "1H_ready",
-                        "passed_timeframes": "1 HR PASSED",
-                        "volume_status": f"{last_vol/avg_vol:.1f}x avg vol"
-                    }
+                    timeframes_dict={"1d": True, "1h": True},
+                    volume_status=f"{last_vol/avg_vol:.1f}x avg vol"
                 )
-                health.record_alert("MF")
             
             health.record_stock_scanned("MF")
             
