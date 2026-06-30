@@ -70,10 +70,67 @@ def run():
             # Volume Check: Is volume expanding on the breakout?
             is_expanding_volume = last_vol >= avg_vol * 1.5
             
+            alert_emitted = False
+            timeframes_passed = {"1d": True, "1h": True, "30m": False, "15m": False, "5m": False}
+            final_vol_status = f"{last_vol/avg_vol:.1f}x (1H)"
+            tf_trigger = "1H"
+            
             if is_expanding_volume:
-                # Calculate Risk/Reward (ATR based Stop Loss) using the new Trade Plan
+                alert_emitted = True
+            else:
+                # Step down to 30m
+                df_30m = fetch_intraday_cached(symbol, period="5d", interval="30m", ttl_minutes=15, bse_code=bse)
+                if df_30m is not None and len(df_30m) >= 20:
+                    c30 = df_30m['Close']
+                    v30 = df_30m['Volume']
+                    r_high_30 = c30.iloc[-20:].max()
+                    avg_v30 = v30.iloc[-20:].mean()
+                    last_v30 = v30.iloc[-1]
+                    
+                    if current_price >= r_high_30 * 0.98:
+                        timeframes_passed["30m"] = True
+                        final_vol_status = f"{last_v30/avg_v30:.1f}x (30m)"
+                        
+                        if last_v30 >= avg_v30 * 1.5:
+                            alert_emitted = True
+                            tf_trigger = "30m"
+                        else:
+                            # Step down to 15m
+                            df_15m = fetch_intraday_cached(symbol, period="5d", interval="15m", ttl_minutes=15, bse_code=bse)
+                            if df_15m is not None and len(df_15m) >= 20:
+                                c15 = df_15m['Close']
+                                v15 = df_15m['Volume']
+                                r_high_15 = c15.iloc[-20:].max()
+                                avg_v15 = v15.iloc[-20:].mean()
+                                last_v15 = v15.iloc[-1]
+                                
+                                if current_price >= r_high_15 * 0.98:
+                                    timeframes_passed["15m"] = True
+                                    final_vol_status = f"{last_v15/avg_v15:.1f}x (15m)"
+                                    
+                                    if last_v15 >= avg_v15 * 1.5:
+                                        alert_emitted = True
+                                        tf_trigger = "15m"
+                                    else:
+                                        # Step down to 5m
+                                        df_5m = fetch_intraday_cached(symbol, period="5d", interval="5m", ttl_minutes=5, bse_code=bse)
+                                        if df_5m is not None and len(df_5m) >= 20:
+                                            c5 = df_5m['Close']
+                                            v5 = df_5m['Volume']
+                                            r_high_5 = c5.iloc[-20:].max()
+                                            avg_v5 = v5.iloc[-20:].mean()
+                                            last_v5 = v5.iloc[-1]
+                                            
+                                            if current_price >= r_high_5 * 0.98:
+                                                timeframes_passed["5m"] = True
+                                                final_vol_status = f"{last_v5/avg_v5:.1f}x (5m)"
+                                                
+                                                if last_v5 >= avg_v5 * 1.5:
+                                                    alert_emitted = True
+                                                    tf_trigger = "5m"
+
+            if alert_emitted:
                 atr = (hourly_df['High'] - hourly_df['Low']).iloc[-14:].mean()
-                
                 swing_low = recent_swing_low(hourly_df, lookback=20)
                 base_low = consolidation_base_low(hourly_df, lookback=40)
                 
@@ -82,17 +139,16 @@ def run():
                     latest_close=current_price,
                     atr=atr,
                     swing_low=swing_low,
-                    ema20=ema50, # using ema50 from daily as a proxy, or calculate ema20 on hourly
+                    ema20=ema50,
                     base_low=base_low,
                     breakout_buffer_pct=0.0015,
                     atr_sl_buffer_mult=0.5
                 )
 
-                # Emit Full Breakout Alert
                 emit_alert(
                     symbol=symbol,
                     scanner_name="MF",
-                    message=f"Breakout Structure confirmed. Strong trend with volume expansion ({last_vol/avg_vol:.1f}x avg vol).",
+                    message=f"Breakout Structure confirmed. Strong trend with volume expansion on {tf_trigger} ({final_vol_status}).",
                     trade_plan=trade_plan,
                     confidence=8.5,
                     tags={"trend": "strong", "volume": "expanding"}
@@ -101,8 +157,8 @@ def run():
             else:
                 upsert_qualifying_stock(
                     symbol=symbol,
-                    timeframes_dict={"1d": True, "1h": True},
-                    volume_status=f"{last_vol/avg_vol:.1f}x avg vol"
+                    timeframes_dict=timeframes_passed,
+                    volume_status=final_vol_status
                 )
             
             health.record_stock_scanned("MF")
