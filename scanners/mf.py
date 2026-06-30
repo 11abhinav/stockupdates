@@ -97,14 +97,18 @@ def run():
                 )
                 health.record_alert("MF")
             else:
-                # Emit Qualifying Alert (Ladder) without a trade plan
                 emit_alert(
                     symbol=symbol,
                     scanner_name="MF_QUALIFYING",
                     message=f"Eligible on 1H structure, waiting for volume expansion to qualify on 30m/5m (currently {last_vol/avg_vol:.1f}x avg vol).",
                     trade_plan=None,
                     confidence=6.0,
-                    tags={"status": "waiting", "ladder": "1H_ready"}
+                    tags={
+                        "status": "waiting", 
+                        "ladder": "1H_ready",
+                        "passed_timeframes": "1 HR PASSED",
+                        "volume_status": f"{last_vol/avg_vol:.1f}x avg vol"
+                    }
                 )
                 health.record_alert("MF")
             

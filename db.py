@@ -274,18 +274,18 @@ def get_fundamental_scores(symbol):
 
 def get_valuation_details(symbol):
     if not DATABASE_URL:
-        return None, None, None, None
+        return None, None, None
     try:
         with get_db_connection() as conn:
-            if not conn: return None, None, None, None
+            if not conn: return None, None, None
             with conn.cursor() as cur:
-                cur.execute("SELECT quality_score, value_score, fair_value, valuation_label FROM stockupdates.prices WHERE symbol = %s;", (symbol.upper(),))
+                cur.execute("SELECT quality_score, value_score, valuation_label FROM stockupdates.prices WHERE symbol = %s;", (symbol.upper(),))
                 row = cur.fetchone()
                 if row:
-                    return row[0], row[1], row[2], row[3]
+                    return row[0], row[1], row[2]
     except Exception as e:
         log.error(f"Error fetching valuation details for {symbol}: {e}")
-    return None, None, None, None
+    return None, None, None
 
 def add_stock(symbol, bse_code=None):
     if not DATABASE_URL:
@@ -607,6 +607,26 @@ def get_recent_alerts(limit=50):
                 return cur.fetchall()
     except Exception as e:
         log.error(f"Error fetching alerts: {e}")
+        return []
+
+def get_qualifying_alerts():
+    """Fetch recent MF_QUALIFYING alerts specifically for the qualifying stocks table."""
+    if not DATABASE_URL:
+        return []
+    try:
+        with get_db_connection() as conn:
+            if not conn: return []
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, symbol, message, created_at, tags
+                    FROM stockupdates.alerts
+                    WHERE alert_type = 'MF_QUALIFYING'
+                    AND created_at >= CURRENT_DATE - INTERVAL '3 days'
+                    ORDER BY created_at DESC;
+                """)
+                return cur.fetchall()
+    except Exception as e:
+        log.error(f"Error fetching qualifying alerts: {e}")
         return []
 
 def get_stock_alerts(symbol, limit=50):

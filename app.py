@@ -1187,6 +1187,8 @@ def admin():
             
     prices = db.get_all_prices()
     recent_alerts = db.get_recent_alerts(200)
+    # Filter out MF_QUALIFYING from main dashboard view
+    recent_alerts = [a for a in recent_alerts if a.get('alert_type') != 'MF_QUALIFYING']
     alerts_by_symbol = set(a['symbol'] for a in recent_alerts)
     
     ist = ZoneInfo("Asia/Kolkata")
@@ -1304,8 +1306,11 @@ def api_notifications():
             })
     
     # Check for recent alerts
-    recent_alerts = db.get_recent_alerts(10)
+    recent_alerts = db.get_recent_alerts(20)
     for a in recent_alerts:
+        if a.get('alert_type') == 'MF_QUALIFYING':
+            continue
+            
         created = a.get('created_at')
         if created:
             alert_ts = created.timestamp() if hasattr(created, 'timestamp') else 0
@@ -1319,6 +1324,15 @@ def api_notifications():
                 })
     
     return jsonify({"notifications": notifications, "server_time": time.time()})
+
+@app.route('/api/qualifying_stocks', methods=['GET'])
+def api_qualifying_stocks():
+    """Return recent MF_QUALIFYING stocks in JSON format for the table UI."""
+    alerts = db.get_qualifying_alerts()
+    for a in alerts:
+        if a.get('created_at'):
+            a['created_at_iso'] = a['created_at'].isoformat()
+    return jsonify(alerts)
 
 @app.route('/api/admin/system_errors')
 def api_system_errors():

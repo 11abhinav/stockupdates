@@ -116,7 +116,7 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
 
     # Fetch dynamic CQS / PAS from DB
     from db import get_valuation_details
-    q_score, v_score, fair_value, db_v_label = get_valuation_details(symbol)
+    q_score, v_score, db_v_label = get_valuation_details(symbol)
     
     # Calculate bonuses/penalties
     q_bonus = 0.0
@@ -127,13 +127,13 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     
     if q_score is not None:
         q_score = float(q_score)
-        if q_score >= 8.0:
+        if q_score >= 80.0:
             q_bonus = 2.0
             q_label = "Excellent Business"
-        elif q_score >= 6.0:
+        elif q_score >= 60.0:
             q_bonus = 1.0
             q_label = "Good Business"
-        elif q_score >= 4.0:
+        elif q_score >= 40.0:
             q_label = "Mixed Fundamentals"
         else:
             q_label = "Weak Business"
@@ -152,12 +152,12 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
             else:
                 v_label = db_v_label
         else:
-            if v_score >= 8.0:
+            if v_score >= 80.0:
                 v_bonus = 1.0
                 v_label = "Attractive Buy Zone"
-            elif v_score >= 6.0:
+            elif v_score >= 60.0:
                 v_label = "Fairly Priced"
-            elif v_score >= 4.0:
+            elif v_score >= 40.0:
                 v_bonus = -1.0
                 v_label = "Expensive / Limited Margin of Safety"
             else:
@@ -170,13 +170,13 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     
     # Construct final overall classification label
     if q_score is not None and v_score is not None:
-        if q_score >= 8.0 and v_score >= 6.0:
+        if q_score >= 80.0 and v_score >= 60.0:
             rating_label = "🔥 High Quality Breakout"
-        elif q_score >= 6.0 and v_score <= 4.0:
+        elif q_score >= 60.0 and v_score <= 40.0:
             rating_label = "⚠️ Strong Business but Expensive"
-        elif q_score <= 4.0 and v_score >= 6.0:
+        elif q_score <= 40.0 and v_score >= 60.0:
             rating_label = "💎 Cheap but Weak Fundamentals"
-        elif q_score <= 3.0 or v_score <= 3.0:
+        elif q_score <= 30.0 or v_score <= 30.0:
             rating_label = "🚨 Speculative / Avoid at current price"
         else:
             rating_label = "📈 Balanced Momentum Setup"
@@ -184,11 +184,9 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     # Decorate original alert message with clear Quality and Valuation notes
     overlay_details = []
     if q_score is not None:
-        overlay_details.append(f"Quality: {q_score}/10 ({q_label})")
+        overlay_details.append(f"Quality: {q_score}/100 ({q_label})")
     if v_score is not None:
-        v_text = f"Valuation: {v_score}/10 ({v_label})"
-        if fair_value:
-            v_text += f" [FV: ₹{float(fair_value):.1f}]"
+        v_text = f"Valuation: {v_score}/100 ({v_label})"
         overlay_details.append(v_text)
         
     full_message = f"[{rating_label}]\n{message}"
@@ -230,14 +228,12 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     
     msg += f"<b>Fundamentals:</b>\n"
     if q_score is not None:
-        msg += f"• Company Quality: <b>{q_score}/10</b> ({q_label})\n"
+        msg += f"• Company Quality: <b>{q_score}/100</b> ({q_label})\n"
     else:
         msg += f"• Company Quality: <i>Pending calculation</i>\n"
         
     if v_score is not None:
-        v_text = f"• Price Valuation: <b>{v_score}/10</b> ({v_label})"
-        if fair_value:
-            v_text += f" [FV: ₹{float(fair_value):.1f}]"
+        v_text = f"• Price Valuation: <b>{v_score}/100</b> ({v_label})"
         msg += v_text + "\n"
     else:
         msg += f"• Price Valuation: <i>Pending calculation</i>\n"
@@ -256,4 +252,5 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     msg += f"\n<b>Final Alert Score: {final_score}/10</b>\n"
     msg += f"<i>Math: Tech {tech_score} + Quality Bonus {q_bonus:+} + Value Bonus {v_bonus:+}</i>"
     
-    send_telegram(msg)
+    if scanner_name != "MF_QUALIFYING":
+        send_telegram(msg)

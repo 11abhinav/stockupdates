@@ -79,6 +79,7 @@
                 <span class="notif-badge" id="notif-badge" style="display:none; position: absolute; top: -5px; right: -5px; background: var(--warning); color: white; border-radius: 50%; padding: 2px 6px; font-size: 0.7rem; font-weight: bold;">0</span>
             </div>
             <button class="nav-btn active" id="global-alerts-btn" onclick="showGlobalAlerts()">Global Alerts</button>
+            <button class="nav-btn" id="qualifying-stocks-btn" onclick="showQualifyingStocks()">Qualifying Stocks</button>
             <a href="/admin" class="nav-btn">Admin Panel</a>
         </div>
 
@@ -108,7 +109,6 @@
             
             <div class="sort-controls" style="margin-bottom: 2rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button class="sort-btn active" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('ALL')">All</button>
-                <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('MF_QUALIFYING')">MF Ladder</button>
                 <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('BSE')">BSE Only</button>
                 <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('NEWS')">News Only</button>
                 <button class="sort-btn" style="flex: unset; padding: 0.6rem 1.2rem;" onclick="filterGlobalAlerts('MOMENTUM')">Momentum Only</button>
@@ -199,6 +199,31 @@
                 {% else %}
                 <div style="color:var(--text-muted)">No recent alerts found in the database.</div>
                 {% endfor %}
+            </div>
+        </div>
+
+        <div class="qualifying-stocks" id="qualifying-stocks-container" style="display: none;">
+            <div class="stock-header">
+                <div>
+                    <h2 class="stock-name-large">Qualifying Stocks (Pre-Breakout)</h2>
+                    <div class="stock-meta">Stocks that have triggered higher timeframe criteria but are awaiting volume or lower timeframe confirmation.</div>
+                </div>
+            </div>
+            
+            <div style="background: var(--bg-surface); border: 1px solid var(--glass-border); border-radius: 16px; overflow: hidden; margin-top: 1rem;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--glass-border);">
+                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Symbol</th>
+                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Timeframes Passed</th>
+                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Volume Status</th>
+                            <th style="padding: 16px; font-weight: 600; color: var(--text-muted);">Added</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qualifying-stocks-tbody">
+                        <!-- Loaded dynamically -->
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -342,7 +367,8 @@
             
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('stock-details').style.display = 'none';
-            document.getElementById('paper-trades-container').style.display = 'none';
+            document.getElementById('paper-trades-container')?.style.display = 'none';
+            document.getElementById('qualifying-stocks-container').style.display = 'none';
             document.getElementById('global-alerts-container').style.display = 'block';
 
             // Highlight top nav active state
@@ -351,6 +377,66 @@
                 sortControls.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
                 const globalBtn = document.getElementById('global-alerts-btn');
                 if (globalBtn) globalBtn.classList.add('active');
+            }
+        }
+
+        async function showQualifyingStocks() {
+            if (window.history.replaceState) {
+                const url = new URL(window.location);
+                url.searchParams.delete('stock');
+                window.history.replaceState(null, '', url);
+            }
+            
+            document.querySelectorAll('.watchlist-item').forEach(item => item.classList.remove('active'));
+            
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('stock-details').style.display = 'none';
+            document.getElementById('paper-trades-container')?.style.display = 'none';
+            document.getElementById('global-alerts-container').style.display = 'none';
+            document.getElementById('qualifying-stocks-container').style.display = 'block';
+
+            const sortControls = document.querySelector('.top-nav');
+            if (sortControls) {
+                sortControls.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+                const qualBtn = document.getElementById('qualifying-stocks-btn');
+                if (qualBtn) qualBtn.classList.add('active');
+            }
+
+            // Fetch data
+            const tbody = document.getElementById('qualifying-stocks-tbody');
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px; color: var(--text-muted);">Loading...</td></tr>';
+            
+            try {
+                const res = await fetch('/api/qualifying_stocks');
+                const data = await res.json();
+                tbody.innerHTML = '';
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px; color: var(--text-muted);">No qualifying stocks currently.</td></tr>';
+                    return;
+                }
+                
+                data.forEach(item => {
+                    let tags = {};
+                    try {
+                        tags = item.tags ? JSON.parse(item.tags) : {};
+                    } catch(e) {}
+                    
+                    const timePassed = tags.passed_timeframes || tags.ladder || 'Pending';
+                    const volStatus = tags.volume_status || 'Waiting';
+                    const date = item.created_at_iso ? new Date(item.created_at_iso).toLocaleString() : 'Recent';
+                    
+                    tbody.innerHTML += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;">
+                            <td style="padding: 16px; font-weight: 700; color: var(--accent);"><a href="#" onclick="loadStock('${item.symbol}', null); return false;" style="color: inherit; text-decoration: none;">${item.symbol}</a></td>
+                            <td style="padding: 16px;"><span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 4px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 700;">${timePassed}</span></td>
+                            <td style="padding: 16px;"><span style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; padding: 4px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 700;">${volStatus}</span></td>
+                            <td style="padding: 16px; color: var(--text-muted); font-size: 0.85rem;">${date}</td>
+                        </tr>
+                    `;
+                });
+            } catch(e) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px; color: var(--warning);">Error loading data.</td></tr>';
             }
         }
 
@@ -363,6 +449,8 @@
             if (globalAlerts) globalAlerts.style.display = 'none';
             const paperTrades = document.getElementById('paper-trades-container');
             if (paperTrades) paperTrades.style.display = 'none';
+            const qualStocks = document.getElementById('qualifying-stocks-container');
+            if (qualStocks) qualStocks.style.display = 'none';
 
             // Deselect top nav active state
             const sortControls = document.querySelector('.top-nav');
