@@ -481,7 +481,12 @@
                     
                     tbody.innerHTML += `
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;">
-                            <td style="padding: 16px; font-weight: 700; color: var(--accent);"><a href="#" onclick="loadStock('${item.symbol}', null); return false;" style="color: inherit; text-decoration: none;">${item.symbol}</a></td>
+                            <td style="padding: 16px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 8px;">
+                                <a href="#" onclick="loadStock('${item.symbol}', null); return false;" style="color: inherit; text-decoration: none;">${item.symbol}</a>
+                                <a href="https://in.tradingview.com/chart/?symbol=NSE:${item.symbol}" target="_blank" style="color: var(--text-muted); text-decoration: none; padding: 4px; border-radius: 4px; background: rgba(255,255,255,0.05); display: inline-flex;" title="Open in TradingView">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                </a>
+                            </td>
                             <td style="padding: 16px; text-align: center;">${renderCheck(item.passed_1d)}</td>
                             <td style="padding: 16px; text-align: center;">${renderCheck(item.passed_1h)}</td>
                             <td style="padding: 16px; text-align: center;">${renderCheck(item.passed_30m)}</td>
