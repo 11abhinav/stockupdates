@@ -9,6 +9,9 @@ import time
 import threading
 import db
 
+from engines import metric_engine, business_strength_engine, valuation_engine
+from engines import future_potential_engine, technical_engine, composite_engine
+
 from collections import deque
 
 _alerts_cache = {"data": [], "timestamp": 0}
@@ -326,352 +329,6 @@ def is_financial_sector(sector):
         return True
     return False
 
-from dataclasses import dataclass
-import statistics
-
-@dataclass
-class FairValueResult:
-    fair_value: float | None
-    bear_value: float | None
-    bull_value: float | None
-    valuation_method: str
-    valuation_confidence: str
-    peer_count: int | None
-    target_multiple: float | None
-    current_multiple: float | None
-    peer_multiple: float | None
-    is_fallback: bool
-
-def clamp(x, lo, hi):
-    return max(lo, min(hi, x))
-
-def compute_sector_medians(all_stocks):
-    sector_data = {}
-    for stock in all_stocks:
-        sector = stock.get('sector')
-        if not sector or sector == "Unknown":
-            continue
-
-        if sector not in sector_data:
-            sector_data[sector] = {"pe_list": [], "pb_list": [], "roe_list": []}
-
-        pe = norm_num(stock.get('pe'))
-        if pe is not None and pe > 0:
-            sector_data[sector]["pe_list"].append(pe)
-
-        pb = norm_num(stock.get('pb'))
-        if pb is not None and pb > 0:
-            sector_data[sector]["pb_list"].append(pb)
-
-        roe = norm_pct(stock.get('roe'))
-        if roe is not None and roe > 0:
-            sector_data[sector]["roe_list"].append(roe)
-
-    medians = {}
-    for sector, data in sector_data.items():
-        pe_list = data["pe_list"]
-        pb_list = data["pb_list"]
-        roe_list = data["roe_list"]
-
-        medians[sector] = {
-            "median_pe": statistics.median(pe_list) if len(pe_list) >= 3 else None,
-            "median_pb": statistics.median(pb_list) if len(pb_list) >= 3 else None,
-            "median_roe": statistics.median(roe_list) if len(roe_list) >= 3 else None,
-            "peer_count_pe": len(pe_list),
-            "peer_count_pb": len(pb_list),
-            "peer_count_roe": len(roe_list),
-        }
-    return medians
-
-def calculate_value_score(stock, sector_medians):
-    score = 0
-    confidence = "HIGH"
-    sector = stock.get('sector')
-    med = sector_medians.get(sector)
-    
-    if not med:
-        confidence = "LOW"
-        med = {}
-    
-    stock_pb = stock.get('pb')
-    stock_pe = stock.get('pe')
-    stock_roe = stock.get('roe')
-    stock_div = stock.get('div_yield')
-    min_peer_count = 8
-    
-    if is_financial_sector(sector):
-        # 1. P/B relative to sector
-        if stock_pb is not None and stock_pb > 0:
-            sector_pb = norm_num(stock.get('tt_indpb')) or (norm_num(med.get("median_pb")) if med.get("peer_count_pb", 0) >= min_peer_count else None)
-            if sector_pb is not None:
-                if stock_pb <= sector_pb:
-                    score += 5
-                elif stock_pb <= sector_pb * 1.2:
-                    score += 3
-            else:
-                if stock_pb <= 2.0:
-                    score += 5
-                elif stock_pb <= 3.5:
-                    score += 3
-        else:
-            confidence = "LOW"
-                    
-        # 2. ROE relative to sector
-        if stock_roe is not None:
-            sector_roe = norm_num(med.get("median_roe")) if med.get("peer_count_roe", 0) >= min_peer_count else None
-            if sector_roe is not None:
-                if stock_roe >= sector_roe:
-                    score += 5
-                elif stock_roe >= sector_roe * 0.8:
-                    score += 3
-            else:
-                if stock_roe >= 0.16:
-                    score += 5
-                elif stock_roe >= 0.12:
-                    score += 3
-        else:
-            confidence = "LOW"
-    else:
-        # 1. P/E relative to sector
-        if stock_pe is not None and stock_pe > 0:
-            sector_pe = norm_num(stock.get('tt_indpe')) or (norm_num(med.get("median_pe")) if med.get("peer_count_pe", 0) >= min_peer_count else None)
-            if sector_pe is not None:
-                if stock_pe <= sector_pe:
-                    score += 5
-                elif stock_pe <= sector_pe * 1.2:
-                    score += 3
-            else:
-                if stock_pe <= 20:
-                    score += 5
-                elif stock_pe <= 35:
-                    score += 3
-        else:
-            confidence = "LOW"
-                    
-        # 2. P/B relative to sector
-        if stock_pb is not None and stock_pb > 0:
-            sector_pb = norm_num(stock.get('tt_indpb')) or (norm_num(med.get("median_pb")) if med.get("peer_count_pb", 0) >= min_peer_count else None)
-            if sector_pb is not None:
-                if stock_pb <= sector_pb:
-                    score += 4
-                elif stock_pb <= sector_pb * 1.2:
-                    score += 2
-            else:
-                if stock_pb <= 2.5:
-                    score += 4
-                elif stock_pb <= 4.5:
-                    score += 2
-        else:
-            confidence = "LOW"
-                    
-        # 3. Dividend yield
-        if stock_div is not None and stock_div >= 0.005:
-            score += 1
-            
-    return round(score, 1), confidence
-
-def calculate_fair_value_v2(stock, current_price, sector_medians):
-    sector = stock.get('sector')
-    med = sector_medians.get(sector, {}) if sector else {}
-
-    min_peer_count = 8
-
-    try:
-        if is_financial_sector(sector):
-            current_pb = norm_num(stock.get('pb'))
-            bvps = norm_num(stock.get('bvps'))
-            
-            peer_pb = norm_num(stock.get('tt_indpb'))
-            peer_count = med.get("peer_count_pb", 0)
-            
-            if not peer_pb:
-                peer_pb = norm_num(med.get("median_pb")) if peer_count >= min_peer_count else None
-
-            if bvps and bvps > 0 and peer_pb:
-                raw_target_pb = (0.65 * float(peer_pb)) + (0.35 * current_pb if current_pb else 0.0)
-                target_pb = clamp(raw_target_pb, 0.8, min(1.5 * float(peer_pb), 5.0))
-
-                fair_value = target_pb * bvps
-                bear_value = max(bvps * max(0.85 * target_pb, 0.8), current_price * 0.85 if current_price else 0)
-                bull_value = bvps * min(target_pb * 1.15, 1.75 * float(peer_pb))
-
-                confidence = "HIGH" if peer_count >= 15 else "MEDIUM"
-
-                return FairValueResult(
-                    fair_value=round(fair_value, 2),
-                    bear_value=round(bear_value, 2),
-                    bull_value=round(bull_value, 2),
-                    valuation_method="BLENDED_SECTOR_PB",
-                    valuation_confidence=confidence,
-                    peer_count=peer_count,
-                    target_multiple=round(target_pb, 2),
-                    current_multiple=round(current_pb, 2) if current_pb else None,
-                    peer_multiple=round(float(peer_pb), 2),
-                    is_fallback=False
-                )
-
-            log.debug(f"[VALUATION] {stock.get('symbol')}: Financial sector fallback — bvps={bvps}, peer_pb={peer_pb}")
-            fallback = current_price * 0.95 if current_price else None
-            return FairValueResult(
-                fair_value=round(fallback, 2) if fallback else None,
-                bear_value=round(fallback * 0.92, 2) if fallback else None,
-                bull_value=round(fallback * 1.08, 2) if fallback else None,
-                valuation_method="FALLBACK_PRICE_ANCHORED_PB",
-                valuation_confidence="LOW",
-                peer_count=peer_count if peer_count is not None else 0,
-                target_multiple=None,
-                current_multiple=current_pb,
-                peer_multiple=float(peer_pb) if peer_pb else None,
-                is_fallback=True
-            )
-
-        current_pe = norm_num(stock.get('pe'))
-        eps = norm_num(stock.get('eps'))
-        
-        peer_pe = norm_num(stock.get('tt_indpe'))
-        peer_count = med.get("peer_count_pe", 0)
-        pe_source = "tickertape" if peer_pe else None
-        
-        if not peer_pe:
-            peer_pe = norm_num(med.get("median_pe")) if peer_count >= min_peer_count else None
-            if peer_pe:
-                pe_source = "sector_median"
-
-        if not peer_pe:
-            log.debug(f"[VALUATION] {stock.get('symbol')}: No peer PE available (tickertape=None, sector_peers={peer_count}<{min_peer_count})")
-
-        # Guard: tiny EPS makes PE-based valuation unreliable
-        if eps is not None and 0 < eps < 0.5:
-            log.debug(f"[VALUATION] {stock.get('symbol')}: Tiny EPS={eps}, forcing PRICE_FALLBACK")
-            eps = None  # Force fallback path below
-
-        if eps and eps > 0 and peer_pe:
-            peer_pe = float(peer_pe)
-
-            raw_target_pe = (0.60 * peer_pe) + (0.40 * current_pe if current_pe else 0.0)
-            sector_cap = 1.35 * peer_pe
-            growth = norm_pct(stock.get('revenue_growth')) or 0.0
-            absolute_cap = 30.0 if growth < 0.15 else 50.0
-            target_pe = clamp(raw_target_pe, 6.0, min(sector_cap, absolute_cap))
-
-            fair_value = target_pe * eps
-            bear_pe = max(0.85 * target_pe, 0.85 * current_pe if current_pe else 6.0)
-            bull_pe = min(1.15 * target_pe, sector_cap, absolute_cap)
-
-            bear_value = bear_pe * eps
-            bull_value = bull_pe * eps
-
-            if current_pe and current_pe > peer_pe * 2.0:
-                confidence = "LOW"
-            elif current_pe and peer_pe > current_pe * 1.75:
-                confidence = "MEDIUM"
-            else:
-                confidence = "HIGH" if peer_count >= 15 else "MEDIUM"
-
-            # Sanity cap: low-growth stocks capped at 1.5x CMP
-            if current_price and current_pe and fair_value > current_price * 1.50 and growth < 0.15:
-                fair_value = current_price * 1.50
-                bull_value = min(bull_value, current_price * 1.65)
-                if confidence != "LOW":
-                    confidence = "MEDIUM"
-
-            # Universal sanity cap: no fair value can exceed 2x CMP
-            if current_price and fair_value > current_price * 2.0:
-                fair_value = current_price * 2.0
-                bull_value = min(bull_value, current_price * 2.2)
-                if confidence != "LOW":
-                    confidence = "MEDIUM"
-
-            log.debug(f"[VALUATION] {stock.get('symbol')}: BLENDED_SECTOR_PE via {pe_source} — target_pe={target_pe:.1f}, peer_pe={peer_pe:.1f}, confidence={confidence}")
-            return FairValueResult(
-                fair_value=round(fair_value, 2),
-                bear_value=round(bear_value, 2),
-                bull_value=round(bull_value, 2),
-                valuation_method="BLENDED_SECTOR_PE",
-                valuation_confidence=confidence,
-                peer_count=peer_count,
-                target_multiple=round(target_pe, 2),
-                current_multiple=round(current_pe, 2) if current_pe else None,
-                peer_multiple=round(peer_pe, 2),
-                is_fallback=False
-            )
-
-        if current_price and current_pe and current_pe > 0 and eps and eps > 0:
-            target_pe = clamp(current_pe * 0.85, 6.0, 30.0)
-            fair_value = target_pe * eps
-            log.debug(f"[VALUATION] {stock.get('symbol')}: CURRENT_PE_FALLBACK — target_pe={target_pe:.1f}, eps={eps:.2f}")
-            return FairValueResult(
-                fair_value=round(fair_value, 2),
-                bear_value=round(fair_value * 0.90, 2),
-                bull_value=round(fair_value * 1.10, 2),
-                valuation_method="CURRENT_PE_FALLBACK",
-                valuation_confidence="LOW",
-                peer_count=peer_count if peer_count is not None else 0,
-                target_multiple=round(target_pe, 2),
-                current_multiple=round(current_pe, 2),
-                peer_multiple=float(peer_pe) if peer_pe else None,
-                is_fallback=True
-            )
-
-    except Exception as e:
-        log.exception(f"calculate_fair_value_v2 failed for {stock.get('symbol', 'Unknown')}")
-
-    log.debug(f"[VALUATION] {stock.get('symbol')}: PRICE_FALLBACK — no viable PE/PB/EPS path")
-    fallback = current_price * 0.95 if current_price else None
-    return FairValueResult(
-        fair_value=round(fallback, 2) if fallback else None,
-        bear_value=round(fallback * 0.92, 2) if fallback else None,
-        bull_value=round(fallback * 1.08, 2) if fallback else None,
-        valuation_method="PRICE_FALLBACK" if fallback else "UNAVAILABLE",
-        valuation_confidence="LOW" if fallback else "NONE",
-        peer_count=0,
-        target_multiple=None,
-        current_multiple=norm_num(stock.get('pe')) or norm_num(stock.get('pb')),
-        peer_multiple=None,
-        is_fallback=True
-    )
-
-def build_valuation_output(stock, current_price, sector_medians):
-    value_score, score_confidence = calculate_value_score(stock, sector_medians)
-    fv = calculate_fair_value_v2(stock, current_price, sector_medians)
-
-    valuation_label = "UNKNOWN"
-    if fv.fair_value is not None and current_price is not None and current_price > 0:
-        if fv.is_fallback:
-            valuation_label = "LOW_CONFIDENCE"
-        else:
-            upside_pct = ((fv.fair_value - current_price) / current_price) * 100.0
-            if upside_pct >= 20:
-                valuation_label = "UNDERVALUED"
-            elif upside_pct >= 0:
-                valuation_label = "FAIR"
-            else:
-                valuation_label = "OVERVALUED"
-
-    if fv.valuation_confidence == "LOW" and valuation_label not in ["LOW_CONFIDENCE", "UNKNOWN"]:
-        valuation_label = f"{valuation_label} (LOW CONFIDENCE)"
-
-    absolute_warning = None
-    if not is_financial_sector(stock.get('sector')):
-        pe = norm_num(stock.get('pe'))
-        if pe is not None and pe > 60:
-            absolute_warning = "ABSOLUTE_PE_TOO_HIGH"
-
-    return {
-        "value_score": value_score,
-        "fair_value": fv.fair_value,
-        "bear_value": fv.bear_value,
-        "bull_value": fv.bull_value,
-        "valuation_mode": fv.valuation_method,
-        "valuation_label": valuation_label,
-        "absolute_warning": absolute_warning,
-        "valuation_confidence": fv.valuation_confidence,
-        "peer_count": fv.peer_count,
-        "target_multiple": fv.target_multiple,
-        "current_multiple": fv.current_multiple,
-        "peer_multiple": fv.peer_multiple,
-        "score_confidence": score_confidence,
-    }
 
 def fetch_tickertape_industry_metrics(symbol):
     try:
@@ -705,6 +362,8 @@ def extract_raw_metrics(symbol, bse_code=None, ticker=None):
                 ticker = yf.Ticker(f"{bse_code}.BO")
         info = ticker.info
         financials = ticker.financials
+        balance_sheet = ticker.balance_sheet
+        cashflow = ticker.cashflow
         
         sector = info.get('sector')
         pe = norm_num(info.get('trailingPE') or info.get('peRatio'))
@@ -725,9 +384,20 @@ def extract_raw_metrics(symbol, bse_code=None, ticker=None):
             
         tt_indpe, tt_indpb = fetch_tickertape_industry_metrics(symbol)
         
+        facts = metric_engine.extract_raw_metrics(info, financials, balance_sheet, cashflow)
+        # Add basic info to facts just in case
+        facts['pe'] = pe if pe is not None else facts.get('pe')
+        facts['pb'] = pb if pb is not None else facts.get('pb')
+        facts['eps'] = eps if eps is not None else facts.get('eps')
+        facts['div_yield'] = div_yield
+        facts['sector'] = sector
+        facts['current_price'] = current_price
+        
         return {
             'info': info,
             'financials': financials,
+            'balance_sheet': balance_sheet,
+            'cashflow': cashflow,
             'sector': sector,
             'pe': pe,
             'pb': pb,
@@ -738,7 +408,8 @@ def extract_raw_metrics(symbol, bse_code=None, ticker=None):
             'current_price': current_price,
             'revenue_growth': revenue_growth,
             'tt_indpe': tt_indpe,
-            'tt_indpb': tt_indpb
+            'tt_indpb': tt_indpb,
+            'v5_facts': facts
         }
     except Exception as e:
         log.warning(f"Failed to extract raw metrics for {symbol}: {e}")
@@ -749,12 +420,46 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
     if not extracted:
         return None, None, None, None
         
-    q_score = calculate_quality_score(extracted['info'], extracted['financials'])
+    facts = extracted['v5_facts']
+    bqs_res = business_strength_engine.calculate_business_strength(facts)
+    vs_res = valuation_engine.calculate_valuation(facts)
+    fps_res = future_potential_engine.calculate_future_potential(facts)
+    trs_res = technical_engine.calculate_technical_readiness(facts)
+    
+    comp_res = composite_engine.calculate_composite_score(bqs_res, vs_res, fps_res, trs_res)
+    
+    # Store legacy scores for backward compatibility
+    q_score = bqs_res.score
+    v_score = vs_res.score
     
     db.update_fundamental_metrics(
         symbol, extracted['sector'], extracted['pe'], extracted['pb'], 
         extracted['roe'], extracted['eps'], extracted['bvps'], 
         extracted['div_yield'], extracted['tt_indpe'], extracted['tt_indpb']
+    )
+    
+    evidence_json = {
+        'bqs': bqs_res.evidence.to_dict(),
+        'vs': vs_res.evidence.to_dict(),
+        'fps': fps_res.evidence.to_dict(),
+        'trs': trs_res.evidence.to_dict(),
+        'composite': comp_res.evidence.to_dict()
+    }
+    
+    # Filter facts for JSON storage (remove complex objects if any, mostly it's just numbers)
+    metrics_json = {k: v for k, v in facts.items() if isinstance(v, (int, float, str, bool, type(None)))}
+    
+    db.update_v5_scores(
+        symbol=symbol,
+        business_strength=bqs_res.score,
+        valuation=vs_res.score,
+        future_potential=fps_res.score,
+        technical=trs_res.score,
+        confidence=bqs_res.confidence, # Primary confidence driver
+        coverage=bqs_res.coverage,     # Primary coverage driver
+        score_version="v5.1",
+        evidence_json=evidence_json,
+        metrics_json=metrics_json
     )
     
     current_stock = {
@@ -768,7 +473,10 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
         'div_yield': extracted['div_yield'],
         'tt_indpe': extracted['tt_indpe'],
         'tt_indpb': extracted['tt_indpb'],
-        'revenue_growth': extracted['revenue_growth']
+        'revenue_growth': extracted['revenue_growth'],
+        'v5_bqs_score': bqs_res.score,
+        'v5_vs_score': vs_res.score,
+        'v5_comp_score': comp_res.score
     }
     
     return q_score, current_stock, extracted['current_price'], extracted['info']
@@ -779,81 +487,25 @@ def refresh_watchlist_fundamentals(symbols):
     bse_map = {w['symbol']: w['bse_code'] for w in watchlist}
     
     total_syms = len(symbols)
+    results = []
     for idx, sym in enumerate(symbols):
         log.info(f"Force Refresh [{idx+1}/{total_syms}]: Fetching metrics for {sym}")
         bse_code = bse_map.get(sym)
         q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(sym, bse_code=bse_code)
         if current_stock:
-            all_rows.append((sym, q_score, current_stock, current_price, info))
+            results.append((sym, current_stock.get('v5_bqs_score'), current_stock.get('v5_vs_score'), info))
         time.sleep(2) # rate limit protection
         
-    all_stocks = db.get_all_universe_fundamentals()
-    sector_medians = compute_sector_medians(all_stocks)
-    
-    results = []
-    total_rows = len(all_rows)
-    for idx, (sym, q_score, current_stock, current_price, info) in enumerate(all_rows):
-        log.info(f"Force Refresh [{idx+1}/{total_rows}]: Scoring {sym}")
-        val_output = build_valuation_output(current_stock, current_price, sector_medians)
-        v_score = val_output["value_score"]
-        
-        db.update_fundamental_scores(sym, q_score, v_score)
-        db.update_valuation_fields(
-            sym, v_score, val_output["fair_value"], val_output["valuation_label"],
-            val_output.get("bear_value"), val_output.get("bull_value"),
-            val_output.get("valuation_mode"), val_output.get("valuation_confidence"),
-            val_output.get("peer_count"), val_output.get("target_multiple"),
-            val_output.get("current_multiple"), val_output.get("peer_multiple")
-        )
-        
-        legacy_score = int((q_score + v_score) / 2) if q_score is not None and v_score is not None else None
-        if legacy_score is not None:
-            db.update_fundamental_score(sym, legacy_score)
-            
-        results.append((sym, q_score, v_score, info))
-    
-    return results, sector_medians
+    return results
 
 def fetch_and_save_fundamentals(symbol, bse_code=None, ticker=None):
     q_score, current_stock, current_price, info = fetch_and_save_raw_metrics(symbol, bse_code, ticker)
     if not current_stock:
         return None, None, None
         
-    # Single fetch: compute against existing full database medians
-    all_stocks = db.get_all_universe_fundamentals()
-    sector_medians = compute_sector_medians(all_stocks)
+    info['v5_composite'] = current_stock.get('v5_comp_score')
     
-    val_output = build_valuation_output(current_stock, current_price, sector_medians)
-    v_score = val_output["value_score"]
-    fair_value = val_output["fair_value"]
-    valuation_label = val_output["valuation_label"]
-    
-    db.update_fundamental_scores(symbol, q_score, v_score)
-    db.update_valuation_fields(
-        symbol, v_score, fair_value, valuation_label,
-        val_output.get("bear_value"), val_output.get("bull_value"),
-        val_output.get("valuation_mode"), val_output.get("valuation_confidence"),
-        val_output.get("peer_count"), val_output.get("target_multiple"),
-        val_output.get("current_multiple"), val_output.get("peer_multiple")
-    )
-    
-    legacy_score = int((q_score + v_score) / 2) if q_score is not None and v_score is not None else None
-    if legacy_score is not None:
-        db.update_fundamental_score(symbol, legacy_score)
-        
-    info['valuation_label'] = valuation_label
-    info['fair_value'] = fair_value
-    info['bear_value'] = val_output.get('bear_value')
-    info['bull_value'] = val_output.get('bull_value')
-    info['valuation_mode'] = val_output["valuation_mode"]
-    info['absolute_warning'] = val_output["absolute_warning"]
-    info['valuation_confidence'] = val_output["valuation_confidence"]
-    info['peer_count'] = val_output.get('peer_count')
-    info['target_multiple'] = val_output.get('target_multiple')
-    info['current_multiple'] = val_output.get('current_multiple')
-    info['peer_multiple'] = val_output.get('peer_multiple')
-    
-    return q_score, v_score, info
+    return q_score, current_stock.get('v5_vs_score'), info
 
 def backfill_missing_fundamental_scores():
     # Wait a brief moment to let the server start up

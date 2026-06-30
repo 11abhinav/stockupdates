@@ -7,11 +7,8 @@ prices = db.get_all_prices()
 symbols = [p['symbol'] for p in prices]
 
 print(f"Force refreshing {len(symbols)} symbols...")
-results, medians = app.refresh_universe(symbols)
+results = app.refresh_watchlist_fundamentals(symbols)
 
 print(f"Refreshed {len(results)} symbols.")
-print("Sector Medians Calculated:")
-for sector, med in medians.items():
-    print(f" - {sector}: PE={med.get('median_pe')}, PB={med.get('median_pb')}, ROE={med.get('median_roe')}")
 
 print("Done!")

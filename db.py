@@ -91,23 +91,19 @@ def init_db():
                     ADD COLUMN IF NOT EXISTS tt_indpb NUMERIC(10, 2);
                 """)
                 
-                # Create benchmark universe table
+                # Add V5 columns to prices table
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS stockupdates.universe (
-                        symbol VARCHAR(50) PRIMARY KEY,
-                        bse_code VARCHAR(20),
-                        sector VARCHAR(100),
-                        pe NUMERIC(10, 2),
-                        pb NUMERIC(10, 2),
-                        roe NUMERIC(10, 4),
-                        eps NUMERIC(10, 2),
-                        bvps NUMERIC(10, 2),
-                        div_yield NUMERIC(10, 4),
-                        tt_indpe NUMERIC(10, 2),
-                        tt_indpb NUMERIC(10, 2),
-                        last_refreshed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                    ALTER TABLE stockupdates.universe ADD COLUMN IF NOT EXISTS bse_code VARCHAR(20);
+                    ALTER TABLE stockupdates.prices 
+                    ADD COLUMN IF NOT EXISTS business_strength NUMERIC(5, 2),
+                    ADD COLUMN IF NOT EXISTS valuation NUMERIC(5, 2),
+                    ADD COLUMN IF NOT EXISTS future_potential NUMERIC(5, 2),
+                    ADD COLUMN IF NOT EXISTS technical NUMERIC(5, 2),
+                    ADD COLUMN IF NOT EXISTS confidence NUMERIC(5, 2),
+                    ADD COLUMN IF NOT EXISTS coverage NUMERIC(5, 2),
+                    ADD COLUMN IF NOT EXISTS score_version VARCHAR(50),
+                    ADD COLUMN IF NOT EXISTS evidence_json JSONB,
+                    ADD COLUMN IF NOT EXISTS metrics_json JSONB,
+                    ADD COLUMN IF NOT EXISTS generated_at TIMESTAMP;
                 """)
                 
                 # Create alerts table
@@ -297,7 +293,9 @@ def get_all_prices():
                            p.fundamental_score, p.quality_score, p.value_score,
                            p.fair_value, p.bear_value, p.bull_value,
                            p.valuation_mode, p.valuation_confidence, p.valuation_label,
-                           p.peer_count, p.target_multiple, p.current_multiple, p.peer_multiple
+                           p.peer_count, p.target_multiple, p.current_multiple, p.peer_multiple,
+                           p.business_strength, p.valuation, p.future_potential, p.technical,
+                           p.confidence, p.coverage, p.score_version, p.evidence_json, p.metrics_json, p.generated_at
                     FROM stockupdates.watchlist w
                     LEFT JOIN stockupdates.prices p ON w.symbol = p.symbol
                     ORDER BY w.symbol;
@@ -343,6 +341,41 @@ def update_fundamental_scores(symbol, quality_score, value_score):
                 conn.commit()
     except Exception as e:
         log.error(f"Error updating fundamental scores for {symbol}: {e}")
+
+def update_v5_scores(symbol, business_strength, valuation, future_potential, technical, confidence, coverage, score_version, evidence_json, metrics_json=None):
+    if not DATABASE_URL:
+        return
+    import json
+    try:
+        with get_db_connection() as conn:
+            if not conn: return
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stockupdates.prices (
+                        symbol, business_strength, valuation, future_potential, technical, 
+                        confidence, coverage, score_version, evidence_json, metrics_json, generated_at, last_fetched
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (symbol) DO UPDATE 
+                    SET business_strength = EXCLUDED.business_strength,
+                        valuation = EXCLUDED.valuation,
+                        future_potential = EXCLUDED.future_potential,
+                        technical = EXCLUDED.technical,
+                        confidence = EXCLUDED.confidence,
+                        coverage = EXCLUDED.coverage,
+                        score_version = EXCLUDED.score_version,
+                        evidence_json = EXCLUDED.evidence_json,
+                        metrics_json = EXCLUDED.metrics_json,
+                        generated_at = CURRENT_TIMESTAMP,
+                        last_fetched = CURRENT_TIMESTAMP;
+                """, (
+                    symbol.upper(), business_strength, valuation, future_potential, technical,
+                    confidence, coverage, score_version, 
+                    json.dumps(evidence_json) if evidence_json else None,
+                    json.dumps(metrics_json) if metrics_json else None
+                ))
+                conn.commit()
+    except Exception as e:
+        log.error(f"Error updating V5 scores for {symbol}: {e}")
 
 def update_fundamental_metrics(symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe=None, tt_indpb=None):
     if not DATABASE_URL:
@@ -534,64 +567,6 @@ def get_stock_alerts(symbol, limit=50):
                 return cur.fetchall()
     except Exception as e:
         log.error(f"Error fetching stock alerts for {symbol}: {e}")
-        return []
-
-def upsert_universe_stock(symbol, bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb):
-    if not DATABASE_URL:
-        return
-    try:
-        with get_db_connection() as conn:
-            if not conn: return
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO stockupdates.universe (
-                        symbol, bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb, last_refreshed
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (symbol) DO UPDATE 
-                    SET bse_code = COALESCE(EXCLUDED.bse_code, stockupdates.universe.bse_code),
-                        sector = EXCLUDED.sector,
-                        pe = EXCLUDED.pe,
-                        pb = EXCLUDED.pb,
-                        roe = EXCLUDED.roe,
-                        eps = EXCLUDED.eps,
-                        bvps = EXCLUDED.bvps,
-                        div_yield = EXCLUDED.div_yield,
-                        tt_indpe = EXCLUDED.tt_indpe,
-                        tt_indpb = EXCLUDED.tt_indpb,
-                        last_refreshed = CURRENT_TIMESTAMP;
-                """, (symbol.upper(), bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb))
-                conn.commit()
-    except Exception as e:
-        log.error(f"Error upserting universe stock {symbol}: {e}")
-
-def get_all_universe_fundamentals():
-    if not DATABASE_URL:
-        return []
-    try:
-        with get_db_connection() as conn:
-            if not conn: return []
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT symbol, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb
-                    FROM stockupdates.universe
-                    WHERE sector IS NOT NULL;
-                """)
-                return cur.fetchall()
-    except Exception as e:
-        log.error(f"Error fetching universe fundamentals: {e}")
-        return []
-
-def get_universe_symbols():
-    if not DATABASE_URL:
-        return []
-    try:
-        with get_db_connection() as conn:
-            if not conn: return []
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("SELECT symbol, bse_code FROM stockupdates.universe ORDER BY symbol;")
-                return cur.fetchall()
-    except Exception as e:
-        log.error(f"Error fetching universe symbols: {e}")
         return []
 
 if __name__ == "__main__":

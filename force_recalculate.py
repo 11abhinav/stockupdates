@@ -23,12 +23,9 @@ def run_recalculation():
     log.info(f"Force recalculating {len(symbols)} symbols...")
     
     # Run the universe refresh
-    results, medians = app.refresh_universe(symbols)
+    results = app.refresh_watchlist_fundamentals(symbols)
     
     log.info(f"Successfully recalculated {len(results)} symbols.")
-    log.info("New Sector Medians:")
-    for sector, med in medians.items():
-        log.info(f"  {sector}: P/E={med.get('median_pe')}, P/B={med.get('median_pb')}, ROE={med.get('median_roe')}")
         
     log.info("Done! The database now contains the updated valuation and quality scores.")
 
