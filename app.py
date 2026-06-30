@@ -432,6 +432,8 @@ def fetch_and_save_raw_metrics(symbol, bse_code=None, ticker=None):
     q_score = bqs_res.score
     v_score = vs_res.score
     
+    db.update_fundamental_scores(symbol, q_score, v_score)
+    
     db.update_fundamental_metrics(
         symbol, extracted['sector'], extracted['pe'], extracted['pb'], 
         extracted['roe'], extracted['eps'], extracted['bvps'], 
