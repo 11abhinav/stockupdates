@@ -163,6 +163,8 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Add processing time delay to respect API rate limits
+                time.sleep(0.3)
                 res = fyers.history(data=data)
                 if res.get('s') == 'ok' and res.get('candles'):
                     candles = res['candles']
@@ -174,7 +176,7 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
                 elif res.get('s') == 'error':
                     code = res.get('code')
                     if code == 429:
-                        sleep_time = (attempt + 1) * 3  # Backoff: 3s, 6s, 9s
+                        sleep_time = (attempt + 1) * 5  # Backoff: 5s, 10s, 15s
                         log.warning(f"Fyers rate limit (429) for {fsym}. Retrying in {sleep_time}s (Attempt {attempt+1}/{max_retries})")
                         time.sleep(sleep_time)
                         continue
