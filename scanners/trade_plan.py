@@ -22,11 +22,10 @@ class TradePlan:
 def round2(x: float) -> float:
     return round(float(x), 2)
 
-def calculate_position_size(entry: float, stop_loss: float, max_rupee_risk: float) -> int:
-    risk_per_share = entry - stop_loss
-    if risk_per_share <= 0:
+def calculate_position_size(entry: float, allocated_capital: float) -> int:
+    if entry <= 0:
         return 0
-    return max(0, math.floor(max_rupee_risk / risk_per_share))
+    return max(0, math.floor(allocated_capital / entry))
 
 def build_mf_trade_plan(
     breakout_level: float,
@@ -58,9 +57,9 @@ def build_mf_trade_plan(
     if risk_per_share > max_risk_atr_mult * atr:
         return TradePlan(0,0,0,0,0,0,0,0,0,"","MF_BREAKOUT",True,"Risk too wide vs ATR")
 
-    target1 = entry + 1.5 * risk_per_share
-    target2 = entry + 2.5 * risk_per_share
-    target3 = entry + 4.0 * risk_per_share
+    target1 = entry + 3.0 * risk_per_share
+    target2 = entry + 5.0 * risk_per_share
+    target3 = entry + 8.0 * risk_per_share
 
     return TradePlan(
         entry=round2(entry),
@@ -69,10 +68,10 @@ def build_mf_trade_plan(
         target1=round2(target1),
         target2=round2(target2),
         target3=round2(target3),
-        rr_t1=1.5,
-        rr_t2=2.5,
-        rr_t3=4.0,
-        trail_mode="After T1 move SL to cost, then trail below 1H swing low or 1.5 ATR",
+        rr_t1=3.0,
+        rr_t2=5.0,
+        rr_t3=8.0,
+        trail_mode="After T1 move SL to cost, then trail below Swing Low or 2 ATR",
         setup_type="MF_BREAKOUT",
         invalid=False,
         reason="MF breakout plan"
@@ -109,9 +108,9 @@ def build_intraday_trade_plan(
     if current_price is not None and current_price > entry + (max_extension_atr * atr5):
         return TradePlan(0,0,0,0,0,0,0,0,0,"","INTRADAY_MOMENTUM",True,"Price too extended above trigger")
 
-    target1 = entry + 1.0 * risk_per_share
-    target2 = entry + 2.0 * risk_per_share
-    target3 = entry + 3.0 * risk_per_share
+    target1 = entry + 3.0 * risk_per_share
+    target2 = entry + 5.0 * risk_per_share
+    target3 = entry + 8.0 * risk_per_share
 
     return TradePlan(
         entry=round2(entry),
@@ -120,10 +119,10 @@ def build_intraday_trade_plan(
         target1=round2(target1),
         target2=round2(target2),
         target3=round2(target3),
-        rr_t1=1.0,
-        rr_t2=2.0,
-        rr_t3=3.0,
-        trail_mode="After T1 move SL to cost, then trail by 1 ATR or below latest 5m higher low",
+        rr_t1=3.0,
+        rr_t2=5.0,
+        rr_t3=8.0,
+        trail_mode="After T1 move SL to cost, then trail by 1.5 ATR or below latest higher low",
         setup_type="INTRADAY_MOMENTUM",
         invalid=False,
         reason="Intraday momentum plan"

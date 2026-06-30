@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 import yfinance as yf
 from zoneinfo import ZoneInfo
-from db import save_alert
+from db import save_alert, has_alert_today
 from scanners.trade_plan import TradePlan, calculate_position_size
 from scanners.fyers_client import get_fyers_history
 
@@ -105,11 +105,15 @@ def send_telegram(message):
     except Exception as e:
         log.warning(f"Telegram failed: {e}")
 
-def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, confidence=None, tags=None, risk_amount=10000):
+def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, confidence=None, tags=None, allocation_amount=10000):
     """
     Standardized payload emitter for both scanners with Company Quality (CQS)
     and Price Attractiveness (PAS) fundamental overlays.
     """
+    if has_alert_today(symbol, scanner_name.upper()):
+        log.info(f"[{scanner_name}] SKIPPED {symbol}: Alert already generated today.")
+        return
+
     if trade_plan and trade_plan.invalid:
         log.info(f"[{scanner_name}] REJECTED {symbol}: {trade_plan.reason}")
         return
@@ -195,7 +199,7 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
 
     log.info(f"[{scanner_name}] ALERT for {symbol}: {full_message}")
     
-    pos_size = calculate_position_size(trade_plan.entry, trade_plan.stop_loss, risk_amount) if trade_plan else None
+    pos_size = calculate_position_size(trade_plan.entry, allocation_amount) if trade_plan else None
     
     save_alert(
         symbol=symbol,
@@ -241,12 +245,12 @@ def emit_alert(symbol, scanner_name, message, trade_plan: TradePlan = None, conf
     if trade_plan:
         msg += f"\n<b>Trade Parameters:</b>\n"
         msg += f"• Entry: {trade_plan.entry}\n"
-        msg += f"• Stop Loss: {trade_plan.stop_loss} <i>(Risk: {trade_plan.risk_per_share})</i>\n"
+        msg += f"• Stop Loss: {trade_plan.stop_loss} <i>(Risk per share: {trade_plan.risk_per_share})</i>\n"
         msg += f"• Target 1 (1.0R): {trade_plan.target1}\n"
         msg += f"• Target 2 (2.0R): {trade_plan.target2}\n"
         msg += f"• Target 3 (Trail): {trade_plan.target3}\n"
         if pos_size:
-            msg += f"• Quantity (₹10k Risk): {pos_size} shares\n"
+            msg += f"• Quantity (₹{allocation_amount//1000}k Allocation): {pos_size} shares\n"
         msg += f"• Trail Strategy: {trade_plan.trail_mode}\n"
         
     msg += f"\n<b>Final Alert Score: {final_score}/10</b>\n"

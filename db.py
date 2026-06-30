@@ -534,6 +534,24 @@ def get_all_fundamentals():
         log.error(f"Error fetching fundamentals: {e}")
         return []
 
+def has_alert_today(symbol, alert_type):
+    if not DATABASE_URL:
+        return False
+    try:
+        with get_db_connection() as conn:
+            if not conn: return False
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 1 FROM stockupdates.alerts 
+                    WHERE symbol = %s AND alert_type = %s 
+                    AND created_at >= CURRENT_DATE
+                    LIMIT 1;
+                """, (symbol.upper(), alert_type))
+                return cur.fetchone() is not None
+    except Exception as e:
+        log.error(f"Error checking daily alert for {symbol}: {e}")
+        return False
+
 
 def save_alert(symbol, alert_type, message, entry_price=None, target_price=None, stop_loss=None, 
                confidence=None, trigger_type=None, tags=None,

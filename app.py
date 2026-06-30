@@ -748,19 +748,19 @@ def index():
             conf = float(a['confidence']) if a.get('confidence') else 5.0
             
             if conf >= 7.5:
-                allocated_risk = 50000.0
-                a['risk_label'] = "₹50k Risk (High Quality Setup)"
+                allocated_capital = 50000.0
+                a['risk_label'] = "₹50k Allocation (High Quality Setup)"
             elif conf >= 5.0:
-                allocated_risk = 25000.0
-                a['risk_label'] = "₹25k Risk (Medium Quality Setup)"
+                allocated_capital = 25000.0
+                a['risk_label'] = "₹25k Allocation (Medium Quality Setup)"
             else:
-                allocated_risk = 10000.0
-                a['risk_label'] = "₹10k Risk (Speculative Setup)"
+                allocated_capital = 10000.0
+                a['risk_label'] = "₹10k Allocation (Speculative Setup)"
                 
             risk_per_share = float(a['risk_per_share']) if a.get('risk_per_share') else (entry - sl if entry and sl else 1.0)
             
-            if entry and sl and risk_per_share > 0:
-                qty = int(allocated_risk / risk_per_share)
+            if entry and sl:
+                qty = int(allocated_capital / entry) if entry > 0 else 0
                 a['position_size_hint'] = qty # override default flat 10k sized quantity
                 a['allocated_capital'] = entry * qty
                 
@@ -821,19 +821,19 @@ def api_stock(symbol):
             conf = float(a['confidence']) if a.get('confidence') else 5.0
             
             if conf >= 7.5:
-                allocated_risk = 50000.0
-                a['risk_label'] = "₹50k Risk (High Quality Setup)"
+                allocated_capital = 50000.0
+                a['risk_label'] = "₹50k Allocation (High Quality Setup)"
             elif conf >= 5.0:
-                allocated_risk = 25000.0
-                a['risk_label'] = "₹25k Risk (Medium Quality Setup)"
+                allocated_capital = 25000.0
+                a['risk_label'] = "₹25k Allocation (Medium Quality Setup)"
             else:
-                allocated_risk = 10000.0
-                a['risk_label'] = "₹10k Risk (Speculative Setup)"
+                allocated_capital = 10000.0
+                a['risk_label'] = "₹10k Allocation (Speculative Setup)"
                 
             risk_per_share = float(a['risk_per_share']) if a.get('risk_per_share') else (entry - sl if entry and sl else 1.0)
             
-            if entry and sl and risk_per_share > 0:
-                qty = int(allocated_risk / risk_per_share)
+            if entry and sl:
+                qty = int(allocated_capital / entry) if entry > 0 else 0
                 a['position_size_hint'] = qty
                 a['allocated_capital'] = entry * qty
                 
