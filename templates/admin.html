@@ -722,16 +722,12 @@
                                     <div class="meta-value" id="last-run-MF">Never</div>
                                 </div>
                                 <div class="meta-item">
-                                    <div class="meta-label">Stocks Scanned</div>
-                                    <div class="meta-value" id="stocks-scanned-MF">0</div>
+                                    <div class="meta-label">Alerts / Scanned</div>
+                                    <div class="meta-value" id="stocks-scanned-MF">0/0</div>
                                 </div>
                                 <div class="meta-item">
                                     <div class="meta-label">Data Source</div>
                                     <div class="meta-value" id="data-source-MF">-</div>
-                                </div>
-                                <div class="meta-item">
-                                    <div class="meta-label">Alerts</div>
-                                    <div class="meta-value" id="alerts-MF">0</div>
                                 </div>
                             </div>
                             <div class="scanner-actions">
@@ -756,16 +752,12 @@
                                     <div class="meta-value" id="last-run-MOMENTUM">Never</div>
                                 </div>
                                 <div class="meta-item">
-                                    <div class="meta-label">Stocks Scanned</div>
-                                    <div class="meta-value" id="stocks-scanned-MOMENTUM">0</div>
+                                    <div class="meta-label">Alerts / Scanned</div>
+                                    <div class="meta-value" id="stocks-scanned-MOMENTUM">0/0</div>
                                 </div>
                                 <div class="meta-item">
                                     <div class="meta-label">Data Source</div>
                                     <div class="meta-value" id="data-source-MOMENTUM">-</div>
-                                </div>
-                                <div class="meta-item">
-                                    <div class="meta-label">Alerts</div>
-                                    <div class="meta-value" id="alerts-MOMENTUM">0</div>
                                 </div>
                             </div>
                             <div class="scanner-actions">
@@ -973,8 +965,10 @@
             document.getElementById(`last-run-${name}`).textContent = timeAgo(data.last_run);
             document.getElementById(`data-source-${name}`).textContent = data.data_source || 'Auto';
             document.getElementById(`stocks-scanned-${name}`).textContent = 
-                `${data.stocks_scanned}/${data.total_count}` + (data.stale_count > 0 ? ` (${data.stale_count} stale)` : '');
-            document.getElementById(`alerts-${name}`).textContent = data.alerts_processed;
+                `${data.alerts_processed}/${data.stocks_scanned}` + (data.stale_count > 0 ? ` (${data.stale_count} stale)` : '');
+            
+            const alertsEl = document.getElementById(`alerts-${name}`);
+            if (alertsEl) alertsEl.textContent = data.alerts_processed;
 
             // Critical error
             const critEl = document.getElementById(`critical-error-${name}`);
