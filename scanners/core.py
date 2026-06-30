@@ -44,7 +44,15 @@ def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5, bse
     
     # 1. Try Fyers API first if credentials exist
     if os.environ.get("FYERS_CLIENT_ID"):
-        days = int(period.replace('d', '')) if 'd' in period else 5
+        if 'd' in period:
+            days = int(period.replace('d', ''))
+        elif 'mo' in period:
+            days = int(period.replace('mo', '')) * 30
+        elif 'y' in period:
+            days = int(period.replace('y', '')) * 365
+        else:
+            days = 5
+            
         try:
             df = get_fyers_history(symbol, resolution=interval, days=days, bse_code=bse_code)
         except Exception as e:

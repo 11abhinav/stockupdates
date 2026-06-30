@@ -174,7 +174,10 @@ def get_fyers_history(symbol, resolution, days=5, bse_code=None):
                         time.sleep(sleep_time)
                         continue
                     else:
-                        log.error(f"Fyers API error for {fsym}: code={code}, message={res.get('message')}, full_response={res}")
+                        if code == -300:
+                            log.debug(f"Fyers API Invalid Symbol for {fsym}")
+                        else:
+                            log.error(f"Fyers API error for {fsym}: code={code}, message={res.get('message')}, full_response={res}")
                         return None
             except Exception as e:
                 log.error(f"Error fetching Fyers data for {fsym}: {e}")
