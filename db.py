@@ -178,10 +178,71 @@ def init_db():
                     END $$;
                 """)
                 
+                # Create universe table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS stockupdates.universe (
+                        symbol VARCHAR(50) PRIMARY KEY,
+                        bse_code VARCHAR(20),
+                        sector VARCHAR(100),
+                        pe NUMERIC(10, 2),
+                        pb NUMERIC(10, 2),
+                        roe NUMERIC(10, 4),
+                        eps NUMERIC(10, 2),
+                        bvps NUMERIC(10, 2),
+                        div_yield NUMERIC(10, 4),
+                        tt_indpe NUMERIC(10, 2),
+                        tt_indpb NUMERIC(10, 2),
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                
                 conn.commit()
                 log.info("Database initialized successfully.")
     except Exception as e:
         log.error(f"Error initializing database: {e}")
+
+def get_universe_symbols():
+    if not DATABASE_URL:
+        return []
+    try:
+        with get_db_connection() as conn:
+            if not conn: return []
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT symbol, bse_code FROM stockupdates.universe ORDER BY symbol;")
+                return cur.fetchall()
+    except Exception as e:
+        log.error(f"Error fetching universe symbols: {e}")
+        return []
+
+def upsert_universe_stock(symbol, bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb):
+    if not DATABASE_URL:
+        return False
+    try:
+        with get_db_connection() as conn:
+            if not conn: return False
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO stockupdates.universe (
+                        symbol, bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb, last_updated
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (symbol) DO UPDATE 
+                    SET bse_code = EXCLUDED.bse_code,
+                        sector = EXCLUDED.sector,
+                        pe = EXCLUDED.pe,
+                        pb = EXCLUDED.pb,
+                        roe = EXCLUDED.roe,
+                        eps = EXCLUDED.eps,
+                        bvps = EXCLUDED.bvps,
+                        div_yield = EXCLUDED.div_yield,
+                        tt_indpe = EXCLUDED.tt_indpe,
+                        tt_indpb = EXCLUDED.tt_indpb,
+                        last_updated = CURRENT_TIMESTAMP;
+                """, (symbol.upper(), bse_code, sector, pe, pb, roe, eps, bvps, div_yield, tt_indpe, tt_indpb))
+                conn.commit()
+                return True
+    except Exception as e:
+        log.error(f"Error adding/updating universe stock {symbol}: {e}")
+        return False
 
 def get_watchlist():
     if not DATABASE_URL:
