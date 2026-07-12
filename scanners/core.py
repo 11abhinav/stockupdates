@@ -62,10 +62,13 @@ def fetch_intraday_cached(symbol, period="5d", interval="1d", ttl_minutes=5, bse
     # 2. Fallback to Yahoo Finance
     if df is None or df.empty:
         try:
-            ticker = yf.Ticker(f"{symbol}.NS")
+            # [FIX] Determine whether to fetch from NSE or BSE based on the symbol type
+            suffix = ".BO" if (bse_code or symbol.isdigit()) else ".NS"
+            ticker_symbol = f"{bse_code if bse_code else symbol}{suffix}"
+            ticker = yf.Ticker(ticker_symbol)
             df = ticker.history(period=period, interval=interval, prepost=False)
         except Exception as e:
-            log.error(f"Yahoo fetch failed for {symbol} {period}/{interval}: {e}")
+            log.error(f"Yahoo fetch failed for {ticker_symbol if 'ticker_symbol' in locals() else symbol} {period}/{interval}: {e}")
             return None
             
     if df is not None and not df.empty:

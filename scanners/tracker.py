@@ -21,9 +21,10 @@ def resolve_open_alerts():
             created_at = created_at.replace(tzinfo=timezone.utc).astimezone(IST)
             
         # Expire alerts if the current time is past 15:30 IST on the day they were created
+        # [FIX] Swing trade setups (alert_type = 'MF') are excluded from EOD auto-expiry to trail across multiple days
         now_ist = datetime.now(IST)
         eod_time = datetime.combine(created_at.date(), datetime.strptime("15:30", "%H:%M").time(), tzinfo=IST)
-        if now_ist > eod_time:
+        if now_ist > eod_time and alert.get('alert_type') != 'MF':
             update_alert_status(alert_id, 'EXPIRED', alert['highest_hit'])
             log.info(f"Alert {alert_id} for {symbol} expired at EOD.")
             continue

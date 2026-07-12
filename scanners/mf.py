@@ -57,9 +57,13 @@ def run():
             h_close = hourly_df['Close']
             h_vol = hourly_df['Volume']
             
-            recent_high = h_close.iloc[-20:].max()
+            # [FIX] Exclude the current forming candle from the resistance high
+            recent_high = h_close.iloc[-21:-1].max()
             avg_vol = h_vol.iloc[-20:].mean()
             last_vol = h_vol.iloc[-1]
+            
+            # [FIX] Calculate 20 EMA on the hourly chart to use as a close-range stop-loss candidate
+            h_ema20 = h_close.ewm(span=20, adjust=False).mean().iloc[-1]
             
             # Breakout Check: Price is within 2% of recent high, OR just broke out
             if current_price < recent_high * 0.98:
@@ -83,7 +87,8 @@ def run():
                 if df_30m is not None and len(df_30m) >= 20:
                     c30 = df_30m['Close']
                     v30 = df_30m['Volume']
-                    r_high_30 = c30.iloc[-20:].max()
+                    # [FIX] Exclude current candle to prevent self-referential price check
+                    r_high_30 = c30.iloc[-21:-1].max()
                     avg_v30 = v30.iloc[-20:].mean()
                     last_v30 = v30.iloc[-1]
                     
@@ -100,7 +105,8 @@ def run():
                             if df_15m is not None and len(df_15m) >= 20:
                                 c15 = df_15m['Close']
                                 v15 = df_15m['Volume']
-                                r_high_15 = c15.iloc[-20:].max()
+                                # [FIX] Exclude current candle to prevent self-referential price check
+                                r_high_15 = c15.iloc[-21:-1].max()
                                 avg_v15 = v15.iloc[-20:].mean()
                                 last_v15 = v15.iloc[-1]
                                 
@@ -117,7 +123,8 @@ def run():
                                         if df_5m is not None and len(df_5m) >= 20:
                                             c5 = df_5m['Close']
                                             v5 = df_5m['Volume']
-                                            r_high_5 = c5.iloc[-20:].max()
+                                            # [FIX] Exclude current candle to prevent self-referential price check
+                                            r_high_5 = c5.iloc[-21:-1].max()
                                             avg_v5 = v5.iloc[-20:].mean()
                                             last_v5 = v5.iloc[-1]
                                             
@@ -134,12 +141,13 @@ def run():
                 swing_low = recent_swing_low(hourly_df, lookback=20)
                 base_low = consolidation_base_low(hourly_df, lookback=40)
                 
+                # [FIX] Pass hourly EMA 20 instead of daily EMA 50 to avoid risk width rejection
                 trade_plan = build_mf_trade_plan(
                     breakout_level=recent_high,
                     latest_close=current_price,
                     atr=atr,
                     swing_low=swing_low,
-                    ema20=ema50,
+                    ema20=h_ema20,
                     base_low=base_low,
                     breakout_buffer_pct=0.0015,
                     atr_sl_buffer_mult=0.5
