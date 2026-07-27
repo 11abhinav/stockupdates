@@ -7,7 +7,10 @@ from scanners import health
 log = logging.getLogger("scanners.mf")
 
 def run():
-    log.info("Running MF Breakout Scanner...")
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    ist_now = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
+    log.info(f"********************* Starting Mf Scanner at {ist_now} *********************")
     health.begin_run("MF")
     
     try:
@@ -34,31 +37,30 @@ def run():
                 health.record_stock_stale("MF", symbol)
                 continue
                 
-            # Calculate EMAs for Minervini Trend Template
+            # [VERSION: MF_SMA_TREND_v1.0] Calculate SMAs for Minervini Trend Template (replaces faster-reacting EMAs)
             close = daily_df['Close']
-            ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
-            ema200 = close.ewm(span=200, adjust=False).mean().iloc[-1]
+            sma50 = close.rolling(window=50).mean().iloc[-1]
+            sma200 = close.rolling(window=200).mean().iloc[-1]
             current_price = close.iloc[-1]
             
-            # Trend Check: Price > 50 EMA > 200 EMA
-            if not (current_price > ema50 > ema200):
+            # Trend Check: Price > 50 SMA > 200 SMA
+            if not (current_price > sma50 > sma200):
                 health.record_stock_scanned("MF")
                 delete_qualifying_stock(symbol)
                 continue
                 
-            # 2. Fetch 1H Data (Breakout Structure & Volume)
-            hourly_df = fetch_intraday_cached(symbol, period="1mo", interval="1h", ttl_minutes=15, bse_code=bse)
-            if hourly_df is None or len(hourly_df) < 20:
+            # [VERSION: MF_VCP_LOOKBACK_v1.0] Ensure we have at least 120 hourly bars to compute a structural 3-week base
+            if hourly_df is None or len(hourly_df) < 120:
                 reason = "None returned" if hourly_df is None else f"only {len(hourly_df)} rows"
-                log.warning(f"[{symbol}] Hourly data stale: {reason} (need 20)")
+                log.warning(f"[{symbol}] Hourly data insufficient: {reason} (need 120)")
                 health.record_stock_stale("MF", symbol)
                 continue
                 
             h_close = hourly_df['Close']
             h_vol = hourly_df['Volume']
             
-            # [FIX] Exclude the current forming candle from the resistance high
-            recent_high = h_close.iloc[-21:-1].max()
+            # [VERSION: MF_VCP_LOOKBACK_v1.0] Exclude current forming candle and search back 120 bars for resistance high
+            recent_high = h_close.iloc[-121:-1].max()
             avg_vol = h_vol.iloc[-20:].mean()
             last_vol = h_vol.iloc[-1]
             
@@ -176,4 +178,5 @@ def run():
             health.record_stock_error("MF", symbol, str(e))
     
     health.finish_run("MF")
-    log.info("MF Scanner run complete.")
+    ist_end = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
+    log.info(f"********************* Mf Scanner completed at {ist_end} *********************")
